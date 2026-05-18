@@ -43,7 +43,7 @@ def calcular_prioridad():
         print("Por favor, ingresa un valor válido para la dificultad para respirar.")
     
     if cuesta_respirar == "si":
-        prioridad += 4
+        prioridad +=8
     elif cuesta_respirar == "no":
         prioridad += 0
     
