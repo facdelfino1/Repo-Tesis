@@ -78,7 +78,7 @@ def calcular_prioridad():
     elif prioridad >= 8 and prioridad <= 10:
         color_prioridad = "Roja"
     
-    return prioridad, color_prioridad
+    return  color_prioridad, prioridad
 
 
 
