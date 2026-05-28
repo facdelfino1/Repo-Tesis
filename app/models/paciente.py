@@ -22,4 +22,9 @@ class Paciente(Usuario):
             "id_paciente": self.id_paciente
         }
         return paciente
+    
+    def mostrar_pacientes(self):
+        for paciente in self.pacientes:
+            print(f"ID: {paciente.id_paciente}, Nombre: {paciente.nombre} {paciente.apellido}, DNI: {paciente.dni}, Email: {paciente.email}, Teléfono: {paciente.telefono}, Obra Social: {paciente.obra_social}")   
+        
         
