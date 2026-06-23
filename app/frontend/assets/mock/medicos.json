@@ -1,0 +1,34 @@
+{
+    "medicos": [
+        {
+            "id": 1,
+            "nombre": "Laura",
+            "apellido": "Fernandez",
+            "especialidad": "Clinica Medica"
+        },
+        {
+            "id": 2,
+            "nombre": "Pablo",
+            "apellido": "Ruiz",
+            "especialidad": "Cardiologia"
+        },
+        {
+            "id": 3,
+            "nombre": "Ana",
+            "apellido": "Lopez",
+            "especialidad": "Dermatologia"
+        },
+        {
+            "id": 4,
+            "nombre": "Martin",
+            "apellido": "Pereyra",
+            "especialidad": "Traumatologia"
+        },
+        {
+            "id": 5,
+            "nombre": "Valeria",
+            "apellido": "Gomez",
+            "especialidad": "Clinica Medica"
+        }
+    ]
+}

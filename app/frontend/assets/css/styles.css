@@ -31,3 +31,57 @@ body {
     border-color: #86b7fe;
     box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.12);
 }
+
+.dashboard-page {
+    min-height: 100vh;
+}
+
+.dashboard-hero {
+    background:
+        linear-gradient(135deg, rgba(13, 110, 253, 0.1), rgba(13, 202, 240, 0.08)),
+        #ffffff;
+    border: 1px solid rgba(13, 110, 253, 0.08);
+}
+
+.dashboard-card,
+.dashboard-status {
+    border-radius: 0.9rem;
+}
+
+.dashboard-icon,
+.status-icon {
+    align-items: center;
+    border-radius: 0.85rem;
+    display: inline-flex;
+    flex: 0 0 auto;
+    font-size: 1.35rem;
+    height: 2.75rem;
+    justify-content: center;
+    width: 2.75rem;
+}
+
+.metric-box {
+    background-color: #f8f9fa;
+    border: 1px solid rgba(108, 117, 125, 0.12);
+}
+
+.triage-result {
+    background-color: #f8f9fa;
+    border: 1px solid rgba(108, 117, 125, 0.16);
+}
+
+.triage-result-success {
+    border-left: 0.35rem solid #198754;
+}
+
+.triage-result-warning {
+    border-left: 0.35rem solid #ffc107;
+}
+
+.triage-result-danger {
+    border-left: 0.35rem solid #dc3545;
+}
+
+.table > :not(caption) > * > * {
+    padding: 0.9rem 0.75rem;
+}

@@ -1,0 +1,11 @@
+{
+    "pacienteActual": {
+        "id": 1,
+        "nombre": "Sofia",
+        "apellido": "Martinez",
+        "dni": "32145678",
+        "email": "sofia.martinez@email.com",
+        "telefono": "3815551234",
+        "obraSocial": "OSDE"
+    }
+}

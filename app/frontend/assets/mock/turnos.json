@@ -1,0 +1,35 @@
+{
+    "proximoTurno": {
+        "id": 101,
+        "especialidad": "Clinica Medica",
+        "medico": "Dra. Laura Fernandez",
+        "fecha": "2026-06-28",
+        "hora": "09:30",
+        "estado": "Confirmado",
+        "esperaEstimada": "18 minutos",
+        "duracionEstimada": "25 minutos"
+    },
+    "historial": [
+        {
+            "id": 98,
+            "especialidad": "Cardiologia",
+            "medico": "Dr. Pablo Ruiz",
+            "fecha": "2026-05-21",
+            "estado": "Atendido"
+        },
+        {
+            "id": 94,
+            "especialidad": "Clinica Medica",
+            "medico": "Dra. Laura Fernandez",
+            "fecha": "2026-04-12",
+            "estado": "Atendido"
+        },
+        {
+            "id": 89,
+            "especialidad": "Dermatologia",
+            "medico": "Dra. Ana Lopez",
+            "fecha": "2026-03-18",
+            "estado": "Cancelado"
+        }
+    ]
+}
