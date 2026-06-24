@@ -6,6 +6,63 @@
         "dni": "32145678",
         "email": "sofia.martinez@email.com",
         "telefono": "3815551234",
-        "obraSocial": "OSDE"
-    }
+        "obraSocial": "OSDE",
+        "rol": "Paciente"
+    },
+    "secretariaActual": {
+        "id": 20,
+        "nombre": "Carla",
+        "apellido": "Suarez",
+        "email": "carla.suarez@clinica.com",
+        "rol": "Secretaria"
+    },
+    "usuarios": [
+        {
+            "id": 1,
+            "nombre": "Sofia",
+            "apellido": "Martinez",
+            "rol": "Paciente"
+        },
+        {
+            "id": 20,
+            "nombre": "Carla",
+            "apellido": "Suarez",
+            "rol": "Secretaria"
+        },
+        {
+            "id": 1,
+            "nombre": "Laura",
+            "apellido": "Fernandez",
+            "rol": "Medico",
+            "especialidad": "Clinica Medica"
+        },
+        {
+            "id": 2,
+            "nombre": "Pablo",
+            "apellido": "Ruiz",
+            "rol": "Medico",
+            "especialidad": "Cardiologia"
+        },
+        {
+            "id": 3,
+            "nombre": "Ana",
+            "apellido": "Lopez",
+            "rol": "Medico",
+            "especialidad": "Dermatologia"
+        },
+        {
+            "id": 4,
+            "nombre": "Martin",
+            "apellido": "Pereyra",
+            "rol": "Medico",
+            "especialidad": "Traumatologia"
+        },
+        {
+            "id": 5,
+            "nombre": "Valeria",
+            "apellido": "Gomez",
+            "rol": "Medico",
+            "especialidad": "Clinica Medica"
+        }
+    ]
 }

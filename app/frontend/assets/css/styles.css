@@ -101,6 +101,17 @@ body {
     border-color: rgba(108, 117, 125, 0.16) !important;
 }
 
+.quick-action-card {
+    border-color: rgba(108, 117, 125, 0.16) !important;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.quick-action-card:hover {
+    border-color: rgba(13, 110, 253, 0.4) !important;
+    box-shadow: 0 0.35rem 1rem rgba(13, 110, 253, 0.1);
+    transform: translateY(-1px);
+}
+
 .table > :not(caption) > * > * {
     padding: 0.9rem 0.75rem;
 }
