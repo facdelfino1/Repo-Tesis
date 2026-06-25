@@ -1,9 +1,123 @@
 {
-    "ultimoTriaje": {
-        "prioridad": "Media",
-        "color": "Amarillo",
-        "puntaje": 62,
-        "fecha": "2026-06-22",
-        "recomendacion": "Mantener el turno asignado y consultar antes si aparecen sintomas de alarma."
-    }
+    "triajes": [
+        {
+            "id_triaje": 501,
+            "id_turno": 1001,
+            "id_paciente": 1,
+            "puntaje": 7,
+            "prioridad": "Media",
+            "color_prioridad": "Amarillo",
+            "duracion_estimada": 30,
+            "respuestas": {
+                "fiebre": "no",
+                "dolor_intenso": "si",
+                "dificultad_respiratoria": "no",
+                "rango_dolor": 6
+            },
+            "recomendacion": "Mantener el turno asignado y consultar antes si aparecen sintomas de alarma.",
+            "fecha": "2026-06-22"
+        },
+        {
+            "id_triaje": 502,
+            "id_turno": 1002,
+            "id_paciente": 1,
+            "puntaje": 2,
+            "prioridad": "Baja",
+            "color_prioridad": "Verde",
+            "duracion_estimada": 20,
+            "respuestas": {
+                "fiebre": "no",
+                "dolor_intenso": "no",
+                "dificultad_respiratoria": "no",
+                "rango_dolor": 3
+            },
+            "recomendacion": "Asistir al turno programado y controlar evolucion de sintomas.",
+            "fecha": "2026-06-23"
+        },
+        {
+            "id_triaje": 503,
+            "id_turno": 1003,
+            "id_paciente": 1,
+            "puntaje": 5,
+            "prioridad": "Media",
+            "color_prioridad": "Amarillo",
+            "duracion_estimada": 30,
+            "respuestas": {
+                "fiebre": "si",
+                "dolor_intenso": "no",
+                "dificultad_respiratoria": "no",
+                "rango_dolor": 5
+            },
+            "recomendacion": "Control clinico con prioridad media.",
+            "fecha": "2026-05-18"
+        },
+        {
+            "id_triaje": 504,
+            "id_turno": 1004,
+            "id_paciente": 2,
+            "puntaje": 2,
+            "prioridad": "Baja",
+            "color_prioridad": "Verde",
+            "duracion_estimada": 20,
+            "respuestas": {
+                "fiebre": "no",
+                "dolor_intenso": "no",
+                "dificultad_respiratoria": "no",
+                "rango_dolor": 2
+            },
+            "recomendacion": "Puede esperar atencion programada.",
+            "fecha": "2026-06-21"
+        },
+        {
+            "id_triaje": 505,
+            "id_turno": 1005,
+            "id_paciente": 2,
+            "puntaje": 17,
+            "prioridad": "Alta",
+            "color_prioridad": "Rojo",
+            "duracion_estimada": 40,
+            "respuestas": {
+                "fiebre": "no",
+                "dolor_intenso": "si",
+                "dificultad_respiratoria": "si",
+                "rango_dolor": 8
+            },
+            "recomendacion": "Priorizar atencion inmediata por sintomas de alarma.",
+            "fecha": "2026-06-24"
+        },
+        {
+            "id_triaje": 506,
+            "id_turno": 1006,
+            "id_paciente": 2,
+            "puntaje": 5,
+            "prioridad": "Media",
+            "color_prioridad": "Amarillo",
+            "duracion_estimada": 30,
+            "respuestas": {
+                "fiebre": "si",
+                "dolor_intenso": "no",
+                "dificultad_respiratoria": "no",
+                "rango_dolor": 4
+            },
+            "recomendacion": "Reprogramar si los sintomas persisten.",
+            "fecha": "2026-05-15"
+        },
+        {
+            "id_triaje": 507,
+            "id_turno": 1007,
+            "id_paciente": 1,
+            "puntaje": 2,
+            "prioridad": "Baja",
+            "color_prioridad": "Verde",
+            "duracion_estimada": 20,
+            "respuestas": {
+                "fiebre": "no",
+                "dolor_intenso": "no",
+                "dificultad_respiratoria": "no",
+                "rango_dolor": 1
+            },
+            "recomendacion": "Consulta de baja prioridad.",
+            "fecha": "2026-04-08"
+        }
+    ]
 }

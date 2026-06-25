@@ -1,119 +1,23 @@
 document.addEventListener("DOMContentLoaded", async () => {
     const fallbackData = {
         usuarios: {
-            pacienteActual: {
-                nombre: "Sofia",
-                apellido: "Martinez"
-            }
+            usuarios: []
         },
         turnos: {
-            proximoTurno: {
-                especialidad: "Clinica Medica",
-                medico: "Dra. Laura Fernandez",
-                fecha: "2026-06-28",
-                hora: "09:30",
-                estado: "Confirmado",
-                esperaEstimada: "18 minutos",
-                duracionEstimada: "25 minutos"
-            },
-            historial: [
-                {
-                    fecha: "2026-05-21",
-                    especialidad: "Cardiologia",
-                    medico: "Dr. Pablo Ruiz",
-                    estado: "Atendido"
-                },
-                {
-                    fecha: "2026-04-12",
-                    especialidad: "Clinica Medica",
-                    medico: "Dra. Laura Fernandez",
-                    estado: "Atendido"
-                },
-                {
-                    fecha: "2026-03-18",
-                    especialidad: "Dermatologia",
-                    medico: "Dra. Ana Lopez",
-                    estado: "Cancelado"
-                }
-            ]
+            turnos: []
         },
         triaje: {
             ultimoTriaje: {
-                prioridad: "Media",
-                color: "Amarillo",
-                puntaje: 62,
-                recomendacion: "Mantener el turno asignado y consultar antes si aparecen sintomas de alarma."
+                prioridad: "Baja",
+                color_prioridad: "Verde",
+                puntaje: 2,
+                recomendacion: "Sin triajes registrados."
             }
         },
         medicos: {
-            medicos: [
-                {
-                    id: 1,
-                    nombre: "Laura",
-                    apellido: "Fernandez",
-                    especialidad: "Clinica Medica"
-                },
-                {
-                    id: 2,
-                    nombre: "Pablo",
-                    apellido: "Ruiz",
-                    especialidad: "Cardiologia"
-                },
-                {
-                    id: 3,
-                    nombre: "Ana",
-                    apellido: "Lopez",
-                    especialidad: "Dermatologia"
-                },
-                {
-                    id: 4,
-                    nombre: "Martin",
-                    apellido: "Pereyra",
-                    especialidad: "Traumatologia"
-                },
-                {
-                    id: 5,
-                    nombre: "Valeria",
-                    apellido: "Gomez",
-                    especialidad: "Clinica Medica"
-                }
-            ]
+            medicos: []
         },
-        disponibilidad: [
-            {
-                id_disponibilidad: 1,
-                id_medico: 1,
-                medico: "Laura Fernandez",
-                especialidad: "Clinica Medica",
-                fecha: "2026-06-24",
-                hora_inicio: "09:00",
-                hora_fin: "09:30",
-                estado: "Disponible",
-                tipo: "Turno"
-            },
-            {
-                id_disponibilidad: 2,
-                id_medico: 2,
-                medico: "Pablo Ruiz",
-                especialidad: "Cardiologia",
-                fecha: "2026-06-24",
-                hora_inicio: "10:30",
-                hora_fin: "11:00",
-                estado: "Disponible",
-                tipo: "Turno"
-            },
-            {
-                id_disponibilidad: 3,
-                id_medico: 3,
-                medico: "Ana Lopez",
-                especialidad: "Dermatologia",
-                fecha: "2026-06-25",
-                hora_inicio: "14:00",
-                hora_fin: "14:30",
-                estado: "Disponible",
-                tipo: "Turno"
-            }
-        ]
+        disponibilidad: []
     };
 
     async function loadMock(path, fallback) {
@@ -262,6 +166,212 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     }
 
+    function writeStoredJson(key, value) {
+        localStorage.setItem(key, JSON.stringify(value));
+    }
+
+    function clearStoredJson(key) {
+        localStorage.removeItem(key);
+    }
+
+    function doctorMatchesAvailability(item, doctors) {
+        if (!item) {
+            return false;
+        }
+
+        const specialties = new Set(doctors.map((doctor) => doctor.especialidad));
+        const doctor = doctors.find((currentDoctor) => String(currentDoctor.id) === String(item.id_medico));
+
+        if (doctor) {
+            return item.especialidad === doctor.especialidad;
+        }
+
+        return !item.id_medico && specialties.has(item.especialidad);
+    }
+
+    function compatibleAvailability(item, doctors) {
+        const validStates = ["Disponible", "Ocupado"];
+
+        return item
+            && item.id_disponibilidad !== undefined
+            && validStates.includes(item.estado)
+            && doctorMatchesAvailability(item, doctors)
+            && item.fecha
+            && item.hora_inicio
+            && item.hora_fin;
+    }
+
+    function mergeStoredAvailability(key, baseAvailability, doctors) {
+        const base = Array.isArray(baseAvailability) ? baseAvailability : [];
+        const stored = readStoredJson(key, null);
+
+        if (!stored) {
+            return base;
+        }
+
+        if (!Array.isArray(stored)) {
+            clearStoredJson(key);
+            return base;
+        }
+
+        const storedById = new Map(stored.map((item) => [String(item.id_disponibilidad), item]));
+        const baseIds = new Set(base.map((item) => String(item.id_disponibilidad)));
+        const mergedBase = base.map((item) => {
+            const storedItem = storedById.get(String(item.id_disponibilidad));
+
+            if (!compatibleAvailability(storedItem, doctors)) {
+                return item;
+            }
+
+            return {
+                ...item,
+                estado: storedItem.estado,
+                id_turno: storedItem.id_turno || item.id_turno
+            };
+        });
+        const extraItems = stored.filter((item) => (
+            !baseIds.has(String(item.id_disponibilidad))
+            && compatibleAvailability(item, doctors)
+        ));
+        const merged = [...mergedBase, ...extraItems];
+
+        writeStoredJson(key, merged);
+        return merged;
+    }
+
+    function compatiblePatientTurn(turn, doctors, currentPatientId) {
+        const validStates = ["Reservado", "Cancelado", "Completado", "Ausente"];
+
+        if (!turn) {
+            return false;
+        }
+
+        const doctor = doctors.find((currentDoctor) => String(currentDoctor.id) === String(turn.medicoId));
+
+        return turn.origenInterfaz === true
+            && turn.pacienteId === currentPatientId
+            && doctor
+            && turn.especialidad === doctor.especialidad
+            && validStates.includes(turn.estado)
+            && turn.fecha
+            && turn.hora;
+    }
+
+    function mergeStoredPatientTurns(key, baseTurns, doctors, currentPatientId) {
+        const stored = readStoredJson(key, null);
+
+        if (!stored) {
+            return baseTurns;
+        }
+
+        if (!Array.isArray(stored)) {
+            clearStoredJson(key);
+            return baseTurns;
+        }
+
+        const baseIds = new Set(baseTurns.map((turn) => String(turn.id)));
+        const compatibleStoredTurns = stored.filter((turn) => (
+            !baseIds.has(String(turn.id))
+            && compatiblePatientTurn(turn, doctors, currentPatientId)
+        ));
+
+        writeStoredJson(key, compatibleStoredTurns);
+        return [...baseTurns, ...compatibleStoredTurns];
+    }
+
+    function roleMatches(user, role) {
+        return String(user.rol || "").toLowerCase() === role;
+    }
+
+    function fullName(person) {
+        return `${person.nombre} ${person.apellido}`;
+    }
+
+    function currentUser() {
+        return readStoredJson("usuarioActualMock", null);
+    }
+
+    function currentPatient(usuarios) {
+        const loggedUser = currentUser();
+        const users = usuarios.usuarios || [];
+
+        if (loggedUser && loggedUser.id_paciente) {
+            return users.find((user) => user.id_paciente === loggedUser.id_paciente) || loggedUser;
+        }
+
+        return users.find((user) => user.id_paciente === 1)
+            || usuarios.pacienteActual
+            || users.find((user) => roleMatches(user, "paciente"))
+            || {};
+    }
+
+    function doctorsFromUsers(usuarios) {
+        return (usuarios.usuarios || [])
+            .filter((user) => roleMatches(user, "medico"))
+            .map((doctor) => ({
+                id: doctor.id_medico,
+                id_medico: doctor.id_medico,
+                nombre: doctor.nombre,
+                apellido: doctor.apellido,
+                especialidad: doctor.especialidad
+            }));
+    }
+
+    function turnosList(turnos) {
+        return Array.isArray(turnos.turnos) ? turnos.turnos : [];
+    }
+
+    function triajesList(triaje) {
+        return Array.isArray(triaje.triajes) ? triaje.triajes : [];
+    }
+
+    function doctorById(usuarios, idMedico) {
+        return (usuarios.usuarios || []).find((user) => user.id_medico === idMedico) || null;
+    }
+
+    function appointmentFromTurn(turn, usuarios) {
+        const doctor = doctorById(usuarios, turn.id_medico);
+
+        return {
+            id: turn.id_turno,
+            pacienteId: turn.id_paciente,
+            especialidad: doctor ? doctor.especialidad : turn.especialidad,
+            medico: doctor ? fullName(doctor) : turn.medico,
+            medicoId: turn.id_medico,
+            fecha: turn.fecha,
+            hora: turn.hora_inicio,
+            horaFin: turn.hora_fin,
+            estado: turn.estado,
+            prioridad: turn.color_prioridad || turn.prioridad,
+            puntaje: turn.puntaje,
+            tiempoEstimado: `${turn.duracion_estimada} minutos`,
+            disponibilidadId: turn.id_disponibilidad,
+            idTriaje: turn.id_triaje
+        };
+    }
+
+    function patientAppointments(turnos, usuarios, patientId) {
+        return turnosList(turnos)
+            .filter((turn) => turn.id_paciente === patientId)
+            .map((turn) => appointmentFromTurn(turn, usuarios));
+    }
+
+    function nextPatientTurn(turnos, usuarios, patientId) {
+        return patientAppointments(turnos, usuarios, patientId)
+            .filter((turn) => turn.estado === "Reservado" || turn.estado === "Presente" || turn.estado === "En atenci\u00f3n")
+            .sort((a, b) => new Date(`${a.fecha}T${a.hora}:00`) - new Date(`${b.fecha}T${b.hora}:00`))[0] || null;
+    }
+
+    function latestTriageForPatient(triaje, turnos, patientId) {
+        const patientTurnIds = turnosList(turnos)
+            .filter((turn) => turn.id_paciente === patientId)
+            .map((turn) => turn.id_turno);
+
+        return triajesList(triaje)
+            .filter((item) => item.id_paciente === patientId || patientTurnIds.includes(item.id_turno))
+            .sort((a, b) => new Date(`${b.fecha}T00:00:00`) - new Date(`${a.fecha}T00:00:00`))[0] || triaje.ultimoTriaje;
+    }
+
     function stateClass(state) {
         const normalizedState = state.toLowerCase();
 
@@ -295,22 +405,22 @@ document.addEventListener("DOMContentLoaded", async () => {
             loadMock("../../assets/mock/triaje.json", fallbackData.triaje)
         ]);
 
-        const paciente = usuarios.pacienteActual;
-        const proximoTurno = turnos.proximoTurno;
-        const ultimoTriaje = triaje.ultimoTriaje;
-        const nombreCompleto = `${paciente.nombre} ${paciente.apellido}`;
+        const paciente = currentPatient(usuarios);
+        const proximoTurno = nextPatientTurn(turnos, usuarios, paciente.id_paciente);
+        const ultimoTriaje = latestTriageForPatient(triaje, turnos, paciente.id_paciente) || triaje.ultimoTriaje;
+        const nombreCompleto = fullName(paciente);
 
         setText("pacienteNavbar", nombreCompleto);
         setText("pacienteNombre", paciente.nombre);
-        setText("heroProximoTurno", `${formatDate(proximoTurno.fecha)} - ${proximoTurno.hora}`);
+        setText("heroProximoTurno", proximoTurno ? `${formatDate(proximoTurno.fecha)} - ${proximoTurno.hora}` : "Sin turnos reservados");
 
-        setText("turnoEspecialidad", proximoTurno.especialidad);
-        setText("turnoMedico", proximoTurno.medico);
-        setText("turnoFecha", formatDate(proximoTurno.fecha));
-        setText("turnoHora", proximoTurno.hora);
-        setText("turnoEstado", proximoTurno.estado);
+        setText("turnoEspecialidad", proximoTurno ? proximoTurno.especialidad : "-");
+        setText("turnoMedico", proximoTurno ? proximoTurno.medico : "-");
+        setText("turnoFecha", proximoTurno ? formatDate(proximoTurno.fecha) : "-");
+        setText("turnoHora", proximoTurno ? proximoTurno.hora : "-");
+        setText("turnoEstado", proximoTurno ? proximoTurno.estado : "-");
 
-        setText("triajePrioridad", `${ultimoTriaje.prioridad} (${ultimoTriaje.color})`);
+        setText("triajePrioridad", `${ultimoTriaje.prioridad} (${ultimoTriaje.color_prioridad || ultimoTriaje.color})`);
         setText("triajePuntaje", ultimoTriaje.puntaje);
         setText("triajeRecomendacion", ultimoTriaje.recomendacion);
 
@@ -320,10 +430,12 @@ document.addEventListener("DOMContentLoaded", async () => {
             priorityBadge.className = `badge ${priorityClass(ultimoTriaje.prioridad)}`;
         }
 
-        setText("esperaEstimada", proximoTurno.esperaEstimada);
-        setText("duracionEstimada", proximoTurno.duracionEstimada);
+        setText("esperaEstimada", proximoTurno ? (proximoTurno.esperaEstimada || "18 minutos") : "-");
+        setText("duracionEstimada", proximoTurno ? (proximoTurno.duracionEstimada || proximoTurno.tiempoEstimado) : "-");
 
-        renderHistory(turnos.historial);
+        renderHistory(patientAppointments(turnos, usuarios, paciente.id_paciente).filter((turn) => (
+            turn.estado === "Completado" || turn.estado === "Cancelado" || turn.estado === "Ausente"
+        )));
     }
 
     async function initAppointmentRequest() {
@@ -352,11 +464,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         let lastRequest = null;
         let selectedAvailability = null;
 
-        const [medicosData, disponibilidadData] = await Promise.all([
+        const [usuariosData, medicosData, disponibilidadData] = await Promise.all([
+            loadMock("../../assets/mock/usuarios.json", fallbackData.usuarios),
             loadMock("../../assets/mock/medicos.json", fallbackData.medicos),
             loadMock("../../assets/mock/disponibilidad.json", fallbackData.disponibilidad)
         ]);
-        const medicosMock = medicosData.medicos;
+        const patient = currentPatient(usuariosData);
+        const medicosMock = Array.isArray(medicosData.medicos) ? medicosData.medicos : [];
         const disponibilidadMock = Array.isArray(disponibilidadData)
             ? disponibilidadData
             : fallbackData.disponibilidad;
@@ -374,6 +488,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         function availabilityDateTime(item) {
             return new Date(`${item.fecha}T${item.hora_inicio}:00`).getTime();
+        }
+
+        function renderSpecialties() {
+            const specialties = [...new Set(medicosMock.map((doctor) => doctor.especialidad))].sort();
+            especialidad.replaceChildren();
+            especialidad.appendChild(createDoctorOption("", "Seleccione una especialidad"));
+
+            specialties.forEach((specialty) => {
+                especialidad.appendChild(createDoctorOption(specialty, specialty));
+            });
         }
 
         function renderDoctorsBySpecialty(specialty) {
@@ -444,6 +568,10 @@ document.addEventListener("DOMContentLoaded", async () => {
                 || medicosMock.find((doctor) => doctor.especialidad === requestSpecialty)
                 || medicosMock[0];
 
+            if (!doctorForOverbooking) {
+                return null;
+            }
+
             return {
                 id_disponibilidad: `sobreturno-${Date.now()}`,
                 id_medico: doctorForOverbooking.id,
@@ -489,7 +617,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                 return ordered;
             }
 
-            return [buildOverbooking(result, selectedDoctor(), request.especialidad), ...ordered];
+            const overbooking = buildOverbooking(result, selectedDoctor(), request.especialidad);
+            return overbooking ? [overbooking, ...ordered] : ordered;
         }
 
         function renderAvailability(items) {
@@ -596,8 +725,10 @@ document.addEventListener("DOMContentLoaded", async () => {
             sessionStorage.setItem("solicitudTurnoPaciente", JSON.stringify(lastRequest));
             sessionStorage.setItem("turnoReservadoPaciente", JSON.stringify(reservedAppointment));
 
-            const storedTurns = readStoredJson("turnosPacienteMock", []);
-            const storedAvailability = readStoredJson("disponibilidadPacienteMock", disponibilidadMock);
+            const patientId = patient.id_paciente || 1;
+            const storedTurns = readStoredJson("turnosPacienteMock", [])
+                .filter((turn) => compatiblePatientTurn(turn, medicosMock, patientId));
+            const storedAvailability = mergeStoredAvailability("disponibilidadPacienteMock", disponibilidadMock, medicosMock);
             const updatedAvailability = storedAvailability.map((item) => {
                 if (String(item.id_disponibilidad) === String(selectedAvailability.id_disponibilidad)) {
                     return {
@@ -610,7 +741,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             });
             const patientTurn = {
                 id: Date.now(),
-                pacienteId: 1,
+                pacienteId: patient.id_paciente || 1,
                 especialidad: reservedAppointment.especialidad,
                 medico: reservedAppointment.medico,
                 medicoId: reservedAppointment.medicoId,
@@ -621,11 +752,12 @@ document.addEventListener("DOMContentLoaded", async () => {
                 prioridad: reservedAppointment.triaje.colorPrioridad,
                 puntaje: reservedAppointment.triaje.puntaje,
                 tiempoEstimado: `${reservedAppointment.triaje.duracionTurno} minutos`,
-                disponibilidadId: reservedAppointment.disponibilidadId
+                disponibilidadId: reservedAppointment.disponibilidadId,
+                origenInterfaz: true
             };
 
-            localStorage.setItem("turnosPacienteMock", JSON.stringify([...storedTurns, patientTurn]));
-            localStorage.setItem("disponibilidadPacienteMock", JSON.stringify(updatedAvailability));
+            writeStoredJson("turnosPacienteMock", [...storedTurns, patientTurn]);
+            writeStoredJson("disponibilidadPacienteMock", updatedAvailability);
             window.location.href = "turno-reservado.html";
         }
 
@@ -682,6 +814,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
         confirmExitRequestButton.addEventListener("click", exitAppointmentRequest);
         confirmarTurnoBtn.addEventListener("click", confirmAppointment);
+        renderSpecialties();
         renderDoctorsBySpecialty(especialidad.value);
     }
 
@@ -693,14 +826,16 @@ document.addEventListener("DOMContentLoaded", async () => {
             return;
         }
 
-        const [usuarios, turnosMock, disponibilidadData] = await Promise.all([
+        const [usuarios, turnosMock, disponibilidadData, medicosData] = await Promise.all([
             loadMock("../../assets/mock/usuarios.json", fallbackData.usuarios),
             loadMock("../../assets/mock/turnos.json", fallbackData.turnos),
-            loadMock("../../assets/mock/disponibilidad.json", fallbackData.disponibilidad)
+            loadMock("../../assets/mock/disponibilidad.json", fallbackData.disponibilidad),
+            loadMock("../../assets/mock/medicos.json", fallbackData.medicos)
         ]);
-        const currentPatient = usuarios.pacienteActual;
-        const currentPatientId = currentPatient.id || 1;
-        const patientName = `${currentPatient.nombre} ${currentPatient.apellido}`;
+        const currentPatientData = currentPatient(usuarios);
+        const currentPatientId = currentPatientData.id_paciente || 1;
+        const patientName = fullName(currentPatientData);
+        const medicosMock = Array.isArray(medicosData.medicos) ? medicosData.medicos : [];
         const reservedEmpty = document.getElementById("turnosReservadosVacio");
         const historyEmpty = document.getElementById("historialPacienteVacio");
         const message = document.getElementById("misTurnosMensaje");
@@ -718,61 +853,24 @@ document.addEventListener("DOMContentLoaded", async () => {
         let availability = [];
 
         function normalizeMockAppointments() {
-            const nextTurn = turnosMock.proximoTurno;
-            const history = turnosMock.historial || [];
+            const normalizedTurns = patientAppointments(turnosMock, usuarios, currentPatientId);
 
-            return [
-                {
-                    id: nextTurn.id || 101,
-                    pacienteId: currentPatientId,
-                    especialidad: nextTurn.especialidad,
-                    medico: nextTurn.medico.replace("Dra. ", "").replace("Dr. ", ""),
-                    medicoId: 1,
-                    fecha: nextTurn.fecha,
-                    hora: nextTurn.hora,
-                    horaFin: "10:00",
-                    estado: "Reservado",
-                    prioridad: "Amarillo",
-                    puntaje: 6,
-                    tiempoEstimado: nextTurn.duracionEstimada || "25 minutos",
-                    disponibilidadId: 9
-                },
-                {
-                    id: 102,
-                    pacienteId: currentPatientId,
-                    especialidad: "Cardiologia",
-                    medico: "Pablo Ruiz",
-                    medicoId: 2,
-                    fecha: "2026-06-23",
-                    hora: "23:30",
-                    horaFin: "00:00",
-                    estado: "Pendiente",
-                    prioridad: "Verde",
-                    puntaje: 3,
-                    tiempoEstimado: "20 minutos",
-                    disponibilidadId: 10
-                },
-                ...history.map((turno, index) => ({
-                    id: turno.id || 200 + index,
-                    pacienteId: currentPatientId,
-                    especialidad: turno.especialidad,
-                    medico: turno.medico.replace("Dra. ", "").replace("Dr. ", ""),
-                    medicoId: null,
-                    fecha: turno.fecha,
-                    hora: index === 0 ? "10:00" : index === 1 ? "09:00" : "16:00",
-                    horaFin: index === 0 ? "10:30" : index === 1 ? "09:30" : "16:30",
-                    estado: turno.estado === "Atendido" ? "Completado" : turno.estado,
-                    prioridad: index === 0 ? "Amarillo" : index === 1 ? "Verde" : "Rojo",
-                    puntaje: index === 0 ? 6 : index === 1 ? 2 : 10,
-                    tiempoEstimado: index === 0 ? "30 minutos" : index === 1 ? "20 minutos" : "40 minutos",
-                    disponibilidadId: null
-                }))
-            ];
+            if (normalizedTurns.length > 0) {
+                return normalizedTurns;
+            }
+
+            return [];
         }
 
         function persistState() {
-            localStorage.setItem("turnosPacienteMock", JSON.stringify(appointments));
-            localStorage.setItem("disponibilidadPacienteMock", JSON.stringify(availability));
+            const baseIds = new Set(normalizeMockAppointments().map((turn) => String(turn.id)));
+            const localAppointments = appointments.filter((turn) => (
+                !baseIds.has(String(turn.id))
+                && compatiblePatientTurn(turn, medicosMock, currentPatientId)
+            ));
+
+            writeStoredJson("turnosPacienteMock", localAppointments);
+            writeStoredJson("disponibilidadPacienteMock", availability);
         }
 
         function showMessage(type, text) {
@@ -1013,8 +1111,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         setText("misTurnosPaciente", patientName);
-        appointments = readStoredJson("turnosPacienteMock", normalizeMockAppointments());
-        availability = readStoredJson("disponibilidadPacienteMock", disponibilidadData);
+        appointments = mergeStoredPatientTurns(
+            "turnosPacienteMock",
+            normalizeMockAppointments(),
+            medicosMock,
+            currentPatientId
+        );
+        availability = mergeStoredAvailability("disponibilidadPacienteMock", disponibilidadData, medicosMock);
 
         reservedList.addEventListener("click", (event) => {
             const button = event.target.closest("button[data-action]");
@@ -1048,7 +1151,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         const usuarios = await loadMock("../../assets/mock/usuarios.json", fallbackData.usuarios);
-        const mockPatient = usuarios.pacienteActual;
+        const mockPatient = currentPatient(usuarios);
         const storedPatient = readStoredJson("perfilPacienteMock", mockPatient);
         const message = document.getElementById("perfilMensaje");
         const fields = {
@@ -1073,7 +1176,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             fields.dni.value = patient.dni || "";
             fields.email.value = patient.email || "";
             fields.telefono.value = patient.telefono || "";
-            fields.obraSocial.value = patient.obraSocial || "";
+            fields.obraSocial.value = patient.obra_social || patient.obraSocial || "";
             fields.passwordActual.value = "";
             fields.passwordNueva.value = "";
             fields.passwordConfirmar.value = "";
@@ -1197,13 +1300,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
             const updatedPatient = {
                 ...storedPatient,
-                id: mockPatient.id || storedPatient.id || 1,
+                id_paciente: mockPatient.id_paciente || storedPatient.id_paciente || 1,
+                id_usuario: mockPatient.id_usuario || storedPatient.id_usuario,
                 nombre: fields.nombre.value.trim(),
                 apellido: fields.apellido.value.trim(),
                 dni: fields.dni.value.trim(),
                 email: fields.email.value.trim(),
                 telefono: fields.telefono.value.trim(),
-                obraSocial: fields.obraSocial.value.trim()
+                obra_social: fields.obraSocial.value.trim()
             };
 
             if (fields.passwordNueva.value !== "") {

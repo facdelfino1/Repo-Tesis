@@ -136,28 +136,43 @@
             </div>
         </section>
 
-        <section class="card border-0 shadow-sm mb-4">
-            <div class="card-body">
-                <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-3">
+        <section class="card dashboard-card border-0 shadow-sm mb-4">
+            <div class="card-body p-4">
+                <div class="d-flex flex-column flex-md-row justify-content-between gap-3 mb-3">
                     <div>
-                        <p class="text-secondary small mb-1">Autogestión</p>
-                        <h2 class="h5 fw-semibold mb-0">Acciones rápidas</h2>
+                        <p class="text-secondary small mb-1">Gestion operativa</p>
+                        <h2 class="h5 fw-semibold mb-0">Acciones rapidas</h2>
                     </div>
-                    <div class="d-flex flex-column flex-sm-row gap-2">
-                        <a href="solicitar-turno.html" class="btn btn-primary">
-                            <i class="bi bi-calendar-plus me-1"></i>Solicitar turno
+                    <span class="dashboard-icon bg-primary-subtle text-primary">
+                        <i class="bi bi-lightning-charge"></i>
+                    </span>
+                </div>
+                <div class="row g-3">
+                    <div class="col-12 col-md-4">
+                        <a href="solicitar-turno.html" class="quick-action-card card border h-100 text-decoration-none text-body">
+                            <div class="card-body">
+                                <i class="bi bi-calendar-plus text-primary fs-4"></i>
+                                <p class="fw-semibold mb-1 mt-2">Solicitar Turno</p>
+                            </div>
                         </a>
-                        <a href="mis-turnos.html" class="btn btn-outline-primary">
-                            <i class="bi bi-list-check me-1"></i>Mis turnos
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <a href="mis-turnos.html" class="quick-action-card card border h-100 text-decoration-none text-body">
+                            <div class="card-body">
+                                <i class="bi bi-calendar text-primary fs-4"></i>
+                                <p class="fw-semibold mb-1 mt-2">Mis Turnos</p>
+                            </div>
                         </a>
-                        <a href="perfil.html" class="btn btn-outline-secondary">
-                            <i class="bi bi-person-circle me-1"></i>Mi perfil
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <a href="perfil.html" class="quick-action-card card border h-100 text-decoration-none text-body">
+                            <div class="card-body">
+                                <i class="bi bi-person text-primary fs-4"></i>
+                                <p class="fw-semibold mb-1 mt-2">Mi Perfil</p>
+                            </div>
                         </a>
                     </div>
                 </div>
-                <p class="text-secondary small mb-0">
-                    El perfil Paciente accede solo a sus turnos, triaje y datos personales.
-                </p>
             </div>
         </section>
 

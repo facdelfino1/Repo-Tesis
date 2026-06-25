@@ -1,68 +1,77 @@
 {
-    "pacienteActual": {
-        "id": 1,
-        "nombre": "Sofia",
-        "apellido": "Martinez",
-        "dni": "32145678",
-        "email": "sofia.martinez@email.com",
-        "telefono": "3815551234",
-        "obraSocial": "OSDE",
-        "rol": "Paciente"
-    },
-    "secretariaActual": {
-        "id": 20,
-        "nombre": "Carla",
-        "apellido": "Suarez",
-        "email": "carla.suarez@clinica.com",
-        "rol": "Secretaria"
-    },
     "usuarios": [
         {
-            "id": 1,
-            "nombre": "Sofia",
-            "apellido": "Martinez",
-            "rol": "Paciente"
+            "id_usuario": 101,
+            "id_paciente": 1,
+            "nombre": "Sofía",
+            "apellido": "Martínez",
+            "dni": "32145678",
+            "email": "paciente@demo.com",
+            "contrasena": "Paciente123!",
+            "telefono": "3815551234",
+            "obra_social": "OSDE",
+            "rol": "paciente"
         },
         {
-            "id": 20,
-            "nombre": "Carla",
-            "apellido": "Suarez",
-            "rol": "Secretaria"
+            "id_usuario": 102,
+            "id_paciente": 2,
+            "nombre": "Juan",
+            "apellido": "Pérez",
+            "dni": "40111222",
+            "email": "juan.perez@demo.com",
+            "contrasena": "Paciente123!",
+            "telefono": "3515559876",
+            "obra_social": "Swiss Medical",
+            "rol": "paciente"
         },
         {
-            "id": 1,
+            "id_usuario": 201,
+            "id_medico": 1,
             "nombre": "Laura",
-            "apellido": "Fernandez",
-            "rol": "Medico",
-            "especialidad": "Clinica Medica"
+            "apellido": "Fernández",
+            "dni": "28456789",
+            "email": "medico@demo.com",
+            "contrasena": "Medico123!",
+            "telefono": "3515552233",
+            "matricula": "MP-12345",
+            "especialidad": "Clínica Médica",
+            "rol": "medico"
         },
         {
-            "id": 2,
-            "nombre": "Pablo",
-            "apellido": "Ruiz",
-            "rol": "Medico",
-            "especialidad": "Cardiologia"
+            "id_usuario": 202,
+            "id_medico": 2,
+            "nombre": "Martín",
+            "apellido": "Gómez",
+            "dni": "30123456",
+            "email": "martin.gomez@demo.com",
+            "contrasena": "Medico123!",
+            "telefono": "3515553344",
+            "matricula": "MP-67890",
+            "especialidad": "Cardiología",
+            "rol": "medico"
         },
         {
-            "id": 3,
+            "id_usuario": 301,
+            "id_secretaria": 1,
             "nombre": "Ana",
-            "apellido": "Lopez",
-            "rol": "Medico",
-            "especialidad": "Dermatologia"
+            "apellido": "López",
+            "dni": "33777888",
+            "email": "secretaria@demo.com",
+            "contrasena": "Secretaria123!",
+            "telefono": "3515554455",
+            "legajo": "SEC-001",
+            "rol": "secretaria"
         },
         {
-            "id": 4,
-            "nombre": "Martin",
-            "apellido": "Pereyra",
-            "rol": "Medico",
-            "especialidad": "Traumatologia"
-        },
-        {
-            "id": 5,
-            "nombre": "Valeria",
-            "apellido": "Gomez",
-            "rol": "Medico",
-            "especialidad": "Clinica Medica"
+            "id_usuario": 401,
+            "id_administrador": 1,
+            "nombre": "Carlos",
+            "apellido": "Ramírez",
+            "dni": "25666777",
+            "email": "admin@demo.com",
+            "contrasena": "Admin123!",
+            "telefono": "3515555566",
+            "rol": "administrador"
         }
     ]
 }

@@ -1,7 +1,107 @@
 document.addEventListener("DOMContentLoaded", () => {
+    async function loadMock(path, fallback) {
+        try {
+            const response = await fetch(path);
+
+            if (!response.ok) {
+                throw new Error("No se pudo leer el archivo mock.");
+            }
+
+            return await response.json();
+        } catch (error) {
+            return fallback;
+        }
+    }
+
     function setValidity(input, isValid) {
         input.classList.toggle("is-invalid", !isValid);
         input.classList.toggle("is-valid", isValid);
+    }
+
+    function initPasswordToggles() {
+        document.querySelectorAll('[data-action="toggle-password"]').forEach((button) => {
+            button.addEventListener("click", () => {
+                const input = document.getElementById(button.dataset.target);
+                const icon = button.querySelector("i");
+
+                if (!input) {
+                    return;
+                }
+
+                const isVisible = input.type === "text";
+                input.type = isVisible ? "password" : "text";
+                button.setAttribute("aria-label", isVisible ? "Mostrar contrasena" : "Ocultar contrasena");
+                button.setAttribute("title", isVisible ? "Mostrar contrasena" : "Ocultar contrasena");
+
+                if (icon) {
+                    icon.className = isVisible ? "bi bi-eye" : "bi bi-eye-slash";
+                }
+            });
+        });
+    }
+
+    function roleDashboard(role) {
+        const dashboards = {
+            paciente: "../paciente/dashboard.html",
+            secretaria: "../secretaria/dashboard.html"
+        };
+
+        return dashboards[role] || "";
+    }
+
+    function initLogin() {
+        if (!window.location.pathname.endsWith("/login.html")) {
+            return;
+        }
+
+        const loginForm = document.querySelector('form[action="#"]');
+        const emailInput = document.getElementById("email");
+        const passwordInput = document.getElementById("password");
+        const submitButton = loginForm ? loginForm.querySelector(".btn-primary") : null;
+
+        if (!loginForm || !emailInput || !passwordInput || !submitButton) {
+            return;
+        }
+
+        const message = document.createElement("div");
+        message.className = "alert alert-danger d-none";
+        message.setAttribute("role", "alert");
+        loginForm.prepend(message);
+
+        async function submitLogin(event) {
+            event.preventDefault();
+            message.classList.add("d-none");
+
+            const usuariosData = await loadMock("../../assets/mock/usuarios.json", { usuarios: [] });
+            const user = (usuariosData.usuarios || []).find((item) => (
+                item.email === emailInput.value.trim()
+                && item.contrasena === passwordInput.value
+            ));
+
+            setValidity(emailInput, Boolean(user));
+            setValidity(passwordInput, Boolean(user));
+
+            if (!user) {
+                message.textContent = "Credenciales invalidas.";
+                message.classList.remove("d-none");
+                return;
+            }
+
+            localStorage.setItem("usuarioActualMock", JSON.stringify(user));
+            const dashboardUrl = roleDashboard(user.rol);
+
+            if (!dashboardUrl) {
+                message.className = "alert alert-info";
+                message.textContent = "Credenciales validas. El panel para este rol aun no esta implementado.";
+                message.classList.remove("d-none");
+                return;
+            }
+
+            window.location.href = dashboardUrl;
+        }
+
+        submitButton.setAttribute("type", "submit");
+        loginForm.addEventListener("submit", submitLogin);
     }
 
     function initPatientRegister() {
@@ -128,6 +228,8 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    initPasswordToggles();
+    initLogin();
     initPatientRegister();
     initPasswordRecovery();
 });

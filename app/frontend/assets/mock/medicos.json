@@ -2,33 +2,27 @@
     "medicos": [
         {
             "id": 1,
+            "id_usuario": 201,
+            "id_medico": 1,
             "nombre": "Laura",
-            "apellido": "Fernandez",
-            "especialidad": "Clinica Medica"
+            "apellido": "Fernández",
+            "dni": "28456789",
+            "email": "medico@demo.com",
+            "telefono": "3515552233",
+            "matricula": "MP-12345",
+            "especialidad": "Clínica Médica"
         },
         {
             "id": 2,
-            "nombre": "Pablo",
-            "apellido": "Ruiz",
-            "especialidad": "Cardiologia"
-        },
-        {
-            "id": 3,
-            "nombre": "Ana",
-            "apellido": "Lopez",
-            "especialidad": "Dermatologia"
-        },
-        {
-            "id": 4,
-            "nombre": "Martin",
-            "apellido": "Pereyra",
-            "especialidad": "Traumatologia"
-        },
-        {
-            "id": 5,
-            "nombre": "Valeria",
-            "apellido": "Gomez",
-            "especialidad": "Clinica Medica"
+            "id_usuario": 202,
+            "id_medico": 2,
+            "nombre": "Martín",
+            "apellido": "Gómez",
+            "dni": "30123456",
+            "email": "martin.gomez@demo.com",
+            "telefono": "3515553344",
+            "matricula": "MP-67890",
+            "especialidad": "Cardiología"
         }
     ]
 }

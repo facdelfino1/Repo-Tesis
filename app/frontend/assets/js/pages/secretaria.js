@@ -1,57 +1,10 @@
 document.addEventListener("DOMContentLoaded", async () => {
     const fallbackData = {
         usuarios: {
-            secretariaActual: {
-                nombre: "Carla",
-                apellido: "Suarez"
-            },
-            usuarios: [
-                {
-                    id: 1,
-                    nombre: "Laura",
-                    apellido: "Fernandez",
-                    rol: "Medico",
-                    especialidad: "Clinica Medica"
-                },
-                {
-                    id: 2,
-                    nombre: "Pablo",
-                    apellido: "Ruiz",
-                    rol: "Medico",
-                    especialidad: "Cardiologia"
-                },
-                {
-                    id: 3,
-                    nombre: "Ana",
-                    apellido: "Lopez",
-                    rol: "Medico",
-                    especialidad: "Dermatologia"
-                },
-                {
-                    id: 4,
-                    nombre: "Martin",
-                    apellido: "Pereyra",
-                    rol: "Medico",
-                    especialidad: "Traumatologia"
-                },
-                {
-                    id: 5,
-                    nombre: "Valeria",
-                    apellido: "Gomez",
-                    rol: "Medico",
-                    especialidad: "Clinica Medica"
-                }
-            ]
+            usuarios: []
         },
         turnos: {
-            proximoTurno: {
-                especialidad: "Clinica Medica",
-                medico: "Laura Fernandez",
-                fecha: "2026-06-28",
-                hora: "09:30",
-                estado: "Reservado"
-            },
-            historial: []
+            turnos: []
         },
         disponibilidad: []
     };
@@ -92,6 +45,132 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     }
 
+    function writeStoredJson(key, value) {
+        localStorage.setItem(key, JSON.stringify(value));
+    }
+
+    function clearStoredJson(key) {
+        localStorage.removeItem(key);
+    }
+
+    function doctorMatchesAvailability(item, doctors) {
+        if (!item) {
+            return false;
+        }
+
+        const specialties = new Set(doctors.map((doctor) => doctor.especialidad));
+        const doctor = doctors.find((currentDoctor) => String(currentDoctor.id) === String(item.id_medico));
+
+        if (doctor) {
+            return item.especialidad === doctor.especialidad;
+        }
+
+        return !item.id_medico && specialties.has(item.especialidad);
+    }
+
+    function compatibleAvailability(item, doctors) {
+        const validStates = ["Disponible", "Ocupado"];
+
+        return item
+            && item.id_disponibilidad !== undefined
+            && validStates.includes(item.estado)
+            && doctorMatchesAvailability(item, doctors)
+            && item.fecha
+            && item.hora_inicio
+            && item.hora_fin;
+    }
+
+    function mergeStoredAvailability(key, baseAvailability, doctors) {
+        const base = Array.isArray(baseAvailability) ? baseAvailability : [];
+        const stored = readStoredJson(key, null);
+
+        if (!stored) {
+            return base;
+        }
+
+        if (!Array.isArray(stored)) {
+            clearStoredJson(key);
+            return base;
+        }
+
+        const storedById = new Map(stored.map((item) => [String(item.id_disponibilidad), item]));
+        const baseIds = new Set(base.map((item) => String(item.id_disponibilidad)));
+        const mergedBase = base.map((item) => {
+            const storedItem = storedById.get(String(item.id_disponibilidad));
+
+            if (!compatibleAvailability(storedItem, doctors)) {
+                return item;
+            }
+
+            return {
+                ...item,
+                estado: storedItem.estado,
+                id_turno: storedItem.id_turno || item.id_turno
+            };
+        });
+        const extraItems = stored.filter((item) => (
+            !baseIds.has(String(item.id_disponibilidad))
+            && compatibleAvailability(item, doctors)
+        ));
+        const merged = [...mergedBase, ...extraItems];
+
+        writeStoredJson(key, merged);
+        return merged;
+    }
+
+    function roleMatches(user, role) {
+        return String(user.rol || "").toLowerCase() === role;
+    }
+
+    function fullName(person) {
+        return `${person.nombre} ${person.apellido}`;
+    }
+
+    function currentUser() {
+        return readStoredJson("usuarioActualMock", null);
+    }
+
+    function currentSecretary(usuarios) {
+        const loggedUser = currentUser();
+        const users = usuarios.usuarios || [];
+
+        if (loggedUser && roleMatches(loggedUser, "secretaria")) {
+            return users.find((user) => user.id_secretaria === loggedUser.id_secretaria) || loggedUser;
+        }
+
+        return users.find((user) => roleMatches(user, "secretaria"))
+            || usuarios.secretariaActual
+            || {};
+    }
+
+    function doctorsFromUsers(usuarios) {
+        return (usuarios.usuarios || [])
+            .filter((user) => roleMatches(user, "medico"))
+            .map((doctor) => ({
+                id: doctor.id_medico,
+                id_medico: doctor.id_medico,
+                nombre: doctor.nombre,
+                apellido: doctor.apellido,
+                especialidad: doctor.especialidad
+            }));
+    }
+
+    function patientsFromUsers(usuarios) {
+        return (usuarios.usuarios || []).filter((user) => roleMatches(user, "paciente"));
+    }
+
+    function turnosList(turnos) {
+        return Array.isArray(turnos.turnos) ? turnos.turnos : [];
+    }
+
+    function doctorById(usuarios, idMedico) {
+        return doctorsFromUsers(usuarios).find((doctor) => doctor.id_medico === idMedico) || null;
+    }
+
+    function patientById(usuarios, idPaciente) {
+        return patientsFromUsers(usuarios).find((patient) => patient.id_paciente === idPaciente) || null;
+    }
+
     function formatDate(dateValue) {
         const date = new Date(`${dateValue}T00:00:00`);
 
@@ -112,23 +191,25 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     function stateClass(state) {
-        if (state === "Reservado") {
+        const normalizedState = String(state || "").toLowerCase();
+
+        if (normalizedState === "reservado") {
             return "text-bg-primary";
         }
 
-        if (state === "Presente") {
+        if (normalizedState === "presente") {
             return "text-bg-info";
         }
 
-        if (state === "En atencion") {
+        if (normalizedState === "en atencion" || normalizedState === "en atenci\u00f3n") {
             return "text-bg-warning";
         }
 
-        if (state === "Completado") {
+        if (normalizedState === "completado") {
             return "text-bg-success";
         }
 
-        if (state === "Cancelado") {
+        if (normalizedState === "cancelado") {
             return "text-bg-secondary";
         }
 
@@ -147,64 +228,28 @@ document.addEventListener("DOMContentLoaded", async () => {
         return "text-bg-success";
     }
 
-    function normalizeDoctorName(name) {
-        return name.replace("Dra. ", "").replace("Dr. ", "");
-    }
+    function buildAgenda(turnos, disponibilidad, usuarios) {
+        const normalizedTurns = turnosList(turnos);
 
-    function buildAgenda(turnos, disponibilidad) {
-        const proximoTurno = turnos.proximoTurno || fallbackData.turnos.proximoTurno;
-        const baseAgenda = [
-            {
-                hora: "08:30",
-                paciente: "Juan Perez",
-                medico: "Pablo Ruiz",
-                especialidad: "Cardiologia",
-                prioridad: "Media",
-                estado: "Presente"
-            },
-            {
-                hora: "09:00",
-                paciente: "Sofia Martinez",
-                medico: normalizeDoctorName(proximoTurno.medico || "Laura Fernandez"),
-                especialidad: proximoTurno.especialidad || "Clinica Medica",
-                prioridad: "Baja",
-                estado: "Reservado"
-            },
-            {
-                hora: "09:30",
-                paciente: "Marcos Diaz",
-                medico: "Ana Lopez",
-                especialidad: "Dermatologia",
-                prioridad: "Alta",
-                estado: "En atencion"
-            },
-            {
-                hora: "10:30",
-                paciente: "Elena Rojas",
-                medico: "Martin Pereyra",
-                especialidad: "Traumatologia",
-                prioridad: "Media",
-                estado: "Completado"
-            },
-            {
-                hora: "11:00",
-                paciente: "Camila Torres",
-                medico: "Valeria Gomez",
-                especialidad: "Clinica Medica",
-                prioridad: "Baja",
-                estado: "Cancelado"
-            },
-            {
-                hora: "12:00",
-                paciente: "Roberto Molina",
-                medico: "Pablo Ruiz",
-                especialidad: "Cardiologia",
-                prioridad: "Alta",
-                estado: "En atencion"
-            }
-        ];
+        if (normalizedTurns.length > 0) {
+            return normalizedTurns
+                .map((turno) => {
+                    const patient = patientById(usuarios, turno.id_paciente);
+                    const doctor = doctorById(usuarios, turno.id_medico);
 
-        const availableBlocks = disponibilidad
+                    return {
+                        hora: turno.hora_inicio,
+                        paciente: patient ? fullName(patient) : "Paciente",
+                        medico: doctor ? fullName(doctor) : "Medico",
+                        especialidad: doctor ? doctor.especialidad : turno.especialidad,
+                        prioridad: turno.prioridad,
+                        estado: turno.estado
+                    };
+                })
+                .sort((a, b) => a.hora.localeCompare(b.hora));
+        }
+
+        return disponibilidad
             .filter((item) => item.estado === "Disponible")
             .slice(0, 2)
             .map((item, index) => ({
@@ -215,8 +260,6 @@ document.addEventListener("DOMContentLoaded", async () => {
                 prioridad: index === 0 ? "Baja" : "Media",
                 estado: "Reservado"
             }));
-
-        return [...baseAgenda, ...availableBlocks].sort((a, b) => a.hora.localeCompare(b.hora));
     }
 
     function renderMetrics(agenda) {
@@ -224,7 +267,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             turnosDia: agenda.length,
             presentes: agenda.filter((turno) => turno.estado === "Presente").length,
             pendientes: agenda.filter((turno) => turno.estado === "Reservado").length,
-            atencion: agenda.filter((turno) => turno.estado === "En atencion").length,
+            atencion: agenda.filter((turno) => turno.estado === "En atencion" || turno.estado === "En atención").length,
             completados: agenda.filter((turno) => turno.estado === "Completado").length,
             cancelados: agenda.filter((turno) => turno.estado === "Cancelado").length
         };
@@ -257,24 +300,62 @@ document.addEventListener("DOMContentLoaded", async () => {
         `).join("");
     }
 
-    function renderAlerts() {
-        const alerts = [
-            {
+    function renderAlerts(turnos, disponibilidad, usuarios) {
+        const normalizedTurns = turnosList(turnos);
+        const alerts = [];
+        const presentTurn = normalizedTurns.find((turno) => turno.estado === "Presente");
+        const activeTurn = normalizedTurns.find((turno) => turno.estado === "En atencion" || turno.estado === "En atenci\u00f3n");
+        const canceledTurn = normalizedTurns.find((turno) => turno.estado === "Cancelado");
+        const availableSlots = disponibilidad.filter((item) => item.estado === "Disponible");
+
+        if (presentTurn) {
+            const patient = patientById(usuarios, presentTurn.id_paciente);
+            alerts.push({
                 type: "info",
                 icon: "bi-person-check",
-                text: "Paciente Juan Perez se encuentra en sala de espera."
-            },
-            {
+                text: patient
+                    ? `Paciente ${fullName(patient)} se encuentra en sala de espera.`
+                    : "Hay un paciente presente en sala de espera."
+            });
+        }
+
+        if (activeTurn) {
+            const doctor = doctorById(usuarios, activeTurn.id_medico);
+            alerts.push({
                 type: "warning",
                 icon: "bi-clock-history",
-                text: "Consulta del Dr. Gomez permanece abierta desde hace 1 hora y 20 minutos."
-            },
-            {
+                text: doctor
+                    ? `Consulta de ${fullName(doctor)} figura en atencion.`
+                    : "Hay una consulta en atencion."
+            });
+        }
+
+        if (canceledTurn) {
+            const doctor = doctorById(usuarios, canceledTurn.id_medico);
+            alerts.push({
                 type: "danger",
                 icon: "bi-calendar-x",
-                text: "Bloque de Cardiologia cancelado. Se requiere reprogramacion masiva."
-            }
-        ];
+                text: doctor
+                    ? `Turno cancelado para ${doctor.especialidad}. Revisar disponibilidad para reprogramacion.`
+                    : "Hay turnos cancelados pendientes de revision."
+            });
+        }
+
+        if (alerts.length === 0 && availableSlots.length > 0) {
+            alerts.push({
+                type: "info",
+                icon: "bi-calendar-check",
+                text: `${availableSlots.length} bloques disponibles para asignar turnos.`
+            });
+        }
+
+        if (alerts.length === 0) {
+            alerts.push({
+                type: "info",
+                icon: "bi-info-circle",
+                text: "No hay alertas operativas pendientes."
+            });
+        }
         const alertContainer = document.getElementById("secretariaAlertasOperativas");
 
         if (!alertContainer) {
@@ -299,14 +380,14 @@ document.addEventListener("DOMContentLoaded", async () => {
             loadMock("../../assets/mock/turnos.json", fallbackData.turnos),
             loadMock("../../assets/mock/disponibilidad.json", fallbackData.disponibilidad)
         ]);
-        const secretaria = usuarios.secretariaActual || fallbackData.usuarios.secretariaActual;
-        const agenda = buildAgenda(turnos, Array.isArray(disponibilidad) ? disponibilidad : []);
+        const secretaria = currentSecretary(usuarios);
+        const agenda = buildAgenda(turnos, Array.isArray(disponibilidad) ? disponibilidad : [], usuarios);
 
-        setText("secretariaNombreNavbar", `${secretaria.nombre} ${secretaria.apellido}`);
+        setText("secretariaNombreNavbar", fullName(secretaria));
         setText("secretariaFechaActual", formatToday());
         renderMetrics(agenda);
         renderAgenda(agenda);
-        renderAlerts();
+        renderAlerts(turnos, Array.isArray(disponibilidad) ? disponibilidad : [], usuarios);
     }
 
     async function initSecretaryAvailability() {
@@ -320,9 +401,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             loadMock("../../assets/mock/usuarios.json", fallbackData.usuarios),
             loadMock("../../assets/mock/disponibilidad.json", fallbackData.disponibilidad)
         ]);
-        const secretaria = usuarios.secretariaActual || fallbackData.usuarios.secretariaActual;
-        const doctors = (usuarios.usuarios || fallbackData.usuarios.usuarios)
-            .filter((user) => user.rol === "Medico");
+        const secretaria = currentSecretary(usuarios);
+        const doctors = doctorsFromUsers(usuarios);
         const fields = {
             specialty: document.getElementById("disponibilidadEspecialidad"),
             doctor: document.getElementById("disponibilidadMedico"),
@@ -342,7 +422,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const emptyPreview = document.getElementById("bloquesVacio");
         const tableBody = document.getElementById("disponibilidadTabla");
         const message = document.getElementById("disponibilidadMensaje");
-        let availability = readStoredJson("disponibilidadSecretariaMock", disponibilidadMock);
+        let availability = mergeStoredAvailability("disponibilidadSecretariaMock", disponibilidadMock, doctors);
         let generatedBlocks = [];
 
         function doctorFullName(doctor) {
@@ -575,8 +655,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function persistAvailability() {
-            localStorage.setItem("disponibilidadSecretariaMock", JSON.stringify(availability));
-            localStorage.setItem("disponibilidadPacienteMock", JSON.stringify(availability));
+            writeStoredJson("disponibilidadSecretariaMock", availability);
+            writeStoredJson("disponibilidadPacienteMock", availability);
         }
 
         function saveAvailability(event) {
@@ -590,7 +670,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             const maxId = availability.reduce((maxValue, item) => Math.max(maxValue, Number(item.id_disponibilidad) || 0), 0);
             const blocksToSave = generatedBlocks.map((block, index) => ({
                 id_disponibilidad: maxId + index + 1,
-                ...block
+                ...block,
+                origenInterfaz: true
             }));
 
             availability = [...availability, ...blocksToSave];
@@ -613,7 +694,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             sessionStorage.removeItem("disponibilidadSecretariaTemporal");
         }
 
-        setText("disponibilidadSecretariaNavbar", `${secretaria.nombre} ${secretaria.apellido}`);
+        setText("disponibilidadSecretariaNavbar", fullName(secretaria));
         renderSpecialties();
         renderDoctors();
         renderPreview();

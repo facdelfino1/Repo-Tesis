@@ -76,7 +76,12 @@
 
                                     <div class="col-12 col-md-6">
                                         <label for="password" class="form-label">Contraseña</label>
-                                        <input type="password" class="form-control" id="password" name="password" autocomplete="new-password" required>
+                                        <div class="input-group">
+                                            <input type="password" class="form-control" id="password" name="password" autocomplete="new-password" required>
+                                            <button type="button" class="btn btn-outline-secondary" data-action="toggle-password" data-target="password" aria-label="Mostrar contraseÃ±a" title="Mostrar contraseÃ±a">
+                                                <i class="bi bi-eye"></i>
+                                            </button>
+                                        </div>
                                         <div class="form-text">
                                             Minimo 8 caracteres, mayuscula, minuscula, numero y caracter especial.
                                         </div>
@@ -85,7 +90,12 @@
 
                                     <div class="col-12 col-md-6">
                                         <label for="confirmPassword" class="form-label">Confirmar contraseña</label>
-                                        <input type="password" class="form-control" id="confirmPassword" name="confirmPassword" autocomplete="new-password" required>
+                                        <div class="input-group">
+                                            <input type="password" class="form-control" id="confirmPassword" name="confirmPassword" autocomplete="new-password" required>
+                                            <button type="button" class="btn btn-outline-secondary" data-action="toggle-password" data-target="confirmPassword" aria-label="Mostrar contraseÃ±a" title="Mostrar contraseÃ±a">
+                                                <i class="bi bi-eye"></i>
+                                            </button>
+                                        </div>
                                         <div class="invalid-feedback">Las contraseñas deben coincidir.</div>
                                     </div>
                                 </div>
