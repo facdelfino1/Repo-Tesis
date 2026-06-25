@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestion de Turnos</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="stylesheet" href="../../assets/css/styles.css">
+</head>
+<body class="dashboard-page bg-light">
+    <nav class="navbar navbar-expand-lg bg-white border-bottom sticky-top">
+        <div class="container py-2">
+            <a class="navbar-brand fw-semibold text-primary" href="dashboard.html">
+                <i class="bi bi-heart-pulse me-2"></i>Sistema de Triaje
+            </a>
+            <div class="d-flex align-items-center gap-3">
+                <span class="text-secondary small d-none d-md-inline">
+                    Secretaria: <strong id="gestionTurnosSecretariaNavbar">Secretaria</strong>
+                </span>
+                <a href="dashboard.html" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-arrow-left me-1"></i>Volver al dashboard
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container py-4 py-lg-5">
+        <section class="dashboard-hero rounded-4 p-4 p-lg-5 mb-4">
+            <div class="row align-items-center g-4">
+                <div class="col-lg-8">
+                    <span class="badge text-bg-primary mb-3">Recepcion</span>
+                    <h1 class="h2 fw-bold mb-2">Gestion de turnos</h1>
+                    <p class="text-secondary mb-0">
+                        Administre asignaciones, modificaciones y cancelaciones de citas medicas.
+                    </p>
+                </div>
+                <div class="col-lg-4">
+                    <div class="dashboard-status bg-white rounded-3 p-3 shadow-sm">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="status-icon bg-primary-subtle text-primary">
+                                <i class="bi bi-calendar2-check"></i>
+                            </div>
+                            <div>
+                                <p class="text-secondary small mb-1">Operacion</p>
+                                <p class="fw-semibold mb-0" id="gestionTurnosResumen">Turnos en seguimiento</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div id="gestionTurnosMensaje" class="alert d-none" role="alert"></div>
+
+        <section class="card dashboard-card border-0 shadow-sm mb-4">
+            <div class="card-body p-4">
+                <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-3">
+                    <div>
+                        <p class="text-secondary small mb-1">Busqueda</p>
+                        <h2 class="h5 fw-semibold mb-0">Filtros de turnos</h2>
+                    </div>
+                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#asignarTurnoModal">
+                        <i class="bi bi-calendar-plus me-1"></i>Asignar nuevo turno
+                    </button>
+                </div>
+                <div class="row g-3">
+                    <div class="col-12 col-md-4 col-xl-2">
+                        <label for="filtroDniTurno" class="form-label">DNI</label>
+                        <input type="search" class="form-control" id="filtroDniTurno" placeholder="DNI">
+                    </div>
+                    <div class="col-12 col-md-4 col-xl-3">
+                        <label for="filtroPacienteTurno" class="form-label">Paciente</label>
+                        <input type="search" class="form-control" id="filtroPacienteTurno" placeholder="Nombre o apellido">
+                    </div>
+                    <div class="col-12 col-md-4 col-xl-2">
+                        <label for="filtroMedicoTurno" class="form-label">Medico</label>
+                        <select class="form-select" id="filtroMedicoTurno">
+                            <option value="">Todos</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-4 col-xl-2">
+                        <label for="filtroEspecialidadTurno" class="form-label">Especialidad</label>
+                        <select class="form-select" id="filtroEspecialidadTurno">
+                            <option value="">Todas</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-4 col-xl-2">
+                        <label for="filtroFechaTurno" class="form-label">Fecha</label>
+                        <input type="date" class="form-control" id="filtroFechaTurno">
+                    </div>
+                    <div class="col-12 col-md-4 col-xl-1">
+                        <label for="filtroEstadoTurno" class="form-label">Estado</label>
+                        <select class="form-select" id="filtroEstadoTurno">
+                            <option value="">Todos</option>
+                            <option>Reservado</option>
+                            <option>Presente</option>
+                            <option>En atencion</option>
+                            <option>Completado</option>
+                            <option>Cancelado</option>
+                            <option>Ausente</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="card dashboard-card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <div class="d-flex flex-column flex-md-row justify-content-between gap-3 mb-3">
+                    <div>
+                        <p class="text-secondary small mb-1">Agenda</p>
+                        <h2 class="h5 fw-semibold mb-0">Turnos registrados</h2>
+                    </div>
+                    <span class="dashboard-icon bg-info-subtle text-info">
+                        <i class="bi bi-table"></i>
+                    </span>
+                </div>
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Paciente</th>
+                                <th>DNI</th>
+                                <th>Medico</th>
+                                <th>Especialidad</th>
+                                <th>Fecha</th>
+                                <th>Hora</th>
+                                <th>Prioridad</th>
+                                <th>Estado</th>
+                                <th>Origen</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="gestionTurnosTabla">
+                            <tr>
+                                <td colspan="10" class="text-secondary">Cargando turnos simulados...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="modal fade" id="asignarTurnoModal" tabindex="-1" aria-labelledby="asignarTurnoTitulo" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <form id="asignarTurnoForm" data-form="secretary-appointment-create" action="#" method="post" novalidate>
+                    <div class="modal-header">
+                        <h2 class="modal-title h5" id="asignarTurnoTitulo">Asignar nuevo turno</h2>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-12 col-md-3">
+                                <label for="asignarPacienteDni" class="form-label">DNI del paciente</label>
+                                <input type="text" class="form-control" id="asignarPacienteDni" required>
+                            </div>
+                            <div class="col-12 col-md-3">
+                                <label for="asignarPacienteNombre" class="form-label">Nombre</label>
+                                <input type="text" class="form-control" id="asignarPacienteNombre" required>
+                            </div>
+                            <div class="col-12 col-md-3">
+                                <label for="asignarPacienteApellido" class="form-label">Apellido</label>
+                                <input type="text" class="form-control" id="asignarPacienteApellido" required>
+                            </div>
+                            <div class="col-12 col-md-3">
+                                <label for="asignarPacienteTelefono" class="form-label">Telefono</label>
+                                <input type="text" class="form-control" id="asignarPacienteTelefono" required>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label for="asignarPacienteObraSocial" class="form-label">Obra social</label>
+                                <input type="text" class="form-control" id="asignarPacienteObraSocial" required>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label for="asignarEspecialidad" class="form-label">Especialidad</label>
+                                <select class="form-select" id="asignarEspecialidad"></select>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label for="asignarMedico" class="form-label">Medico</label>
+                                <select class="form-select" id="asignarMedico"></select>
+                            </div>
+                        </div>
+
+                        <hr class="my-4">
+
+                        <div class="row g-3">
+                            <div class="col-12 col-lg-7">
+                                <p class="fw-semibold mb-2">Cuestionario de triaje informado por el paciente</p>
+                                <div class="row g-3">
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label d-block">Fiebre</label>
+                                        <div class="btn-group" role="group">
+                                            <input class="btn-check" type="radio" name="asignarFiebre" id="asignarFiebreNo" value="no" checked>
+                                            <label class="btn btn-outline-secondary" for="asignarFiebreNo">No</label>
+                                            <input class="btn-check" type="radio" name="asignarFiebre" id="asignarFiebreSi" value="si">
+                                            <label class="btn btn-outline-secondary" for="asignarFiebreSi">Si</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label d-block">Dolor intenso</label>
+                                        <div class="btn-group" role="group">
+                                            <input class="btn-check" type="radio" name="asignarDolorIntenso" id="asignarDolorIntensoNo" value="no" checked>
+                                            <label class="btn btn-outline-secondary" for="asignarDolorIntensoNo">No</label>
+                                            <input class="btn-check" type="radio" name="asignarDolorIntenso" id="asignarDolorIntensoSi" value="si">
+                                            <label class="btn btn-outline-secondary" for="asignarDolorIntensoSi">Si</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label d-block">Dificultad respiratoria</label>
+                                        <div class="btn-group" role="group">
+                                            <input class="btn-check" type="radio" name="asignarRespiratoria" id="asignarRespiratoriaNo" value="no" checked>
+                                            <label class="btn btn-outline-secondary" for="asignarRespiratoriaNo">No</label>
+                                            <input class="btn-check" type="radio" name="asignarRespiratoria" id="asignarRespiratoriaSi" value="si">
+                                            <label class="btn btn-outline-secondary" for="asignarRespiratoriaSi">Si</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-12">
+                                        <label for="asignarRangoDolor" class="form-label">Dolor percibido: <strong id="asignarRangoDolorValor">0</strong></label>
+                                        <input type="range" class="form-range" min="0" max="10" value="0" id="asignarRangoDolor">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-12 col-lg-5">
+                                <div class="triage-result triage-result-success rounded-3 p-3 h-100" id="asignarTriajeResultado">
+                                    <p class="text-secondary small mb-1">Resultado del triaje</p>
+                                    <p class="h5 fw-semibold mb-2"><span class="badge text-bg-success" id="asignarTriajePrioridad">Baja</span></p>
+                                    <p class="small mb-1">Puntaje: <strong id="asignarTriajePuntaje">2</strong></p>
+                                    <p class="small mb-0">Duracion estimada: <strong id="asignarTriajeDuracion">20</strong> minutos</p>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <label for="asignarDisponibilidad" class="form-label">Horario disponible</label>
+                                <select class="form-select" id="asignarDisponibilidad" required></select>
+                                <div class="form-text" id="asignarDisponibilidadAyuda">Seleccione especialidad o medico para consultar horarios.</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check2-circle me-1"></i>Confirmar turno
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="modificarTurnoModal" tabindex="-1" aria-labelledby="modificarTurnoTitulo" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <form id="modificarTurnoForm" data-form="secretary-appointment-update" action="#" method="post" novalidate>
+                    <div class="modal-header">
+                        <h2 class="modal-title h5" id="modificarTurnoTitulo">Modificar turno</h2>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-light border">
+                            <p class="mb-1"><strong>Paciente:</strong> <span id="modificarPacienteResumen">-</span></p>
+                            <p class="mb-0"><strong>Prioridad original:</strong> <span id="modificarPrioridadResumen" class="badge text-bg-success">-</span></p>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-12 col-md-6">
+                                <label for="modificarEspecialidad" class="form-label">Especialidad</label>
+                                <select class="form-select" id="modificarEspecialidad"></select>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label for="modificarMedico" class="form-label">Medico</label>
+                                <select class="form-select" id="modificarMedico"></select>
+                            </div>
+                            <div class="col-12">
+                                <label for="modificarDisponibilidad" class="form-label">Nuevo horario disponible</label>
+                                <select class="form-select" id="modificarDisponibilidad" required></select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save me-1"></i>Guardar cambios
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="cancelarTurnoModal" tabindex="-1" aria-labelledby="cancelarTurnoTitulo" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5" id="cancelarTurnoTitulo">Cancelar turno</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body">
+                    ¿Esta seguro que desea cancelar este turno? El horario quedara disponible para otros pacientes.
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">No, volver</button>
+                    <button type="button" class="btn btn-danger" id="confirmarCancelarTurnoBtn">Si, cancelar turno</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="detalleTurnoModal" tabindex="-1" aria-labelledby="detalleTurnoTitulo" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5" id="detalleTurnoTitulo">Detalle del turno</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body" id="detalleTurnoContenido"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../assets/js/pages/secretaria.js"></script>
+</body>
+</html>

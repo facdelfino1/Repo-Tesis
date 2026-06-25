@@ -96,7 +96,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 <td>${formatDate(turno.fecha)}</td>
                 <td>${turno.especialidad}</td>
                 <td>${turno.medico}</td>
-                <td><span class="badge ${turno.estado === "Cancelado" ? "text-bg-secondary" : "text-bg-success"}">${turno.estado}</span></td>
+                <td>${stateText(turno.estado)}</td>
             </tr>
         `).join("");
     }
@@ -372,26 +372,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             .sort((a, b) => new Date(`${b.fecha}T00:00:00`) - new Date(`${a.fecha}T00:00:00`))[0] || triaje.ultimoTriaje;
     }
 
-    function stateClass(state) {
-        const normalizedState = state.toLowerCase();
-
-        if (normalizedState === "reservado" || normalizedState === "completado") {
-            return "text-bg-success";
-        }
-
-        if (normalizedState === "pendiente") {
-            return "text-bg-warning";
-        }
-
-        if (normalizedState === "cancelado") {
-            return "text-bg-secondary";
-        }
-
-        if (normalizedState === "ausente") {
-            return "text-bg-danger";
-        }
-
-        return "text-bg-primary";
+    function stateText(state) {
+        return `<strong class="fw-semibold">${state || "-"}</strong>`;
     }
 
     async function initDashboard() {
@@ -910,7 +892,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                                     <p class="text-secondary small mb-1">${turn.especialidad}</p>
                                     <h3 class="h5 fw-semibold mb-0">${turn.medico}</h3>
                                 </div>
-                                <span class="badge align-self-start ${stateClass(turn.estado)}">${turn.estado}</span>
+                                <strong class="fw-semibold align-self-start">${turn.estado}</strong>
                             </div>
                             <dl class="row small mb-3">
                                 <dt class="col-5 text-secondary">Fecha</dt>
@@ -948,7 +930,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     <td>${turn.medico}</td>
                     <td>${formatDate(turn.fecha)}</td>
                     <td>${turn.hora}</td>
-                    <td><span class="badge ${stateClass(turn.estado)}">${turn.estado}</span></td>
+                    <td>${stateText(turn.estado)}</td>
                     <td>${priorityBadge(turn.prioridad)}</td>
                 `;
                 historyTable.appendChild(row);
