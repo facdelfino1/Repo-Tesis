@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Usuarios</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="stylesheet" href="../../assets/css/styles.css">
+</head>
+<body class="dashboard-page bg-light">
+    <nav class="navbar navbar-expand-lg bg-white border-bottom sticky-top">
+        <div class="container py-2">
+            <a class="navbar-brand fw-semibold text-primary" href="dashboard.html">
+                <i class="bi bi-heart-pulse me-2"></i>Sistema de Triaje
+            </a>
+            <div class="d-flex align-items-center gap-3">
+                <span class="text-secondary small d-none d-md-inline">
+                    Administrador: <strong id="adminUsuariosNavbar">Administrador</strong>
+                </span>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container py-4 py-lg-5">
+        <div id="adminUsuariosAccesoMensaje" class="alert alert-danger d-none" role="alert">
+            Acceso no autorizado. Esta pantalla esta disponible solo para usuarios con rol Administrador.
+        </div>
+
+        <section class="dashboard-hero rounded-4 p-4 p-lg-5 mb-4">
+            <div class="row align-items-center g-4">
+                <div class="col-lg-8">
+                    <span class="badge text-bg-primary mb-3">Administración</span>
+                    <h1 class="h2 fw-bold mb-2">Gestión de Usuarios</h1>
+                    <p class="text-secondary mb-0">
+                        Administre cuentas internas, perfiles y permisos de acceso del sistema.
+                    </p>
+                </div>
+                <div class="col-lg-4">
+                    <div class="dashboard-status bg-white rounded-3 p-3 shadow-sm">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="status-icon bg-primary-subtle text-primary">
+                                <i class="bi bi-people"></i>
+                            </div>
+                            <div>
+                                <p class="text-secondary small mb-1">Cuentas Gestiónables</p>
+                                <p class="fw-semibold mb-0">Pacientes, medicos y secretarias</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div id="adminUsuariosMensaje" class="alert d-none" role="alert"></div>
+
+        <section class="card dashboard-card border-0 shadow-sm mb-4">
+            <div class="card-body p-4">
+                <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-4">
+                    <div>
+                        <p class="text-secondary small mb-1">Busqueda</p>
+                        <h2 class="h5 fw-semibold mb-0">Filtros y acciones</h2>
+                    </div>
+                    <button type="button" class="btn btn-primary" id="crearUsuarioInternoBtn">
+                        <i class="bi bi-person-plus me-1"></i>Crear usuario interno
+                    </button>
+                </div>
+                <div class="row g-3">
+                    <div class="col-12 col-lg-8">
+                        <label for="adminUsuariosBusqueda" class="form-label">Buscar usuario</label>
+                        <input type="search" class="form-control" id="adminUsuariosBusqueda" placeholder="Nombre, apellido, DNI o correo">
+                    </div>
+                    <div class="col-12 col-lg-4">
+                        <label for="adminUsuariosRolFiltro" class="form-label">Rol</label>
+                        <select class="form-select" id="adminUsuariosRolFiltro">
+                            <option value="">Todos</option>
+                            <option value="paciente">Pacientes</option>
+                            <option value="medico">Medicos</option>
+                            <option value="secretaria">Secretarias</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="card dashboard-card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <div class="d-flex flex-column flex-md-row justify-content-between gap-3 mb-3">
+                    <div>
+                        <p class="text-secondary small mb-1">Usuarios Gestiónables</p>
+                        <h2 class="h5 fw-semibold mb-0">Listado de usuarios</h2>
+                    </div>
+                    <span class="dashboard-icon bg-info-subtle text-info">
+                        <i class="bi bi-table"></i>
+                    </span>
+                </div>
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Nombre</th>
+                                <th>Apellido</th>
+                                <th>DNI</th>
+                                <th>Email</th>
+                                <th>Telefono</th>
+                                <th>Rol</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="adminGestiónUsuariosTabla">
+                            <tr>
+                                <td colspan="8" class="text-secondary">Cargando usuarios...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="modal fade" id="adminUsuarioCrearModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <form id="adminUsuarioCrearForm" action="#" novalidate>
+                    <div class="modal-header">
+                        <h2 class="modal-title h5">Crear usuario interno</h2>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-12 col-md-6">
+                                <label for="crearUsuarioRol" class="form-label">Rol</label>
+                                <select class="form-select" id="crearUsuarioRol">
+                                    <option value="">Seleccione rol</option>
+                                    <option value="medico">Medico</option>
+                                    <option value="secretaria">Secretaria</option>
+                                </select>
+                                <div class="invalid-feedback" id="crearUsuarioRolError"></div>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label for="crearUsuarioNombre" class="form-label">Nombre</label>
+                                <input type="text" class="form-control" id="crearUsuarioNombre">
+                                <div class="invalid-feedback" id="crearUsuarioNombreError"></div>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label for="crearUsuarioApellido" class="form-label">Apellido</label>
+                                <input type="text" class="form-control" id="crearUsuarioApellido">
+                                <div class="invalid-feedback" id="crearUsuarioApellidoError"></div>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label for="crearUsuarioDni" class="form-label">DNI</label>
+                                <input type="text" class="form-control" id="crearUsuarioDni">
+                                <div class="invalid-feedback" id="crearUsuarioDniError"></div>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label for="crearUsuarioEmail" class="form-label">Email</label>
+                                <input type="email" class="form-control" id="crearUsuarioEmail">
+                                <div class="invalid-feedback" id="crearUsuarioEmailError"></div>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label for="crearUsuarioTelefono" class="form-label">Telefono</label>
+                                <input type="text" class="form-control" id="crearUsuarioTelefono">
+                                <div class="invalid-feedback" id="crearUsuarioTelefonoError"></div>
+                            </div>
+                            <div class="col-12">
+                                <label for="crearUsuarioPassword" class="form-label">Contraseña temporal</label>
+                                <input type="password" class="form-control" id="crearUsuarioPassword" autocomplete="new-password">
+                                <div class="invalid-feedback" id="crearUsuarioPasswordError"></div>
+                                <div class="form-text">Minimo 8 caracteres, mayuscula, minuscula, numero y caracter especial.</div>
+                            </div>
+                            <div class="col-12 col-md-6 d-none" id="crearMedicoMatriculaGrupo">
+                                <label for="crearUsuarioMatricula" class="form-label">Matricula</label>
+                                <input type="text" class="form-control" id="crearUsuarioMatricula">
+                                <div class="invalid-feedback" id="crearUsuarioMatriculaError"></div>
+                            </div>
+                            <div class="col-12 col-md-6 d-none" id="crearMedicoEspecialidadGrupo">
+                                <label for="crearUsuarioEspecialidad" class="form-label">Especialidad</label>
+                                <input type="text" class="form-control" id="crearUsuarioEspecialidad">
+                                <div class="invalid-feedback" id="crearUsuarioEspecialidadError"></div>
+                            </div>
+                            <div class="col-12 d-none" id="crearSecretariaLegajoGrupo">
+                                <label for="crearUsuarioLegajo" class="form-label">Legajo</label>
+                                <input type="text" class="form-control" id="crearUsuarioLegajo">
+                                <div class="invalid-feedback" id="crearUsuarioLegajoError"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Crear usuario</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="adminUsuarioEditarModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <form id="adminUsuarioEditarForm" action="#" novalidate>
+                    <div class="modal-header">
+                        <h2 class="modal-title h5">Editar usuario</h2>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-12 col-md-6">
+                                <label for="editarUsuarioNombre" class="form-label">Nombre</label>
+                                <input type="text" class="form-control" id="editarUsuarioNombre">
+                                <div class="invalid-feedback" id="editarUsuarioNombreError"></div>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label for="editarUsuarioApellido" class="form-label">Apellido</label>
+                                <input type="text" class="form-control" id="editarUsuarioApellido">
+                                <div class="invalid-feedback" id="editarUsuarioApellidoError"></div>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label for="editarUsuarioDni" class="form-label">DNI</label>
+                                <input type="text" class="form-control" id="editarUsuarioDni" readonly>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label for="editarUsuarioRol" class="form-label">Rol</label>
+                                <input type="text" class="form-control" id="editarUsuarioRol" readonly>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label for="editarUsuarioEmail" class="form-label">Email</label>
+                                <input type="email" class="form-control" id="editarUsuarioEmail">
+                                <div class="invalid-feedback" id="editarUsuarioEmailError"></div>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label for="editarUsuarioTelefono" class="form-label">Teléfono</label>
+                                <input type="text" class="form-control" id="editarUsuarioTelefono">
+                                <div class="invalid-feedback" id="editarUsuarioTelefonoError"></div>
+                            </div>
+                            <div class="col-12 col-md-6 d-none" id="editarMedicoMatriculaGrupo">
+                                <label for="editarUsuarioMatricula" class="form-label">Matricula</label>
+                                <input type="text" class="form-control" id="editarUsuarioMatricula">
+                                <div class="invalid-feedback" id="editarUsuarioMatriculaError"></div>
+                            </div>
+                            <div class="col-12 col-md-6 d-none" id="editarMedicoEspecialidadGrupo">
+                                <label for="editarUsuarioEspecialidad" class="form-label">Especialidad</label>
+                                <input type="text" class="form-control" id="editarUsuarioEspecialidad">
+                                <div class="invalid-feedback" id="editarUsuarioEspecialidadError"></div>
+                            </div>
+                            <div class="col-12 d-none" id="editarSecretariaLegajoGrupo">
+                                <label for="editarUsuarioLegajo" class="form-label">Legajo</label>
+                                <input type="text" class="form-control" id="editarUsuarioLegajo">
+                                <div class="invalid-feedback" id="editarUsuarioLegajoError"></div>
+                            </div>
+                            <div class="col-12 d-none" id="editarPacienteObraSocialGrupo">
+                                <label for="editarUsuarioObraSocial" class="form-label">Obra social</label>
+                                <input type="text" class="form-control" id="editarUsuarioObraSocial">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Guardar cambios</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="adminUsuarioDetalleModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5">Detalle del usuario</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body" id="adminUsuarioDetalleContenido"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="adminUsuarioEstadoModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5" id="adminUsuarioEstadoTitulo">Cambiar estado</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body" id="adminUsuarioEstadoTexto"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="adminUsuarioConfirmarEstadoBtn">Confirmar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../assets/js/pages/admin.js"></script>
+</body>
+</html>

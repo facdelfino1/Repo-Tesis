@@ -30,8 +30,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 const isVisible = input.type === "text";
                 input.type = isVisible ? "password" : "text";
-                button.setAttribute("aria-label", isVisible ? "Mostrar contrasena" : "Ocultar contrasena");
-                button.setAttribute("title", isVisible ? "Mostrar contrasena" : "Ocultar contrasena");
+                button.setAttribute("aria-label", isVisible ? "Mostrar contraseña" : "Ocultar contraseña");
+                button.setAttribute("title", isVisible ? "Mostrar contraseña" : "Ocultar contraseña");
 
                 if (icon) {
                     icon.className = isVisible ? "bi bi-eye" : "bi bi-eye-slash";
@@ -44,7 +44,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const dashboards = {
             paciente: "../paciente/dashboard.html",
             secretaria: "../secretaria/dashboard.html",
-            medico: "../medico/dashboard.html"
+            medico: "../medico/dashboard.html",
+            administrador: "../admin/dashboard.html"
         };
 
         return dashboards[role] || "";
@@ -76,7 +77,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const usuariosData = await loadMock("../../assets/mock/usuarios.json", { usuarios: [] });
             const user = (usuariosData.usuarios || []).find((item) => (
                 item.email === emailInput.value.trim()
-                && item.contrasena === passwordInput.value
+                && item.contraseña === passwordInput.value
             ));
 
             setValidity(emailInput, Boolean(user));

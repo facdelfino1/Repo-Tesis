@@ -7,7 +7,7 @@
             "apellido": "Martínez",
             "dni": "32145678",
             "email": "paciente@demo.com",
-            "contrasena": "Paciente123!",
+            "contraseña": "Paciente123!",
             "telefono": "3815551234",
             "obra_social": "OSDE",
             "rol": "paciente"
@@ -19,7 +19,7 @@
             "apellido": "Pérez",
             "dni": "40111222",
             "email": "juan.perez@demo.com",
-            "contrasena": "Paciente123!",
+            "contraseña": "Paciente123!",
             "telefono": "3515559876",
             "obra_social": "Swiss Medical",
             "rol": "paciente"
@@ -31,7 +31,7 @@
             "apellido": "Fernández",
             "dni": "28456789",
             "email": "medico@demo.com",
-            "contrasena": "Medico123!",
+            "contraseña": "Medico123!",
             "telefono": "3515552233",
             "matricula": "MP-12345",
             "especialidad": "Clínica Médica",
@@ -44,7 +44,7 @@
             "apellido": "Gómez",
             "dni": "30123456",
             "email": "martin.gomez@demo.com",
-            "contrasena": "Medico123!",
+            "contraseña": "Medico123!",
             "telefono": "3515553344",
             "matricula": "MP-67890",
             "especialidad": "Cardiología",
@@ -57,7 +57,7 @@
             "apellido": "López",
             "dni": "33777888",
             "email": "secretaria@demo.com",
-            "contrasena": "Secretaria123!",
+            "contraseña": "Secretaria123!",
             "telefono": "3515554455",
             "legajo": "SEC-001",
             "rol": "secretaria"
@@ -69,7 +69,7 @@
             "apellido": "Ramírez",
             "dni": "25666777",
             "email": "admin@demo.com",
-            "contrasena": "Admin123!",
+            "contraseña": "Admin123!",
             "telefono": "3515555566",
             "rol": "administrador"
         }

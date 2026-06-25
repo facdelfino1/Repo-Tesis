@@ -1226,23 +1226,23 @@ document.addEventListener("DOMContentLoaded", async () => {
 
             if (wantsPasswordChange) {
                 if (fields.passwordActual.value === "") {
-                    setFieldError("passwordActual", "Ingrese la contrasena actual.");
+                    setFieldError("passwordActual", "Ingrese la contraseña actual.");
                     isValid = false;
                 }
 
                 if (fields.passwordNueva.value === "") {
-                    setFieldError("passwordNueva", "Ingrese la nueva contrasena.");
+                    setFieldError("passwordNueva", "Ingrese la nueva contraseña.");
                     isValid = false;
                 } else if (!isStrongPassword(fields.passwordNueva.value)) {
-                    setFieldError("passwordNueva", "La contrasena debe cumplir los requisitos de seguridad.");
+                    setFieldError("passwordNueva", "La contraseña debe cumplir los requisitos de seguridad.");
                     isValid = false;
                 }
 
                 if (fields.passwordConfirmar.value === "") {
-                    setFieldError("passwordConfirmar", "Confirme la nueva contrasena.");
+                    setFieldError("passwordConfirmar", "Confirme la nueva contraseña.");
                     isValid = false;
                 } else if (fields.passwordConfirmar.value !== fields.passwordNueva.value) {
-                    setFieldError("passwordConfirmar", "La confirmacion no coincide con la nueva contrasena.");
+                    setFieldError("passwordConfirmar", "La confirmacion no coincide con la nueva contraseña.");
                     isValid = false;
                 }
             }
@@ -1265,7 +1265,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
                     input.type = isVisible ? "password" : "text";
                     icon.className = isVisible ? "bi bi-eye" : "bi bi-eye-slash";
-                    button.setAttribute("aria-label", isVisible ? "Mostrar contrasena" : "Ocultar contrasena");
+                    button.setAttribute("aria-label", isVisible ? "Mostrar contraseña" : "Ocultar contraseña");
                 });
             });
         }

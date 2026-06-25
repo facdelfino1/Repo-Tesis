@@ -116,6 +116,64 @@ body {
     transform: translateY(-1px);
 }
 
+.metric-donut-layout {
+    align-items: center;
+    display: grid;
+    gap: 1.5rem;
+    justify-items: center;
+}
+
+.metric-donut {
+    aspect-ratio: 1;
+    border-radius: 50%;
+    display: grid;
+    max-width: 14rem;
+    min-width: 11rem;
+    place-items: center;
+    position: relative;
+    width: 100%;
+}
+
+.metric-donut::before {
+    background: #ffffff;
+    border-radius: 50%;
+    content: "";
+    inset: 24%;
+    position: absolute;
+}
+
+.metric-donut-center {
+    display: grid;
+    line-height: 1.15;
+    place-items: center;
+    position: relative;
+    text-align: center;
+    z-index: 1;
+}
+
+.metric-donut-legend {
+    display: grid;
+    gap: 0.85rem;
+    width: 100%;
+}
+
+.metric-donut-legend-item {
+    align-items: center;
+    border: 1px solid rgba(108, 117, 125, 0.12);
+    border-radius: 0.75rem;
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.8rem 0.9rem;
+}
+
+.metric-donut-dot {
+    border-radius: 50%;
+    display: inline-flex;
+    flex: 0 0 auto;
+    height: 0.85rem;
+    width: 0.85rem;
+}
+
 .table > :not(caption) > * > * {
     padding: 0.9rem 0.75rem;
 }

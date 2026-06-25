@@ -87,7 +87,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     ...doctor,
                     id_medico: doctor.id_medico || doctor.id,
                     rol: "medico",
-                    contrasena: user.contrasena
+                    contraseña: user.contraseña
                 };
             });
         }
@@ -103,7 +103,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 dni: doctor.dni,
                 email: doctor.email,
                 telefono: doctor.telefono,
-                contrasena: doctor.contrasena,
+                contraseña: doctor.contraseña,
                 especialidad: doctor.especialidad,
                 matricula: doctor.matricula,
                 rol: "medico"
@@ -489,26 +489,26 @@ document.addEventListener("DOMContentLoaded", async () => {
 
             if (wantsPasswordChange) {
                 if (fields.passwordActual.value === "") {
-                    setFieldError("passwordActual", "Ingrese la contrasena actual.");
+                    setFieldError("passwordActual", "Ingrese la contraseña actual.");
                     isValid = false;
-                } else if (doctor.contrasena && fields.passwordActual.value !== doctor.contrasena) {
-                    setFieldError("passwordActual", "La contrasena actual no coincide.");
+                } else if (doctor.contraseña && fields.passwordActual.value !== doctor.contraseña) {
+                    setFieldError("passwordActual", "La contraseña actual no coincide.");
                     isValid = false;
                 }
 
                 if (fields.passwordNueva.value === "") {
-                    setFieldError("passwordNueva", "Ingrese la nueva contrasena.");
+                    setFieldError("passwordNueva", "Ingrese la nueva contraseña.");
                     isValid = false;
                 } else if (!isStrongPassword(fields.passwordNueva.value)) {
-                    setFieldError("passwordNueva", "La contrasena debe cumplir los requisitos de seguridad.");
+                    setFieldError("passwordNueva", "La contraseña debe cumplir los requisitos de seguridad.");
                     isValid = false;
                 }
 
                 if (fields.passwordConfirmar.value === "") {
-                    setFieldError("passwordConfirmar", "Confirme la nueva contrasena.");
+                    setFieldError("passwordConfirmar", "Confirme la nueva contraseña.");
                     isValid = false;
                 } else if (fields.passwordConfirmar.value !== fields.passwordNueva.value) {
-                    setFieldError("passwordConfirmar", "La confirmacion no coincide con la nueva contrasena.");
+                    setFieldError("passwordConfirmar", "La confirmacion no coincide con la nueva contraseña.");
                     isValid = false;
                 }
             }
@@ -529,7 +529,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     const isVisible = input.type === "text";
                     input.type = isVisible ? "password" : "text";
                     icon.className = isVisible ? "bi bi-eye" : "bi bi-eye-slash";
-                    button.setAttribute("aria-label", isVisible ? "Mostrar contrasena" : "Ocultar contrasena");
+                    button.setAttribute("aria-label", isVisible ? "Mostrar contraseña" : "Ocultar contraseña");
                 });
             });
         }
@@ -560,7 +560,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             };
 
             if (fields.passwordNueva.value !== "") {
-                updatedDoctor.contrasena = fields.passwordNueva.value;
+                updatedDoctor.contraseña = fields.passwordNueva.value;
                 updatedDoctor.passwordActualizada = true;
             }
 

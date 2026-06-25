@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestion de Turnos</title>
+    <title>Gestión de Turnos</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <link rel="stylesheet" href="../../assets/css/styles.css">
@@ -16,11 +16,8 @@
             </a>
             <div class="d-flex align-items-center gap-3">
                 <span class="text-secondary small d-none d-md-inline">
-                    Secretaria: <strong id="gestionTurnosSecretariaNavbar">Secretaria</strong>
+                    Secretaria: <strong id="GestiónTurnosSecretariaNavbar">Secretaria</strong>
                 </span>
-                <a href="dashboard.html" class="btn btn-outline-secondary btn-sm">
-                    <i class="bi bi-arrow-left me-1"></i>Volver al dashboard
-                </a>
             </div>
         </div>
     </nav>
@@ -30,7 +27,7 @@
             <div class="row align-items-center g-4">
                 <div class="col-lg-8">
                     <span class="badge text-bg-primary mb-3">Recepcion</span>
-                    <h1 class="h2 fw-bold mb-2">Gestion de turnos</h1>
+                    <h1 class="h2 fw-bold mb-2">Gestión de turnos</h1>
                     <p class="text-secondary mb-0">
                         Administre asignaciones, modificaciones y cancelaciones de citas medicas.
                     </p>
@@ -43,7 +40,7 @@
                             </div>
                             <div>
                                 <p class="text-secondary small mb-1">Operacion</p>
-                                <p class="fw-semibold mb-0" id="gestionTurnosResumen">Turnos en seguimiento</p>
+                                <p class="fw-semibold mb-0" id="GestiónTurnosResumen">Turnos en seguimiento</p>
                             </div>
                         </div>
                     </div>
@@ -51,7 +48,7 @@
             </div>
         </section>
 
-        <div id="gestionTurnosMensaje" class="alert d-none" role="alert"></div>
+        <div id="GestiónTurnosMensaje" class="alert d-none" role="alert"></div>
 
         <section class="card dashboard-card border-0 shadow-sm mb-4">
             <div class="card-body p-4">
@@ -132,7 +129,7 @@
                                 <th>Acciones</th>
                             </tr>
                         </thead>
-                        <tbody id="gestionTurnosTabla">
+                        <tbody id="GestiónTurnosTabla">
                             <tr>
                                 <td colspan="10" class="text-secondary">Cargando turnos simulados...</td>
                             </tr>
