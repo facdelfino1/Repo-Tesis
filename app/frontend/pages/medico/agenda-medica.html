@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agenda Medica</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="stylesheet" href="../../assets/css/styles.css">
+</head>
+<body class="dashboard-page bg-light">
+    <nav class="navbar navbar-expand-lg bg-white border-bottom sticky-top">
+        <div class="container py-2">
+            <a class="navbar-brand fw-semibold text-primary" href="dashboard.html">
+                <i class="bi bi-heart-pulse me-2"></i>Sistema de Triaje
+            </a>
+            <div class="d-flex align-items-center gap-3">
+                <span class="text-secondary small d-none d-sm-inline">
+                    Medico: <strong id="agendaMedicaNavbar">Medico</strong>
+                </span>
+                <a href="dashboard.html" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-arrow-left me-1"></i>Volver al Dashboard
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container py-4 py-lg-5">
+        <div id="agendaMedicaAccesoMensaje" class="alert alert-danger d-none" role="alert">
+            Acceso no autorizado. Esta pantalla esta disponible solo para usuarios con rol Medico.
+        </div>
+
+        <section class="dashboard-hero rounded-4 p-4 p-lg-5 mb-4">
+            <div class="row align-items-center g-4">
+                <div class="col-lg-8">
+                    <span class="badge text-bg-primary mb-3">Portal Medico</span>
+                    <h1 class="h2 fw-bold mb-2">Agenda Medica</h1>
+                    <p class="text-secondary mb-0">
+                        Consulte sus turnos asignados y gestione el estado de atencion de sus pacientes.
+                    </p>
+                </div>
+                <div class="col-lg-4">
+                    <div class="dashboard-status bg-white rounded-3 p-3 shadow-sm">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="status-icon bg-primary-subtle text-primary">
+                                <i class="bi bi-calendar2-week"></i>
+                            </div>
+                            <div>
+                                <p class="text-secondary small mb-1">Especialidad</p>
+                                <p class="fw-semibold mb-0" id="agendaMedicaEspecialidad">-</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div id="agendaMedicaMensaje" class="alert d-none" role="alert"></div>
+        <div id="agendaMedicaPresentesAlerta" class="alert alert-info d-none" role="alert">
+            Hay pacientes registrados en sala de espera pendientes de atencion.
+        </div>
+        <div id="agendaMedicaAtencionAlerta" class="alert alert-warning d-none" role="alert">
+            Existe una consulta en atencion por mas de una hora. Verifique si corresponde finalizarla.
+        </div>
+
+        <section class="card dashboard-card border-0 shadow-sm mb-4">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-start gap-3 mb-4">
+                    <div>
+                        <p class="text-secondary small mb-1">Busqueda</p>
+                        <h2 class="h5 fw-semibold mb-0">Filtros de agenda</h2>
+                    </div>
+                    <span class="dashboard-icon bg-primary-subtle text-primary">
+                        <i class="bi bi-funnel"></i>
+                    </span>
+                </div>
+                <form id="agendaMedicaFiltros" class="row g-3">
+                    <div class="col-12 col-md-6 col-xl-2">
+                        <label for="agendaMedicaFiltroFecha" class="form-label">Fecha</label>
+                        <input type="date" class="form-control" id="agendaMedicaFiltroFecha">
+                    </div>
+                    <div class="col-12 col-md-6 col-xl-2">
+                        <label for="agendaMedicaFiltroEstado" class="form-label">Estado</label>
+                        <select class="form-select" id="agendaMedicaFiltroEstado">
+                            <option value="">Todos</option>
+                            <option value="Reservado">Reservado</option>
+                            <option value="Presente">Presente</option>
+                            <option value="En atencion">En atencion</option>
+                            <option value="Completado">Completado</option>
+                            <option value="Cancelado">Cancelado</option>
+                            <option value="Ausente">Ausente</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-6 col-xl-2">
+                        <label for="agendaMedicaFiltroPrioridad" class="form-label">Prioridad</label>
+                        <select class="form-select" id="agendaMedicaFiltroPrioridad">
+                            <option value="">Todas</option>
+                            <option value="Alta">Alta</option>
+                            <option value="Media">Media</option>
+                            <option value="Baja">Baja</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-6 col-xl-2">
+                        <label for="agendaMedicaFiltroDni" class="form-label">DNI</label>
+                        <input type="search" class="form-control" id="agendaMedicaFiltroDni" placeholder="Buscar DNI">
+                    </div>
+                    <div class="col-12 col-xl-4">
+                        <label for="agendaMedicaFiltroPaciente" class="form-label">Paciente</label>
+                        <div class="input-group">
+                            <input type="search" class="form-control" id="agendaMedicaFiltroPaciente" placeholder="Nombre o apellido">
+                            <button class="btn btn-outline-secondary" type="reset">
+                                <i class="bi bi-arrow-counterclockwise me-1"></i>Restablecer
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <section class="card dashboard-card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <div class="d-flex flex-column flex-md-row justify-content-between gap-3 mb-3">
+                    <div>
+                        <p class="text-secondary small mb-1">Atencion diaria</p>
+                        <h2 class="h5 fw-semibold mb-0">Turnos asignados</h2>
+                    </div>
+                    <span class="dashboard-icon bg-info-subtle text-info">
+                        <i class="bi bi-table"></i>
+                    </span>
+                </div>
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Hora</th>
+                                <th>Paciente</th>
+                                <th>DNI</th>
+                                <th>Obra social</th>
+                                <th>Prioridad</th>
+                                <th>Puntaje</th>
+                                <th>Duracion</th>
+                                <th>Estado</th>
+                                <th>Accion</th>
+                            </tr>
+                        </thead>
+                        <tbody id="agendaMedicaTabla">
+                            <tr>
+                                <td colspan="9" class="text-secondary">Cargando agenda medica...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="modal fade" id="agendaMedicaAccionModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5" id="agendaMedicaAccionTitulo">Confirmar accion</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-0" id="agendaMedicaAccionTexto">Confirme la accion seleccionada.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="agendaMedicaConfirmarAccion">Confirmar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="agendaMedicaDetalleModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5">Detalle del turno</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body" id="agendaMedicaDetalleContenido"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../assets/js/pages/medico.js"></script>
+</body>
+</html>

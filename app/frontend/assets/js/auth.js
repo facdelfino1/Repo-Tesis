@@ -43,7 +43,8 @@ document.addEventListener("DOMContentLoaded", () => {
     function roleDashboard(role) {
         const dashboards = {
             paciente: "../paciente/dashboard.html",
-            secretaria: "../secretaria/dashboard.html"
+            secretaria: "../secretaria/dashboard.html",
+            medico: "../medico/dashboard.html"
         };
 
         return dashboards[role] || "";
