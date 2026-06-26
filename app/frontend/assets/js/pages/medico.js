@@ -224,6 +224,19 @@ document.addEventListener("DOMContentLoaded", async () => {
         return turn.hora_cierre || turn.hora_fin_atencion || "";
     }
 
+    function arrivalValue(turn) {
+        if (turn.hora_llegada || turn.hora_arribo) {
+            return turn.hora_llegada || turn.hora_arribo;
+        }
+
+        if (turn.fecha_hora_arribo || turn.fecha_arribo) {
+            const date = new Date(turn.fecha_hora_arribo || turn.fecha_arribo);
+            return Number.isNaN(date.getTime()) ? "-" : currentTimeValue(date);
+        }
+
+        return "-";
+    }
+
     function attentionStartDate(turn) {
         const start = consultationStartValue(turn);
 
@@ -1009,6 +1022,10 @@ document.addEventListener("DOMContentLoaded", async () => {
             writeStoredJson("turnosMedicoMock", turns);
         }
 
+        function doctorId() {
+            return doctor.id_medico || doctor.id;
+        }
+
         function defaultAgendaDate() {
             const today = todayInputValue();
 
@@ -1122,8 +1139,12 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         function openActionModal(type, turnId) {
             const turn = turns.find((item) => String(item.id_turno) === String(turnId));
+            const state = turn ? normalizeState(turn.estado) : "";
+            const isOwnTurn = turn && String(turn.id_medico) === String(doctorId());
+            const isValidAction = (type === "start" && state === "presente")
+                || (type === "finish" && state === "en atencion");
 
-            if (!turn || !actionModal) {
+            if (!turn || !isOwnTurn || !isValidAction || !actionModal) {
                 return;
             }
 
@@ -1150,13 +1171,20 @@ document.addEventListener("DOMContentLoaded", async () => {
 
             const now = new Date();
             const currentHour = currentTimeValue(now);
+            let actionApplied = false;
 
             turns = turns.map((turn) => {
                 if (String(turn.id_turno) !== String(selectedAction.turnId)) {
                     return turn;
                 }
 
+                if (String(turn.id_medico) !== String(doctorId())) {
+                    return turn;
+                }
+
                 if (selectedAction.type === "start" && normalizeState(turn.estado) === "presente") {
+                    actionApplied = true;
+
                     return {
                         ...turn,
                         estado: "En atencion",
@@ -1166,6 +1194,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                 }
 
                 if (selectedAction.type === "finish" && normalizeState(turn.estado) === "en atencion") {
+                    actionApplied = true;
+
                     return {
                         ...turn,
                         estado: "Completado",
@@ -1177,6 +1207,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 
                 return turn;
             });
+
+            if (!actionApplied) {
+                if (actionModal) {
+                    actionModal.hide();
+                }
+
+                showMessage("warning", "La accion no esta disponible para el estado actual del turno.");
+                selectedAction = null;
+                return;
+            }
 
             persistTurns();
             renderTable();
@@ -1241,8 +1281,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                     <dd class="col-sm-8">${escapeHtml(turn.duracion_estimada || "-")} minutos</dd>
                     <dt class="col-sm-4 text-secondary">Estado</dt>
                     <dd class="col-sm-8">${stateText(escapeHtml(turn.estado))}</dd>
-                    <dt class="col-sm-4 text-secondary">Hora de arribo</dt>
-                    <dd class="col-sm-8">${escapeHtml(turn.hora_arribo || turn.hora_llegada || "-")}</dd>
+                    <dt class="col-sm-4 text-secondary">Hora de llegada</dt>
+                    <dd class="col-sm-8">${escapeHtml(arrivalValue(turn))}</dd>
                     <dt class="col-sm-4 text-secondary">Hora de inicio</dt>
                     <dd class="col-sm-8">${escapeHtml(consultationStartValue(turn) || "-")}</dd>
                     <dt class="col-sm-4 text-secondary">Hora de cierre</dt>

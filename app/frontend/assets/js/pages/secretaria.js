@@ -2062,7 +2062,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                         <td>${escapeHtml(doctor ? doctorFullName(doctor) : "-")}</td>
                         <td>${escapeHtml(specialty || "-")}</td>
                         <td>${escapeHtml(turn.hora_inicio)}</td>
-                        <td><span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(turn.color_prioridad || turn.prioridad)}</span></td>
+                        <td><span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(priorityLabel(turn.prioridad))}</span></td>
                         <td>${stateText(turn.estado)}</td>
                         <td>${escapeHtml(arrivalTime(turn))}</td>
                         <td>${actionButtons(turn)}</td>
@@ -2135,7 +2135,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     <dt class="col-sm-4 text-secondary">Hora</dt>
                     <dd class="col-sm-8">${escapeHtml(turn.hora_inicio)} a ${escapeHtml(turn.hora_fin || "-")}</dd>
                     <dt class="col-sm-4 text-secondary">Prioridad</dt>
-                    <dd class="col-sm-8"><span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(turn.color_prioridad || turn.prioridad)}</span></dd>
+                    <dd class="col-sm-8"><span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(priorityLabel(turn.prioridad))}</span></dd>
                     <dt class="col-sm-4 text-secondary">Estado</dt>
                     <dd class="col-sm-8">${stateText(turn.estado)}</dd>
                     <dt class="col-sm-4 text-secondary">Hora de llegada</dt>
@@ -2223,7 +2223,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         const confirmModal = new bootstrap.Modal(document.getElementById("finalizacionConfirmarModal"));
         const detailModal = new bootstrap.Modal(document.getElementById("finalizacionDetalleModal"));
         const message = document.getElementById("finalizacionMensaje");
-        const longAttentionAlert = document.getElementById("finalizacionAlertaExtendida");
 
         function normalizeText(value) {
             return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -2426,20 +2425,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             return `${hours} h ${remainingMinutes.toString().padStart(2, "0")} min`;
         }
 
-        function isLongAttention(turn) {
-            if (normalizeState(turn.estado) !== "en atencion") {
-                return false;
-            }
-
-            const startDate = attentionStartDate(turn);
-
-            if (!startDate) {
-                return false;
-            }
-
-            return Date.now() - startDate.getTime() > 60 * 60 * 1000;
-        }
-
         function renderMetrics() {
             const visibleTurns = filteredTurns();
             const activeTurns = visibleTurns.filter((turn) => normalizeState(turn.estado) === "en atencion");
@@ -2448,7 +2433,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             setText("finalizacionMetricAtencion", activeTurns.length);
             setText("finalizacionMetricCompletadas", completedTurns.length);
             setText("finalizacionMetricPendientes", activeTurns.length);
-            longAttentionAlert.classList.toggle("d-none", !turns.some(isLongAttention));
         }
 
         function actionButtons(turn) {
@@ -2491,7 +2475,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                         <td>${escapeHtml(doctor ? doctorFullName(doctor) : "-")}</td>
                         <td>${escapeHtml(specialty || "-")}</td>
                         <td>${escapeHtml(turn.hora_inicio)}</td>
-                        <td><span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(turn.color_prioridad || turn.prioridad)}</span></td>
+                        <td><span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(priorityLabel(turn.prioridad))}</span></td>
                         <td>${stateText(turn.estado)}</td>
                         <td>${escapeHtml(consultationStartValue(turn))}</td>
                         <td>${escapeHtml(consultationEndValue(turn))}</td>
@@ -2567,7 +2551,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     <dt class="col-sm-4 text-secondary">Hora</dt>
                     <dd class="col-sm-8">${escapeHtml(turn.hora_inicio)} a ${escapeHtml(turn.hora_fin || "-")}</dd>
                     <dt class="col-sm-4 text-secondary">Prioridad</dt>
-                    <dd class="col-sm-8"><span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(turn.color_prioridad || turn.prioridad)}</span></dd>
+                    <dd class="col-sm-8"><span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(priorityLabel(turn.prioridad))}</span></dd>
                     <dt class="col-sm-4 text-secondary">Estado</dt>
                     <dd class="col-sm-8">${stateText(turn.estado)}</dd>
                     <dt class="col-sm-4 text-secondary">Hora de inicio</dt>

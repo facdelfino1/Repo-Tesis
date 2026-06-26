@@ -12,7 +12,7 @@
     <nav class="navbar navbar-expand-lg bg-white border-bottom sticky-top">
         <div class="container py-2">
             <a class="navbar-brand fw-semibold text-primary" href="dashboard.html">
-                <i class="bi bi-heart-pulse me-2"></i>Sistema de Triaje
+                <i class="bi bi-heart-pulse me-2"></i>Consultorios Privados Jovita
             </a>
             <div class="d-flex align-items-center gap-3">
                 <span class="text-secondary small d-none d-md-inline">
@@ -26,11 +26,8 @@
         <section class="dashboard-hero rounded-4 p-4 p-lg-5 mb-4">
             <div class="row align-items-center g-4">
                 <div class="col-lg-8">
-                    <span class="badge text-bg-primary mb-3">Recepcion</span>
-                    <h1 class="h2 fw-bold mb-2">Finalizacion de Consulta</h1>
-                    <p class="text-secondary mb-0">
-                        Registre la finalizacion de la atencion medica y actualice el estado del turno.
-                    </p>
+                    <span class="badge text-bg-primary mb-3">Recepción</span>
+                    <h1 class="h2 fw-bold mb-2">Finalización de Consulta</h1>
                 </div>
                 <div class="col-lg-4">
                     <div class="dashboard-status bg-white rounded-3 p-3 shadow-sm">
@@ -39,7 +36,6 @@
                                 <i class="bi bi-clipboard2-check"></i>
                             </div>
                             <div>
-                                <p class="text-secondary small mb-1">HU-008</p>
                                 <p class="fw-semibold mb-0">Cierre administrativo</p>
                             </div>
                         </div>
@@ -49,10 +45,6 @@
         </section>
 
         <div id="finalizacionMensaje" class="alert d-none" role="alert"></div>
-        <div id="finalizacionAlertaExtendida" class="alert alert-warning d-none" role="alert">
-            Existe una consulta con mas de una hora en atencion. Verifique si corresponde finalizarla.
-        </div>
-
         <section class="row g-3 mb-4">
             <div class="col-12 col-md-4">
                 <article class="card dashboard-card border-0 shadow-sm h-100">
@@ -101,7 +93,7 @@
                         <input type="search" class="form-control" id="finalizacionFiltroPaciente" placeholder="Nombre o apellido">
                     </div>
                     <div class="col-12 col-md-4 col-xl-2">
-                        <label for="finalizacionFiltroMedico" class="form-label">Medico</label>
+                        <label for="finalizacionFiltroMedico" class="form-label">Médico</label>
                         <select class="form-select" id="finalizacionFiltroMedico">
                             <option value="">Todos</option>
                         </select>
@@ -137,14 +129,14 @@
                             <tr>
                                 <th>Paciente</th>
                                 <th>DNI</th>
-                                <th>Medico</th>
+                                <th>Médico</th>
                                 <th>Especialidad</th>
                                 <th>Hora</th>
                                 <th>Prioridad</th>
                                 <th>Estado</th>
                                 <th>Hora de inicio</th>
                                 <th>Hora de cierre</th>
-                                <th>Accion</th>
+                                <th>Acción</th>
                             </tr>
                         </thead>
                         <tbody id="finalizacionTabla">
@@ -166,7 +158,7 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                 </div>
                 <div class="modal-body">
-                    ¿Desea registrar la finalizacion de esta consulta? El turno cambiara a estado Completado.
+                    ¿Desea registrar la finalización de esta consulta? El turno cambiara a estado Completado.
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>

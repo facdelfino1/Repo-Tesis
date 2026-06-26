@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Medico</title>
+    <title>Dashboard Médico</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <link rel="stylesheet" href="../../assets/css/styles.css">
@@ -12,11 +12,11 @@
     <nav class="navbar navbar-expand-lg bg-white border-bottom sticky-top">
         <div class="container py-2">
             <a class="navbar-brand fw-semibold text-primary" href="dashboard.html">
-                <i class="bi bi-heart-pulse me-2"></i>Sistema de Triaje
+                <i class="bi bi-heart-pulse me-2"></i>Consultorios Privados Jovita
             </a>
             <div class="d-flex align-items-center gap-3">
                 <span class="text-secondary small d-none d-md-inline">
-                    Medico: <strong id="medicoNombreNavbar">Medico</strong>
+                    Médico: <strong id="medicoNombreNavbar">Médico</strong>
                 </span>
                 <span class="badge text-bg-light border text-secondary" id="medicoFechaActual">-</span>
                 <a href="../auth/login.html" class="btn btn-outline-primary btn-sm">
@@ -28,17 +28,14 @@
 
     <main class="container py-4 py-lg-5">
         <div id="medicoAccesoMensaje" class="alert alert-danger d-none" role="alert">
-            Acceso no autorizado. Esta pantalla esta disponible solo para usuarios con rol Medico.
+            Acceso no autorizado. Esta pantalla esta disponible solo para usuarios con rol Médico.
         </div>
 
         <section class="dashboard-hero rounded-4 p-4 p-lg-5 mb-4">
             <div class="row align-items-center g-4">
                 <div class="col-lg-8">
-                    <span class="badge text-bg-primary mb-3">Panel Medico</span>
-                    <h1 class="h2 fw-bold mb-2">Agenda profesional</h1>
-                    <p class="text-secondary mb-0">
-                        Visualice sus turnos del dia, pacientes presentes y prioridades clinicas derivadas del triaje.
-                    </p>
+                    <span class="badge text-bg-primary mb-3">Panel Médico</span>
+                    <h1 class="h2 fw-bold mb-2">Agenda Profesional</h1>
                 </div>
                 <div class="col-lg-4">
                     <div class="dashboard-status bg-white rounded-3 p-3 shadow-sm">
@@ -76,7 +73,7 @@
             <div class="col-6 col-lg">
                 <article class="card dashboard-card border-0 shadow-sm h-100">
                     <div class="card-body">
-                        <p class="text-secondary small mb-1">En atencion</p>
+                        <p class="text-secondary small mb-1">En atención</p>
                         <p class="h4 fw-bold mb-0" id="medicoMetricAtencion">0</p>
                     </div>
                 </article>
@@ -115,7 +112,7 @@
                         <a href="agenda-medica.html" class="quick-action-card card border h-100 text-decoration-none text-body">
                             <div class="card-body">
                                 <i class="bi bi-calendar2-week text-primary fs-4"></i>
-                                <p class="fw-semibold mb-1 mt-2">Agenda medica</p>
+                                <p class="fw-semibold mb-1 mt-2">Agenda Médica</p>
                             </div>
                         </a>
                     </div>
@@ -131,7 +128,7 @@
                         <a href="reprogramacion-medico.html" class="quick-action-card card border h-100 text-decoration-none text-body">
                             <div class="card-body">
                                 <i class="bi bi-arrow-repeat text-warning fs-4"></i>
-                                <p class="fw-semibold mb-1 mt-2">Reprogramacion masiva</p>
+                                <p class="fw-semibold mb-1 mt-2">Reprogramación Masiva</p>
                             </div>
                         </a>
                     </div>
@@ -139,7 +136,7 @@
                         <a href="perfil-medico.html" class="quick-action-card card border h-100 text-decoration-none text-body">
                             <div class="card-body">
                                 <i class="bi bi-person text-primary fs-4"></i>
-                                <p class="fw-semibold mb-1 mt-2">Mi perfil</p>
+                                <p class="fw-semibold mb-1 mt-2">Mi Perfil</p>
                             </div>
                         </a>
                     </div>
@@ -151,8 +148,8 @@
             <div class="card-body p-4">
                 <div class="d-flex flex-column flex-md-row justify-content-between gap-3 mb-3">
                     <div>
-                        <p class="text-secondary small mb-1">Agenda resumida</p>
-                        <h2 class="h5 fw-semibold mb-0">Turnos del dia</h2>
+                        <p class="text-secondary small mb-1">Agenda Resumida</p>
+                        <h2 class="h5 fw-semibold mb-0">Turnos del Día</h2>
                     </div>
                     <span class="dashboard-icon bg-info-subtle text-info">
                         <i class="bi bi-table"></i>
@@ -167,13 +164,13 @@
                                 <th>DNI</th>
                                 <th>Prioridad</th>
                                 <th>Estado</th>
-                                <th>Duracion estimada</th>
-                                <th>Accion</th>
+                                <th>Duración estimada</th>
+                                <th>Acción</th>
                             </tr>
                         </thead>
                         <tbody id="medicoAgendaDia">
                             <tr>
-                                <td colspan="7" class="text-secondary">Cargando agenda medica...</td>
+                                <td colspan="7" class="text-secondary">Cargando agenda médica...</td>
                             </tr>
                         </tbody>
                     </table>

@@ -12,7 +12,7 @@
     <nav class="navbar navbar-expand-lg bg-white border-bottom sticky-top">
         <div class="container py-2">
             <a class="navbar-brand fw-semibold text-primary" href="dashboard.html">
-                <i class="bi bi-heart-pulse me-2"></i>Sistema de Triaje
+                <i class="bi bi-heart-pulse me-2"></i>Consultorios Privados Jovita
             </a>
             <div class="d-flex align-items-center gap-3">
                 <span class="text-secondary small d-none d-md-inline">
@@ -28,9 +28,6 @@
                 <div class="col-lg-8">
                     <span class="badge text-bg-primary mb-3">Agenda adaptativa</span>
                     <h1 class="h2 fw-bold mb-2">Reprogramacion Masiva</h1>
-                    <p class="text-secondary mb-0">
-                        Reubique turnos afectados por la cancelacion de un bloque de atencion medica.
-                    </p>
                 </div>
                 <div class="col-lg-4">
                     <div class="dashboard-status bg-white rounded-3 p-3 shadow-sm">
@@ -39,8 +36,7 @@
                                 <i class="bi bi-arrow-repeat"></i>
                             </div>
                             <div>
-                                <p class="text-secondary small mb-1">HU-006</p>
-                                <p class="fw-semibold mb-0">Motor de reprogramacion</p>
+                                <p class="fw-semibold mb-0">Motor de reprogramación</p>
                             </div>
                         </div>
                     </div>
@@ -49,27 +45,18 @@
         </section>
 
         <div id="reprogramacionMensaje" class="alert d-none" role="alert"></div>
-        <div class="alert alert-info" role="alert">
-            La reprogramacion masiva se utiliza unicamente cuando un medico debe cancelar un bloque horario previamente cargado por un imprevisto. El sistema reubicara automaticamente los turnos afectados respetando la prioridad clinica obtenida mediante triaje.
-        </div>
-
         <form id="reprogramacionForm" data-form="secretary-mass-reschedule" action="#" method="post" novalidate>
             <section class="card dashboard-card border-0 shadow-sm mb-4">
                 <div class="card-body p-4">
                     <div class="d-flex flex-column flex-md-row justify-content-between gap-3 mb-3">
                         <div>
                             <p class="text-secondary small mb-1">Bloque afectado</p>
-                            <h2 class="h5 fw-semibold mb-0">Seleccion de agenda</h2>
+                            <h2 class="h5 fw-semibold mb-0">Selección de agenda</h2>
                         </div>
                         <span class="dashboard-icon bg-primary-subtle text-primary">
                             <i class="bi bi-calendar-x"></i>
                         </span>
                     </div>
-
-                    <div class="alert alert-light border" role="alert">
-                        Esta funcionalidad no reemplaza la modificacion individual de turnos. Para cambios puntuales debe utilizarse Gestión de Turnos.
-                    </div>
-
                     <div class="row g-3">
                         <div class="col-12 col-md-6">
                             <label for="reprogramacionEspecialidad" class="form-label">Especialidad</label>
@@ -79,9 +66,9 @@
                             <div class="invalid-feedback" id="reprogramacionEspecialidadError"></div>
                         </div>
                         <div class="col-12 col-md-6">
-                            <label for="reprogramacionMedico" class="form-label">Medico</label>
+                            <label for="reprogramacionMedico" class="form-label">Médico</label>
                             <select class="form-select" id="reprogramacionMedico">
-                                <option value="">Seleccione un medico</option>
+                                <option value="">Seleccione un médico</option>
                             </select>
                             <div class="invalid-feedback" id="reprogramacionMedicoError"></div>
                         </div>
@@ -101,11 +88,11 @@
                             <div class="invalid-feedback" id="reprogramacionHoraFinError"></div>
                         </div>
                         <div class="col-12">
-                            <label for="reprogramacionMotivo" class="form-label">Motivo de reprogramacion</label>
+                            <label for="reprogramacionMotivo" class="form-label">Motivo de reprogramación</label>
                             <select class="form-select" id="reprogramacionMotivo">
                                 <option value="">Seleccione un motivo</option>
                                 <option>Ausencia del profesional</option>
-                                <option>Emergencia medica</option>
+                                <option>Emergencia médica</option>
                                 <option>Licencia o enfermedad</option>
                                 <option>Cambio excepcional de agenda</option>
                                 <option>Otro imprevisto</option>
@@ -119,7 +106,7 @@
                             <i class="bi bi-search me-1"></i>Buscar turnos afectados
                         </button>
                         <button type="button" class="btn btn-primary" id="ejecutarReprogramacionBtn" disabled>
-                            <i class="bi bi-magic me-1"></i>Ejecutar reprogramacion
+                            <i class="bi bi-magic me-1"></i>Ejecutar reprogramación
                         </button>
                     </div>
                 </div>
@@ -143,7 +130,7 @@
                             <tr>
                                 <th>Paciente</th>
                                 <th>DNI</th>
-                                <th>Medico</th>
+                                <th>Médico</th>
                                 <th>Especialidad</th>
                                 <th>Fecha</th>
                                 <th>Hora actual</th>
@@ -166,7 +153,7 @@
             <div class="card-body p-4">
                 <div class="d-flex flex-column flex-md-row justify-content-between gap-3 mb-3">
                     <div>
-                        <p class="text-secondary small mb-1">Propuesta automatica</p>
+                        <p class="text-secondary small mb-1">Propuesta automática</p>
                         <h2 class="h5 fw-semibold mb-0">Nuevas citas sugeridas</h2>
                     </div>
                     <span class="dashboard-icon bg-info-subtle text-info">
@@ -178,7 +165,7 @@
                         No hay disponibilidad suficiente para reprogramar todos los turnos. Los pacientes restantes seran colocados en lista de espera prioritaria.
                     </p>
                     <a href="cargar-disponibilidad.html" class="btn btn-outline-primary btn-sm d-none" id="reprogramacionCargarDisponibilidadBtn">
-                        <i class="bi bi-calendar-plus me-1"></i>Ir a Cargar disponibilidad medica
+                        <i class="bi bi-calendar-plus me-1"></i>Ir a Cargar disponibilidad médica
                     </a>
                 </div>
                 <div class="table-responsive">
@@ -194,7 +181,7 @@
                         </thead>
                         <tbody id="reprogramacionPropuestasTabla">
                             <tr>
-                                <td colspan="5" class="text-secondary">Ejecute la reprogramacion para generar propuestas.</td>
+                                <td colspan="5" class="text-secondary">Ejecute la reprogramación para generar propuestas.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -260,15 +247,15 @@
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h2 class="modal-title h5" id="confirmarReprogramacionTitulo">Ejecutar reprogramacion</h2>
+                    <h2 class="modal-title h5" id="confirmarReprogramacionTitulo">Ejecutar reprogramación</h2>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                 </div>
                 <div class="modal-body">
-                    Se generaran propuestas automaticas para los turnos afectados, priorizando los pacientes de mayor riesgo clinico.
+                    Se generaran propuestas automáticas para los turnos afectados, priorizando los pacientes de mayor riesgo clínico.
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-primary" id="confirmarReprogramacionBtn">Ejecutar reprogramacion</button>
+                    <button type="button" class="btn btn-primary" id="confirmarReprogramacionBtn">Ejecutar reprogramación</button>
                 </div>
             </div>
         </div>
