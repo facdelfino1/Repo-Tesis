@@ -1,4 +1,5 @@
 const coreModuleBaseUrl = new URL("../core/", document.currentScript.src).href;
+const componentModuleBaseUrl = new URL("../components/", document.currentScript.src).href;
 
 document.addEventListener("DOMContentLoaded", async () => {
     const fallbackData = {
@@ -32,14 +33,24 @@ document.addEventListener("DOMContentLoaded", async () => {
             timeToMinutes,
             todayInputValue
         },
-        { isStrongPassword, isValidEmail }
+        { isStrongPassword, isValidEmail },
+        { hideAlert, showAlert },
+        { priorityClass, stateText: renderStateText },
+        { clearErrors: clearFieldErrors, initPasswordToggles: componentInitPasswordToggles, setFieldError: applyFieldError },
+        { getBootstrapModal, hideModal, showModal },
+        { renderTableEmptyRow }
     ] = await Promise.all([
         import(`${coreModuleBaseUrl}constants.js`),
         import(`${coreModuleBaseUrl}storage.js`),
         import(`${coreModuleBaseUrl}session.js`),
         import(`${coreModuleBaseUrl}helpers.js`),
         import(`${coreModuleBaseUrl}formatters.js`),
-        import(`${coreModuleBaseUrl}validators.js`)
+        import(`${coreModuleBaseUrl}validators.js`),
+        import(`${componentModuleBaseUrl}alerts.js`),
+        import(`${componentModuleBaseUrl}badges.js`),
+        import(`${componentModuleBaseUrl}forms.js`),
+        import(`${componentModuleBaseUrl}modals.js`),
+        import(`${componentModuleBaseUrl}tables.js`)
     ]);
     const priorityLabel = (priority) => sharedPriorityLabel(priority, priority || "Baja");
 
@@ -104,22 +115,6 @@ document.addEventListener("DOMContentLoaded", async () => {
                 matricula: doctor.matricula,
                 rol: "medico"
             }));
-    }
-
-    function priorityClass(priority) {
-        if (priority === "Alta" || priority === "Rojo") {
-            return "text-bg-danger";
-        }
-
-        if (priority === "Media" || priority === "Amarillo") {
-            return "text-bg-warning";
-        }
-
-        return "text-bg-success";
-    }
-
-    function stateText(state) {
-        return `<strong class="fw-semibold">${state || "-"}</strong>`;
     }
 
     function consultationStartValue(turn) {
@@ -325,33 +320,22 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function setFieldError(fieldName, text) {
-            const field = fields[fieldName];
-            const error = document.getElementById(`perfilMedico${fieldName.charAt(0).toUpperCase()}${fieldName.slice(1)}Error`);
-
-            if (!field || !error) {
-                return;
-            }
-
-            field.classList.toggle("is-invalid", text !== "");
-            error.textContent = text;
+            applyFieldError(
+                fields,
+                fieldName,
+                text,
+                (name) => document.getElementById(`perfilMedico${name.charAt(0).toUpperCase()}${name.slice(1)}Error`)
+            );
         }
 
         function clearErrors() {
-            Object.keys(fields).forEach((fieldName) => setFieldError(fieldName, ""));
-
-            if (message) {
-                message.classList.add("d-none");
-            }
+            clearFieldErrors(fields, setFieldError, {
+                onClear: () => hideAlert(message)
+            });
         }
 
         function showMessage(type, text) {
-            if (!message) {
-                return;
-            }
-
-            message.className = `alert alert-${type}`;
-            message.textContent = text;
-            message.classList.remove("d-none");
+            showAlert(message, type, text);
         }
 
         function validateProfile() {
@@ -438,7 +422,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         fillForm(doctor);
-        initPasswordToggles();
+        componentInitPasswordToggles(form);
 
         form.addEventListener("submit", (event) => {
             event.preventDefault();
@@ -518,7 +502,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const cancelButton = document.getElementById("cancelarDisponibilidadMedicoBtn");
         const confirmExitButton = document.getElementById("confirmarSalirSinGuardarMedicoBtn");
         const exitModalElement = document.getElementById("salirSinGuardarMedicoModal");
-        const exitModal = exitModalElement && window.bootstrap ? new bootstrap.Modal(exitModalElement) : null;
+        const exitModal = getBootstrapModal(exitModalElement);
         const preview = document.getElementById("bloquesMedicoPreview");
         const emptyPreview = document.getElementById("bloquesMedicoVacio");
         const fields = {
@@ -534,7 +518,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             form.classList.add("d-none");
 
             if (tableBody) {
-                tableBody.innerHTML = '<tr><td colspan="5" class="text-secondary">No hay informacion disponible para este usuario.</td></tr>';
+                tableBody.innerHTML = renderTableEmptyRow(5, "No hay informacion disponible para este usuario.");
             }
 
             return;
@@ -571,38 +555,22 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function setFieldError(fieldName, text) {
-            const field = fields[fieldName];
             const errorIds = {
                 date: "disponibilidadMedicoFechaError",
                 start: "disponibilidadMedicoHoraInicioError",
                 end: "disponibilidadMedicoHoraFinError"
             };
-            const error = document.getElementById(errorIds[fieldName]);
-
-            if (!field || !error) {
-                return;
-            }
-
-            field.classList.toggle("is-invalid", text !== "");
-            error.textContent = text;
+            applyFieldError(fields, fieldName, text, (name) => document.getElementById(errorIds[name]));
         }
 
         function clearErrors() {
-            Object.keys(fields).forEach((fieldName) => setFieldError(fieldName, ""));
-
-            if (message) {
-                message.classList.add("d-none");
-            }
+            clearFieldErrors(fields, setFieldError, {
+                onClear: () => hideAlert(message)
+            });
         }
 
         function showMessage(type, text) {
-            if (!message) {
-                return;
-            }
-
-            message.className = `alert alert-${type}`;
-            message.textContent = text;
-            message.classList.remove("d-none");
+            showAlert(message, type, text);
         }
 
         function hasOverlap(date, start, end) {
@@ -704,7 +672,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
 
             if (rows.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="5" class="text-secondary">No existe disponibilidad cargada para su agenda profesional.</td></tr>';
+                tableBody.innerHTML = renderTableEmptyRow(5, "No existe disponibilidad cargada para su agenda profesional.");
                 return;
             }
 
@@ -713,7 +681,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     <td>${formatDate(item.fecha)}</td>
                     <td>${escapeHtml(item.hora_inicio)}</td>
                     <td>${escapeHtml(item.hora_fin)}</td>
-                    <td>${stateText(escapeHtml(item.estado))}</td>
+                    <td>${renderStateText(item.estado, escapeHtml)}</td>
                     <td>${escapeHtml(item.origen || "Mock")}</td>
                 </tr>
             `).join("");
@@ -787,7 +755,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (cancelButton) {
             cancelButton.addEventListener("click", () => {
                 if (exitModal) {
-                    exitModal.show();
+                    showModal(exitModal);
                     return;
                 }
 
@@ -826,8 +794,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         const longAttentionAlert = document.getElementById("agendaMedicaAtencionAlerta");
         const actionModalElement = document.getElementById("agendaMedicaAccionModal");
         const detailModalElement = document.getElementById("agendaMedicaDetalleModal");
-        const actionModal = actionModalElement ? new bootstrap.Modal(actionModalElement) : null;
-        const detailModal = detailModalElement ? new bootstrap.Modal(detailModalElement) : null;
+        const actionModal = getBootstrapModal(actionModalElement);
+        const detailModal = getBootstrapModal(detailModalElement);
         const actionTitle = document.getElementById("agendaMedicaAccionTitulo");
         const actionText = document.getElementById("agendaMedicaAccionTexto");
         const confirmActionButton = document.getElementById("agendaMedicaConfirmarAccion");
@@ -843,7 +811,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         if (!loggedUser || !roleMatches(loggedUser, "medico")) {
             renderUnauthorized();
-            tableBody.innerHTML = '<tr><td colspan="9" class="text-secondary">No hay informacion disponible para este usuario.</td></tr>';
+            tableBody.innerHTML = renderTableEmptyRow(9, "No hay informacion disponible para este usuario.");
 
             if (form) {
                 form.classList.add("d-none");
@@ -893,19 +861,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function showMessage(type, text) {
-            if (!message) {
-                return;
-            }
-
-            message.className = `alert alert-${type}`;
-            message.textContent = text;
-            message.classList.remove("d-none");
+            showAlert(message, type, text);
         }
 
         function hideMessage() {
-            if (message) {
-                message.classList.add("d-none");
-            }
+            hideAlert(message);
         }
 
         function persistTurns() {
@@ -1003,7 +963,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             renderAlerts();
 
             if (visibleTurns.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="9" class="text-secondary">No hay turnos para los filtros seleccionados.</td></tr>';
+                tableBody.innerHTML = renderTableEmptyRow(9, "No hay turnos para los filtros seleccionados.");
                 return;
             }
 
@@ -1020,7 +980,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                         <td><span class="badge ${priorityClass(priority)}">${escapeHtml(priority)}</span></td>
                         <td>${escapeHtml(turn.puntaje_triaje || "-")}</td>
                         <td>${escapeHtml(turn.duracion_estimada || "-")} minutos</td>
-                        <td>${stateText(escapeHtml(turn.estado))}</td>
+                        <td>${renderStateText(turn.estado, escapeHtml)}</td>
                         <td>${actionButtons(turn)}</td>
                     </tr>
                 `;
@@ -1051,7 +1011,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 actionText.textContent = "Confirme la finalizacion de la consulta seleccionada.";
             }
 
-            actionModal.show();
+            showModal(actionModal);
         }
 
         function applySelectedAction() {
@@ -1100,7 +1060,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
             if (!actionApplied) {
                 if (actionModal) {
-                    actionModal.hide();
+                    hideModal(actionModal);
                 }
 
                 showMessage("warning", "La accion no esta disponible para el estado actual del turno.");
@@ -1112,7 +1072,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             renderTable();
 
             if (actionModal) {
-                actionModal.hide();
+                hideModal(actionModal);
             }
 
             showMessage(
@@ -1170,7 +1130,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     <dt class="col-sm-4 text-secondary">Duracion estimada</dt>
                     <dd class="col-sm-8">${escapeHtml(turn.duracion_estimada || "-")} minutos</dd>
                     <dt class="col-sm-4 text-secondary">Estado</dt>
-                    <dd class="col-sm-8">${stateText(escapeHtml(turn.estado))}</dd>
+                    <dd class="col-sm-8">${renderStateText(turn.estado, escapeHtml)}</dd>
                     <dt class="col-sm-4 text-secondary">Hora de llegada</dt>
                     <dd class="col-sm-8">${escapeHtml(arrivalValue(turn))}</dd>
                     <dt class="col-sm-4 text-secondary">Hora de inicio</dt>
@@ -1185,7 +1145,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 ${turn.recomendacion_triaje ? `<p class="text-secondary mt-3 mb-0">${escapeHtml(turn.recomendacion_triaje)}</p>` : ""}
             `;
 
-            detailModal.show();
+            showModal(detailModal);
         }
 
         setText("agendaMedicaNavbar", fullName(doctor));
@@ -1266,7 +1226,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const searchButton = document.getElementById("buscarAfectadosMedicoBtn");
         const confirmButton = document.getElementById("confirmarReprogramacionMedicoBtn");
         const confirmModalElement = document.getElementById("confirmarReprogramacionMedicoModal");
-        const confirmModal = confirmModalElement && window.bootstrap ? new bootstrap.Modal(confirmModalElement) : null;
+        const confirmModal = getBootstrapModal(confirmModalElement);
         const fields = {
             date: document.getElementById("reprogramacionMedicoFecha"),
             start: document.getElementById("reprogramacionMedicoHoraInicio"),
@@ -1280,7 +1240,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (!loggedUser || !roleMatches(loggedUser, "medico")) {
             renderUnauthorized();
             form.classList.add("d-none");
-            affectedTable.innerHTML = '<tr><td colspan="6" class="text-secondary">No hay informacion disponible para este usuario.</td></tr>';
+            affectedTable.innerHTML = renderTableEmptyRow(6, "No hay informacion disponible para este usuario.");
             return;
         }
 
@@ -1325,33 +1285,17 @@ document.addEventListener("DOMContentLoaded", async () => {
                 end: "reprogramacionMedicoHoraFinError",
                 reason: "reprogramacionMedicoMotivoError"
             };
-            const field = fields[fieldName];
-            const error = document.getElementById(errorIds[fieldName]);
-
-            if (!field || !error) {
-                return;
-            }
-
-            field.classList.toggle("is-invalid", text !== "");
-            error.textContent = text;
+            applyFieldError(fields, fieldName, text, (name) => document.getElementById(errorIds[name]));
         }
 
         function clearErrors() {
-            Object.keys(fields).forEach((fieldName) => setFieldError(fieldName, ""));
-
-            if (message) {
-                message.classList.add("d-none");
-            }
+            clearFieldErrors(fields, setFieldError, {
+                onClear: () => hideAlert(message)
+            });
         }
 
         function showMessage(type, text) {
-            if (!message) {
-                return;
-            }
-
-            message.className = `alert alert-${type}`;
-            message.textContent = text;
-            message.classList.remove("d-none");
+            showAlert(message, type, text);
         }
 
         function validateBlock() {
@@ -1485,7 +1429,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                         <td>${formatDate(turn.fecha)}</td>
                         <td>${escapeHtml(turn.hora_inicio)}</td>
                         <td><span class="badge ${priorityClass(priority)}">${escapeHtml(priority)}</span></td>
-                        <td>${stateText(escapeHtml(turn.estado))}</td>
+                        <td>${renderStateText(turn.estado, escapeHtml)}</td>
                     </tr>
                 `;
             }).join("");
@@ -1599,7 +1543,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 showMessage("warning", "No existen horarios alternativos cargados para su agenda.");
 
                 if (confirmModal) {
-                    confirmModal.hide();
+                    hideModal(confirmModal);
                 }
 
                 return;
@@ -1648,7 +1592,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             renderAll();
 
             if (confirmModal) {
-                confirmModal.hide();
+                hideModal(confirmModal);
             }
 
             showMessage("success", "Propuestas generadas y notificaciones simuladas enviadas.");
@@ -1768,7 +1712,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
 
             if (confirmModal) {
-                confirmModal.show();
+                showModal(confirmModal);
             }
         });
 
@@ -1810,7 +1754,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         if (!loggedUser || !roleMatches(loggedUser, "medico")) {
             renderUnauthorized();
-            agendaTable.innerHTML = '<tr><td colspan="7" class="text-secondary">No hay informacion disponible para este usuario.</td></tr>';
+            agendaTable.innerHTML = renderTableEmptyRow(7, "No hay informacion disponible para este usuario.");
             return;
         }
 
@@ -1881,7 +1825,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     <td>${escapeHtml(patient ? fullName(patient) : "Paciente")}</td>
                     <td>${escapeHtml(patient ? patient.dni : "-")}</td>
                     <td><span class="badge ${priorityClass(priority)}">${escapeHtml(priority)}</span></td>
-                    <td>${stateText(escapeHtml(turn.estado))}</td>
+                    <td>${renderStateText(turn.estado, escapeHtml)}</td>
                     <td>${escapeHtml(turn.duracion_estimada || "-")} minutos</td>
                     <td>
                         <a href="agenda-medica.html" class="btn btn-outline-primary btn-sm">

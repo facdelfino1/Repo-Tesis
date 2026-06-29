@@ -1,4 +1,5 @@
 const coreModuleBaseUrl = new URL("../core/", document.currentScript.src).href;
+const componentModuleBaseUrl = new URL("../components/", document.currentScript.src).href;
 
 document.addEventListener("DOMContentLoaded", async () => {
     const fallbackData = {
@@ -19,13 +20,25 @@ document.addEventListener("DOMContentLoaded", async () => {
         { loadMock, readStoredJson, writeStoredJson },
         { escapeHtml, normalizeState, normalizeText },
         { formatToday, priorityLabel, todayInputValue },
-        { isStrongPassword, isValidEmail }
+        { isStrongPassword, isValidEmail },
+        { hideAlert, showAlert },
+        { stateText: renderStateText },
+        { clearErrors: clearFieldErrors, setFieldError: applyFieldError },
+        { getBootstrapModal, hideModal, showModal },
+        { fillSelect },
+        { renderTableEmptyRow }
     ] = await Promise.all([
         import(`${coreModuleBaseUrl}constants.js`),
         import(`${coreModuleBaseUrl}storage.js`),
         import(`${coreModuleBaseUrl}helpers.js`),
         import(`${coreModuleBaseUrl}formatters.js`),
-        import(`${coreModuleBaseUrl}validators.js`)
+        import(`${coreModuleBaseUrl}validators.js`),
+        import(`${componentModuleBaseUrl}alerts.js`),
+        import(`${componentModuleBaseUrl}badges.js`),
+        import(`${componentModuleBaseUrl}forms.js`),
+        import(`${componentModuleBaseUrl}modals.js`),
+        import(`${componentModuleBaseUrl}selects.js`),
+        import(`${componentModuleBaseUrl}tables.js`)
     ]);
 
     function setText(id, value) {
@@ -68,10 +81,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     function statusLabel(user) {
         return user.estado || "Activo";
-    }
-
-    function stateText(state) {
-        return `<strong class="fw-semibold">${escapeHtml(state || "-")}</strong>`;
     }
 
     function mergeStoredUsers(baseUsers) {
@@ -141,18 +150,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     function triajeByTurnId(triajes, idTurno) {
         return triajes.find((triaje) => String(triaje.id_turno) === String(idTurno)) || null;
-    }
-
-    function priorityClass(priority) {
-        if (priority === "Alta" || priority === "Rojo") {
-            return "bg-danger";
-        }
-
-        if (priority === "Media" || priority === "Amarillo") {
-            return "bg-warning";
-        }
-
-        return "bg-success";
     }
 
     function timeDifferenceMinutes(startValue, endValue) {
@@ -281,10 +278,10 @@ document.addEventListener("DOMContentLoaded", async () => {
             const message = document.getElementById("adminUsuariosMensaje");
             const searchInput = document.getElementById("adminUsuariosBusqueda");
             const roleFilter = document.getElementById("adminUsuariosRolFiltro");
-            const createModal = new bootstrap.Modal(document.getElementById("adminUsuarioCrearModal"));
-            const editModal = new bootstrap.Modal(document.getElementById("adminUsuarioEditarModal"));
-            const detailModal = new bootstrap.Modal(document.getElementById("adminUsuarioDetalleModal"));
-            const statusModal = new bootstrap.Modal(document.getElementById("adminUsuarioEstadoModal"));
+            const createModal = getBootstrapModal(document.getElementById("adminUsuarioCrearModal"));
+            const editModal = getBootstrapModal(document.getElementById("adminUsuarioEditarModal"));
+            const detailModal = getBootstrapModal(document.getElementById("adminUsuarioDetalleModal"));
+            const statusModal = getBootstrapModal(document.getElementById("adminUsuarioEstadoModal"));
             const createForm = document.getElementById("adminUsuarioCrearForm");
             const editForm = document.getElementById("adminUsuarioEditarForm");
             const detailContent = document.getElementById("adminUsuarioDetalleContenido");
@@ -324,23 +321,20 @@ document.addEventListener("DOMContentLoaded", async () => {
                     accessMessage.classList.remove("d-none");
                 }
 
-                tableBody.innerHTML = '<tr><td colspan="8" class="text-secondary">No hay informacion disponible para este usuario.</td></tr>';
+                tableBody.innerHTML = renderTableEmptyRow(8, "No hay informacion disponible para este usuario.");
                 return;
             }
 
             function showMessage(type, text) {
-                message.className = `alert alert-${type}`;
-                message.textContent = text;
-                message.classList.remove("d-none");
+                showAlert(message, type, text);
             }
 
             function hideMessage() {
-                message.classList.add("d-none");
+                hideAlert(message);
             }
 
             function setFieldError(prefix, fieldName, text) {
                 const fieldMap = prefix === "crear" ? createFields : editFields;
-                const field = fieldMap[fieldName];
                 const errorIds = {
                     crear: {
                         role: "crearUsuarioRolError",
@@ -364,20 +358,12 @@ document.addEventListener("DOMContentLoaded", async () => {
                         legajo: "editarUsuarioLegajoError"
                     }
                 };
-                const error = document.getElementById(errorIds[prefix][fieldName]);
-
-                if (!field || !error) {
-                    return;
-                }
-
-                field.classList.toggle("is-invalid", text !== "");
-                error.textContent = text;
+                applyFieldError(fieldMap, fieldName, text, (name) => document.getElementById(errorIds[prefix][name]));
             }
 
             function clearFormErrors(prefix) {
                 const fieldMap = prefix === "crear" ? createFields : editFields;
-
-                Object.keys(fieldMap).forEach((fieldName) => setFieldError(prefix, fieldName, ""));
+                clearFieldErrors(fieldMap, (fieldName, text) => setFieldError(prefix, fieldName, text));
             }
 
             function managedUsers() {
@@ -424,7 +410,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 const visibleUsers = filteredUsers();
 
                 if (visibleUsers.length === 0) {
-                    tableBody.innerHTML = '<tr><td colspan="8" class="text-secondary">No hay usuarios para los filtros seleccionados.</td></tr>';
+                    tableBody.innerHTML = renderTableEmptyRow(8, "No hay usuarios para los filtros seleccionados.");
                     return;
                 }
 
@@ -441,7 +427,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                             <td>${escapeHtml(user.email)}</td>
                             <td>${escapeHtml(user.telefono)}</td>
                             <td><span class="badge text-bg-light border text-secondary">${escapeHtml(roleLabel(user.rol))}</span></td>
-                            <td>${stateText(statusLabel(user))}</td>
+                            <td>${renderStateText(statusLabel(user), escapeHtml)}</td>
                             <td>
                                 <div class="d-grid d-xl-flex gap-2">
                                     <button type="button" class="btn btn-outline-primary btn-sm" data-action="detail" data-user-id="${user.id_usuario}">Ver detalle</button>
@@ -590,7 +576,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 createForm.reset();
                 clearFormErrors("crear");
                 toggleCreateSpecificFields();
-                createModal.show();
+                showModal(createModal);
             }
 
             function createUser(event) {
@@ -627,7 +613,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 users = [...users, newUser];
                 persistUsers(users);
                 renderTable();
-                createModal.hide();
+                hideModal(createModal);
                 showMessage("success", "Usuario interno creado correctamente.");
             }
 
@@ -651,7 +637,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 editFields.legajo.value = user.legajo || "";
                 editFields.obraSocial.value = user.obra_social || "";
                 toggleEditSpecificFields(user);
-                editModal.show();
+                showModal(editModal);
             }
 
             function saveEditedUser(event) {
@@ -693,7 +679,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 });
                 persistUsers(users);
                 renderTable();
-                editModal.hide();
+                hideModal(editModal);
                 showMessage("success", "Usuario actualizado correctamente.");
             }
 
@@ -712,11 +698,11 @@ document.addEventListener("DOMContentLoaded", async () => {
                         <dt class="col-sm-4 text-secondary">Email</dt><dd class="col-sm-8">${escapeHtml(user.email)}</dd>
                         <dt class="col-sm-4 text-secondary">Telefono</dt><dd class="col-sm-8">${escapeHtml(user.telefono)}</dd>
                         <dt class="col-sm-4 text-secondary">Rol</dt><dd class="col-sm-8">${escapeHtml(roleLabel(user.rol))}</dd>
-                        <dt class="col-sm-4 text-secondary">Estado</dt><dd class="col-sm-8">${stateText(statusLabel(user))}</dd>
+                        <dt class="col-sm-4 text-secondary">Estado</dt><dd class="col-sm-8">${renderStateText(statusLabel(user), escapeHtml)}</dd>
                         ${roleSpecificDetail(user)}
                     </dl>
                 `;
-                detailModal.show();
+                showModal(detailModal);
             }
 
             function openStatusModal(userId) {
@@ -736,7 +722,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     statusText.textContent = "Confirme la reactivacion del usuario seleccionado.";
                 }
 
-                statusModal.show();
+                showModal(statusModal);
             }
 
             function confirmStatusChange() {
@@ -754,7 +740,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 ));
                 persistUsers(users);
                 renderTable();
-                statusModal.hide();
+                hideModal(statusModal);
                 showMessage("success", nextStatus === "Activo" ? "Usuario reactivado correctamente." : "Usuario desactivado correctamente.");
             }
 
@@ -856,21 +842,6 @@ document.addEventListener("DOMContentLoaded", async () => {
                 };
             });
 
-            function fillSelect(select, firstLabel, items, valueFactory, labelFactory) {
-                select.innerHTML = "";
-                const firstOption = document.createElement("option");
-                firstOption.value = "";
-                firstOption.textContent = firstLabel;
-                select.appendChild(firstOption);
-
-                items.forEach((item) => {
-                    const option = document.createElement("option");
-                    option.value = valueFactory(item);
-                    option.textContent = labelFactory(item);
-                    select.appendChild(option);
-                });
-            }
-
             function filteredTurns() {
                 return turns.filter((turn) => {
                     const doctor = doctorById(users, turn.id_medico);
@@ -948,7 +919,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
                     return `
                         <tr>
-                            <td>${stateText(state)}</td>
+                            <td>${renderStateText(state, escapeHtml)}</td>
                             <td class="fw-semibold">${count}</td>
                         </tr>
                     `;
@@ -957,7 +928,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
             function renderDoctorMetrics(visibleTurns) {
                 if (doctors.length === 0) {
-                    doctorTable.innerHTML = '<tr><td colspan="8" class="text-secondary">No hay medicos registrados.</td></tr>';
+                    doctorTable.innerHTML = renderTableEmptyRow(8, "No hay medicos registrados.");
                     return;
                 }
 

@@ -1,4 +1,5 @@
 const coreModuleBaseUrl = new URL("../core/", document.currentScript.src).href;
+const componentModuleBaseUrl = new URL("../components/", document.currentScript.src).href;
 
 document.addEventListener("DOMContentLoaded", async () => {
     const fallbackData = {
@@ -23,14 +24,26 @@ document.addEventListener("DOMContentLoaded", async () => {
         { removeSessionItem },
         { escapeHtml, normalizeState, normalizeText },
         { currentTimeValue, formatDate, formatToday, priorityLabel, priorityRank, todayInputValue },
-        { isStrongPassword, isValidEmail }
+        { isStrongPassword, isValidEmail },
+        { hideAlert, renderEmptyState, showAlert },
+        { priorityClass, stateText: renderStateText },
+        { clearErrors: clearFieldErrors, initPasswordToggles: componentInitPasswordToggles, setFieldError: applyFieldError },
+        { getBootstrapModal, hideModal, showModal },
+        { fillSelect: renderSelect },
+        { renderTableEmptyRow }
     ] = await Promise.all([
         import(`${coreModuleBaseUrl}constants.js`),
         import(`${coreModuleBaseUrl}storage.js`),
         import(`${coreModuleBaseUrl}session.js`),
         import(`${coreModuleBaseUrl}helpers.js`),
         import(`${coreModuleBaseUrl}formatters.js`),
-        import(`${coreModuleBaseUrl}validators.js`)
+        import(`${coreModuleBaseUrl}validators.js`),
+        import(`${componentModuleBaseUrl}alerts.js`),
+        import(`${componentModuleBaseUrl}badges.js`),
+        import(`${componentModuleBaseUrl}forms.js`),
+        import(`${componentModuleBaseUrl}modals.js`),
+        import(`${componentModuleBaseUrl}selects.js`),
+        import(`${componentModuleBaseUrl}tables.js`)
     ]);
 
     function setText(id, value) {
@@ -175,22 +188,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         return patientsFromUsers(usuarios).find((patient) => patient.id_paciente === idPaciente) || null;
     }
 
-    function stateText(state) {
-        return `<strong class="fw-semibold">${escapeHtml(state || "-")}</strong>`;
-    }
-
-    function priorityClass(priority) {
-        if (priority === "Alta") {
-            return "text-bg-danger";
-        }
-
-        if (priority === "Media") {
-            return "text-bg-warning";
-        }
-
-        return "text-bg-success";
-    }
-
     function buildAgenda(turnos, disponibilidad, usuarios) {
         const normalizedTurns = turnosList(turnos);
 
@@ -258,7 +255,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 <td>${turno.medico}</td>
                 <td>${turno.especialidad}</td>
                 <td><span class="badge ${priorityClass(turno.prioridad)}">${turno.prioridad}</span></td>
-                <td>${stateText(turno.estado)}</td>
+                <td>${renderStateText(turno.estado, escapeHtml)}</td>
             </tr>
         `).join("");
     }
@@ -378,9 +375,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const cancelButton = document.getElementById("cancelarDisponibilidadBtn");
         const confirmExitButton = document.getElementById("confirmarSalirSinGuardarBtn");
         const exitModalElement = document.getElementById("salirSinGuardarModal");
-        const exitModal = exitModalElement && window.bootstrap
-            ? new bootstrap.Modal(exitModalElement)
-            : null;
+        const exitModal = getBootstrapModal(exitModalElement);
         const preview = document.getElementById("bloquesPreview");
         const emptyPreview = document.getElementById("bloquesVacio");
         const tableBody = document.getElementById("disponibilidadTabla");
@@ -393,7 +388,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function setFieldError(field, text) {
-            const input = fields[field];
             const errorIds = {
                 specialty: "disponibilidadEspecialidadError",
                 doctor: "disponibilidadMedicoError",
@@ -401,26 +395,17 @@ document.addEventListener("DOMContentLoaded", async () => {
                 start: "disponibilidadHoraInicioError",
                 end: "disponibilidadHoraFinError"
             };
-            const errorId = errorIds[field];
-            const error = document.getElementById(errorId);
-
-            if (!input || !error) {
-                return;
-            }
-
-            input.classList.toggle("is-invalid", text !== "");
-            error.textContent = text;
+            applyFieldError(fields, field, text, (name) => document.getElementById(errorIds[name]));
         }
 
         function clearErrors() {
-            Object.keys(fields).forEach((field) => setFieldError(field, ""));
-            message.classList.add("d-none");
+            clearFieldErrors(fields, setFieldError, {
+                onClear: () => hideAlert(message)
+            });
         }
 
         function showMessage(type, text) {
-            message.className = `alert alert-${type}`;
-            message.textContent = text;
-            message.classList.remove("d-none");
+            showAlert(message, type, text);
         }
 
         function timeToMinutes(timeValue) {
@@ -583,7 +568,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             const filter = currentAvailabilityFilter();
 
             if (!filter) {
-                tableBody.innerHTML = '<tr><td colspan="7" class="text-secondary">Seleccione un m&eacute;dico o una especialidad para consultar la disponibilidad cargada.</td></tr>';
+                tableBody.innerHTML = renderTableEmptyRow(7, "Seleccione un m&eacute;dico o una especialidad para consultar la disponibilidad cargada.");
                 return;
             }
 
@@ -596,7 +581,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             });
 
             if (filteredAvailability.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="7" class="text-secondary">No existen horarios cargados para el criterio seleccionado.</td></tr>';
+                tableBody.innerHTML = renderTableEmptyRow(7, "No existen horarios cargados para el criterio seleccionado.");
                 return;
             }
 
@@ -608,7 +593,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                         <td>${formatDate(item.fecha)}</td>
                         <td>${item.hora_inicio}</td>
                         <td>${item.hora_fin}</td>
-                        <td>${stateText(item.estado)}</td>
+                        <td>${renderStateText(item.estado, escapeHtml)}</td>
                         <td>${item.origen || "Mock"}</td>
                     </tr>
                 `;
@@ -693,7 +678,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         generateButton.addEventListener("click", generateBlocks);
         cancelButton.addEventListener("click", () => {
             if (exitModal) {
-                exitModal.show();
+                showModal(exitModal);
                 return;
             }
 
@@ -766,10 +751,10 @@ document.addEventListener("DOMContentLoaded", async () => {
             slot: document.getElementById("modificarDisponibilidad")
         };
         const message = document.getElementById("GestiónTurnosMensaje");
-        const createModal = new bootstrap.Modal(document.getElementById("asignarTurnoModal"));
-        const editModal = new bootstrap.Modal(document.getElementById("modificarTurnoModal"));
-        const cancelModal = new bootstrap.Modal(document.getElementById("cancelarTurnoModal"));
-        const detailModal = new bootstrap.Modal(document.getElementById("detalleTurnoModal"));
+        const createModal = getBootstrapModal(document.getElementById("asignarTurnoModal"));
+        const editModal = getBootstrapModal(document.getElementById("modificarTurnoModal"));
+        const cancelModal = getBootstrapModal(document.getElementById("cancelarTurnoModal"));
+        const detailModal = getBootstrapModal(document.getElementById("detalleTurnoModal"));
 
         function doctorFullName(doctor) {
             return `${doctor.nombre} ${doctor.apellido}`;
@@ -936,24 +921,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function showMessage(type, text) {
-            message.className = `alert alert-${type}`;
-            message.textContent = text;
-            message.classList.remove("d-none");
-            message.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        }
-
-        function renderSelect(select, firstLabel, items, valueFactory, labelFactory) {
-            select.innerHTML = "";
-            const firstOption = document.createElement("option");
-            firstOption.value = "";
-            firstOption.textContent = firstLabel;
-            select.appendChild(firstOption);
-
-            items.forEach((item) => {
-                const option = document.createElement("option");
-                option.value = valueFactory(item);
-                option.textContent = labelFactory(item);
-                select.appendChild(option);
+            showAlert(message, type, text, {
+                scrollIntoView: true
             });
         }
 
@@ -1194,7 +1163,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             renderAppointmentSummary();
 
             if (visibleTurns.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="10" class="text-secondary">No se encontraron turnos con los filtros seleccionados.</td></tr>';
+                tableBody.innerHTML = renderTableEmptyRow(10, "No se encontraron turnos con los filtros seleccionados.");
                 return;
             }
 
@@ -1214,7 +1183,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                         <td>${formatDate(turn.fecha)}</td>
                         <td>${escapeHtml(turn.hora_inicio)}</td>
                         <td><span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(turn.prioridad)}</span></td>
-                        <td>${stateText(turn.estado)}</td>
+                        <td>${renderStateText(turn.estado, escapeHtml)}</td>
                         <td>${escapeHtml(turn.origen || "Mock")}</td>
                         <td>${actionButtons(turn)}</td>
                     </tr>
@@ -1252,7 +1221,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     <dt class="col-sm-4 text-secondary">Fecha y hora</dt>
                     <dd class="col-sm-8">${formatDate(turn.fecha)} ${escapeHtml(turn.hora_inicio)} a ${escapeHtml(turn.hora_fin)}</dd>
                     <dt class="col-sm-4 text-secondary">Estado</dt>
-                    <dd class="col-sm-8">${stateText(turn.estado)}</dd>
+                    <dd class="col-sm-8">${renderStateText(turn.estado, escapeHtml)}</dd>
                     <dt class="col-sm-4 text-secondary">Prioridad</dt>
                     <dd class="col-sm-8"><span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(turn.prioridad)}</span></dd>
                     <dt class="col-sm-4 text-secondary">Puntaje triaje</dt>
@@ -1270,7 +1239,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     </dd>
                 </dl>
             `;
-            detailModal.show();
+            showModal(detailModal);
         }
 
         function openEditModal(turnId) {
@@ -1291,7 +1260,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             fillDoctorOptions(editFields.doctor, editFields.specialty.value);
             editFields.doctor.value = doctor ? String(doctor.id_medico || doctor.id) : "";
             refreshEditSlots();
-            editModal.show();
+            showModal(editModal);
         }
 
         function refreshEditSlots() {
@@ -1315,7 +1284,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
 
             selectedTurnId = turn.id_turno;
-            cancelModal.show();
+            showModal(cancelModal);
         }
 
         function createAppointment(event) {
@@ -1374,7 +1343,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             fillDoctorOptions(createFields.doctor);
             refreshTriageResult();
             renderTable();
-            createModal.hide();
+            hideModal(createModal);
             showMessage("success", "Turno asignado correctamente.");
         }
 
@@ -1411,7 +1380,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             });
             persistState();
             renderTable();
-            editModal.hide();
+            hideModal(editModal);
             showMessage("success", "Turno modificado correctamente.");
         }
 
@@ -1436,7 +1405,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             releaseAvailability(turn.id_disponibilidad);
             persistState();
             renderTable();
-            cancelModal.hide();
+            hideModal(cancelModal);
             showMessage("success", "Turno cancelado correctamente. El horario quedo disponible para otros pacientes.");
         }
 
@@ -1580,26 +1549,22 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function setFieldError(fieldName, text) {
-            const field = fields[fieldName];
-            const error = document.getElementById(`perfilSecretaria${fieldName.charAt(0).toUpperCase()}${fieldName.slice(1)}Error`);
-
-            if (!field || !error) {
-                return;
-            }
-
-            field.classList.toggle("is-invalid", text !== "");
-            error.textContent = text;
+            applyFieldError(
+                fields,
+                fieldName,
+                text,
+                (name) => document.getElementById(`perfilSecretaria${name.charAt(0).toUpperCase()}${name.slice(1)}Error`)
+            );
         }
 
         function clearErrors() {
-            Object.keys(fields).forEach((fieldName) => setFieldError(fieldName, ""));
-            message.classList.add("d-none");
+            clearFieldErrors(fields, setFieldError, {
+                onClear: () => hideAlert(message)
+            });
         }
 
         function showMessage(type, text) {
-            message.className = `alert alert-${type}`;
-            message.textContent = text;
-            message.classList.remove("d-none");
+            showAlert(message, type, text);
         }
 
         function validateProfile() {
@@ -1679,7 +1644,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         fillForm(secretary);
-        initPasswordToggles();
+        componentInitPasswordToggles(form);
 
         form.addEventListener("submit", (event) => {
             event.preventDefault();
@@ -1762,8 +1727,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             specialty: document.getElementById("presenciaFiltroEspecialidad"),
             date: document.getElementById("presenciaFiltroFecha")
         };
-        const confirmModal = new bootstrap.Modal(document.getElementById("presenciaConfirmarModal"));
-        const detailModal = new bootstrap.Modal(document.getElementById("presenciaDetalleModal"));
+        const confirmModal = getBootstrapModal(document.getElementById("presenciaConfirmarModal"));
+        const detailModal = getBootstrapModal(document.getElementById("presenciaDetalleModal"));
         const message = document.getElementById("presenciaMensaje");
 
         function doctorFullName(doctor) {
@@ -1852,24 +1817,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function showMessage(type, text) {
-            message.className = `alert alert-${type}`;
-            message.textContent = text;
-            message.classList.remove("d-none");
-        }
-
-        function renderSelect(select, firstLabel, items, valueFactory, labelFactory) {
-            select.innerHTML = "";
-            const firstOption = document.createElement("option");
-            firstOption.value = "";
-            firstOption.textContent = firstLabel;
-            select.appendChild(firstOption);
-
-            items.forEach((item) => {
-                const option = document.createElement("option");
-                option.value = valueFactory(item);
-                option.textContent = labelFactory(item);
-                select.appendChild(option);
-            });
+            showAlert(message, type, text);
         }
 
         function selectedDateTurns() {
@@ -1944,7 +1892,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             renderMetrics();
 
             if (visibleTurns.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="9" class="text-secondary">No hay turnos para la fecha y filtros seleccionados.</td></tr>';
+                tableBody.innerHTML = renderTableEmptyRow(9, "No hay turnos para la fecha y filtros seleccionados.");
                 return;
             }
 
@@ -1961,7 +1909,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                         <td>${escapeHtml(specialty || "-")}</td>
                         <td>${escapeHtml(turn.hora_inicio)}</td>
                         <td><span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(priorityLabel(turn.prioridad))}</span></td>
-                        <td>${stateText(turn.estado)}</td>
+                        <td>${renderStateText(turn.estado, escapeHtml)}</td>
                         <td>${escapeHtml(arrivalTime(turn))}</td>
                         <td>${actionButtons(turn)}</td>
                     </tr>
@@ -1977,7 +1925,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
 
             selectedTurnId = turn.id_turno;
-            confirmModal.show();
+            showModal(confirmModal);
         }
 
         function registerSelectedPresence() {
@@ -2001,7 +1949,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             });
             persistTurns();
             renderTable();
-            confirmModal.hide();
+            hideModal(confirmModal);
             showMessage("success", "Presencia registrada correctamente.");
         }
 
@@ -2035,14 +1983,14 @@ document.addEventListener("DOMContentLoaded", async () => {
                     <dt class="col-sm-4 text-secondary">Prioridad</dt>
                     <dd class="col-sm-8"><span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(priorityLabel(turn.prioridad))}</span></dd>
                     <dt class="col-sm-4 text-secondary">Estado</dt>
-                    <dd class="col-sm-8">${stateText(turn.estado)}</dd>
+                    <dd class="col-sm-8">${renderStateText(turn.estado, escapeHtml)}</dd>
                     <dt class="col-sm-4 text-secondary">Hora de llegada</dt>
                     <dd class="col-sm-8">${escapeHtml(arrivalTime(turn))}</dd>
                     <dt class="col-sm-4 text-secondary">Origen</dt>
                     <dd class="col-sm-8 mb-0">${escapeHtml(turn.origen || "-")}</dd>
                 </dl>
             `;
-            detailModal.show();
+            showModal(detailModal);
         }
 
         function initFilters() {
@@ -2118,8 +2066,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             specialty: document.getElementById("finalizacionFiltroEspecialidad"),
             date: document.getElementById("finalizacionFiltroFecha")
         };
-        const confirmModal = new bootstrap.Modal(document.getElementById("finalizacionConfirmarModal"));
-        const detailModal = new bootstrap.Modal(document.getElementById("finalizacionDetalleModal"));
+        const confirmModal = getBootstrapModal(document.getElementById("finalizacionConfirmarModal"));
+        const detailModal = getBootstrapModal(document.getElementById("finalizacionDetalleModal"));
         const message = document.getElementById("finalizacionMensaje");
 
         function doctorFullName(doctor) {
@@ -2205,24 +2153,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function showMessage(type, text) {
-            message.className = `alert alert-${type}`;
-            message.textContent = text;
-            message.classList.remove("d-none");
-        }
-
-        function renderSelect(select, firstLabel, items, valueFactory, labelFactory) {
-            select.innerHTML = "";
-            const firstOption = document.createElement("option");
-            firstOption.value = "";
-            firstOption.textContent = firstLabel;
-            select.appendChild(firstOption);
-
-            items.forEach((item) => {
-                const option = document.createElement("option");
-                option.value = valueFactory(item);
-                option.textContent = labelFactory(item);
-                select.appendChild(option);
-            });
+            showAlert(message, type, text);
         }
 
         function filteredTurns() {
@@ -2318,7 +2249,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             renderMetrics();
 
             if (visibleTurns.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="10" class="text-secondary">No hay consultas para los filtros seleccionados.</td></tr>';
+                tableBody.innerHTML = renderTableEmptyRow(10, "No hay consultas para los filtros seleccionados.");
                 return;
             }
 
@@ -2335,7 +2266,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                         <td>${escapeHtml(specialty || "-")}</td>
                         <td>${escapeHtml(turn.hora_inicio)}</td>
                         <td><span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(priorityLabel(turn.prioridad))}</span></td>
-                        <td>${stateText(turn.estado)}</td>
+                        <td>${renderStateText(turn.estado, escapeHtml)}</td>
                         <td>${escapeHtml(consultationStartValue(turn))}</td>
                         <td>${escapeHtml(consultationEndValue(turn))}</td>
                         <td>${actionButtons(turn)}</td>
@@ -2352,7 +2283,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
 
             selectedTurnId = turn.id_turno;
-            confirmModal.show();
+            showModal(confirmModal);
         }
 
         function finishSelectedConsultation() {
@@ -2376,7 +2307,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             });
             persistTurns();
             renderTable();
-            confirmModal.hide();
+            hideModal(confirmModal);
             showMessage("success", "Consulta finalizada correctamente.");
         }
 
@@ -2412,7 +2343,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     <dt class="col-sm-4 text-secondary">Prioridad</dt>
                     <dd class="col-sm-8"><span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(priorityLabel(turn.prioridad))}</span></dd>
                     <dt class="col-sm-4 text-secondary">Estado</dt>
-                    <dd class="col-sm-8">${stateText(turn.estado)}</dd>
+                    <dd class="col-sm-8">${renderStateText(turn.estado, escapeHtml)}</dd>
                     <dt class="col-sm-4 text-secondary">Hora de inicio</dt>
                     <dd class="col-sm-8">${escapeHtml(consultationStartValue(turn))}</dd>
                     <dt class="col-sm-4 text-secondary">Hora de cierre</dt>
@@ -2425,7 +2356,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     <dd class="col-sm-8 mb-0">${escapeHtml(triageSummary)}</dd>
                 </dl>
             `;
-            detailModal.show();
+            showModal(detailModal);
         }
 
         function initFilters() {
@@ -2525,7 +2456,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const availabilityLoadButton = document.getElementById("reprogramacionCargarDisponibilidadBtn");
         const searchButton = document.getElementById("buscarAfectadosBtn");
         const executeButton = document.getElementById("ejecutarReprogramacionBtn");
-        const confirmModal = new bootstrap.Modal(document.getElementById("confirmarReprogramacionModal"));
+        const confirmModal = getBootstrapModal(document.getElementById("confirmarReprogramacionModal"));
 
         function doctorFullName(doctor) {
             return `${doctor.nombre} ${doctor.apellido}`;
@@ -2615,9 +2546,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function showMessage(type, text) {
-            message.className = `alert alert-${type}`;
-            message.textContent = text;
-            message.classList.remove("d-none");
+            showAlert(message, type, text);
         }
 
         function setFieldError(fieldName, text) {
@@ -2629,7 +2558,6 @@ document.addEventListener("DOMContentLoaded", async () => {
                 end: "reprogramacionHoraFinError",
                 reason: "reprogramacionMotivoError"
             };
-            const error = document.getElementById(errorIds[fieldName]);
             const fieldMap = {
                 specialty: fields.specialty,
                 doctor: fields.doctor,
@@ -2638,19 +2566,24 @@ document.addEventListener("DOMContentLoaded", async () => {
                 end: fields.end,
                 reason: fields.reason
             };
-            const field = fieldMap[fieldName];
-
-            if (!field || !error) {
-                return;
-            }
-
-            field.classList.toggle("is-invalid", text !== "");
-            error.textContent = text;
+            applyFieldError(fieldMap, fieldName, text, (name) => document.getElementById(errorIds[name]));
         }
 
         function clearErrors() {
-            ["specialty", "doctor", "date", "start", "end", "reason"].forEach((fieldName) => setFieldError(fieldName, ""));
-            message.classList.add("d-none");
+            clearFieldErrors(
+                {
+                    specialty: fields.specialty,
+                    doctor: fields.doctor,
+                    date: fields.date,
+                    start: fields.start,
+                    end: fields.end,
+                    reason: fields.reason
+                },
+                setFieldError,
+                {
+                    onClear: () => hideAlert(message)
+                }
+            );
         }
 
         function validateBlock() {
@@ -2696,21 +2629,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
 
             return isValid;
-        }
-
-        function renderSelect(select, firstLabel, items, valueFactory, labelFactory) {
-            select.innerHTML = "";
-            const firstOption = document.createElement("option");
-            firstOption.value = "";
-            firstOption.textContent = firstLabel;
-            select.appendChild(firstOption);
-
-            items.forEach((item) => {
-                const option = document.createElement("option");
-                option.value = valueFactory(item);
-                option.textContent = labelFactory(item);
-                select.appendChild(option);
-            });
         }
 
         function fillSpecialties() {
@@ -2819,7 +2737,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             executeButton.disabled = affectedTurns.length === 0;
 
             if (affectedTurns.length === 0) {
-                affectedTable.innerHTML = '<tr><td colspan="9" class="text-secondary">No se encontraron turnos Reservados o Presentes dentro del bloque seleccionado.</td></tr>';
+                affectedTable.innerHTML = renderTableEmptyRow(9, "No se encontraron turnos Reservados o Presentes dentro del bloque seleccionado.");
                 return;
             }
 
@@ -2836,7 +2754,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                         <td>${formatDate(turn.fecha)}</td>
                         <td>${escapeHtml(turn.hora_inicio)}</td>
                         <td><span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(turn.color_prioridad || turn.prioridad)}</span></td>
-                        <td>${stateText(turn.estado)}</td>
+                        <td>${renderStateText(turn.estado, escapeHtml)}</td>
                         <td>${escapeHtml(turn.origen || "-")}</td>
                     </tr>
                 `;
@@ -2858,7 +2776,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
 
             if (proposals.length === 0) {
-                proposalTable.innerHTML = '<tr><td colspan="5" class="text-secondary">Ejecute la reprogramacion para generar propuestas.</td></tr>';
+                proposalTable.innerHTML = renderTableEmptyRow(5, "Ejecute la reprogramacion para generar propuestas.");
                 return;
             }
 
@@ -2923,7 +2841,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             })));
 
             if (sortedWaitlist.length === 0) {
-                waitlistTable.innerHTML = '<tr><td colspan="5" class="text-secondary">No hay pacientes en espera prioritaria.</td></tr>';
+                waitlistTable.innerHTML = renderTableEmptyRow(5, "No hay pacientes en espera prioritaria.");
                 return;
             }
 
@@ -2972,7 +2890,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     true
                 );
                 showMessage("warning", "No existen horarios alternativos cargados para este medico.");
-                confirmModal.hide();
+                hideModal(confirmModal);
                 return;
             }
 
@@ -3017,7 +2935,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             waitlist = nextWaitlist;
             persistState();
             renderAll();
-            confirmModal.hide();
+            hideModal(confirmModal);
             showMessage("success", "Propuestas generadas y notificaciones simuladas enviadas.");
         }
 
@@ -3181,7 +3099,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 return;
             }
 
-            confirmModal.show();
+            showModal(confirmModal);
         });
         document.getElementById("confirmarReprogramacionBtn").addEventListener("click", executeReschedule);
         notificationContainer.addEventListener("click", (event) => {

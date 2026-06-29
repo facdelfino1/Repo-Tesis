@@ -1,4 +1,5 @@
 const coreModuleBaseUrl = new URL("../core/", document.currentScript.src).href;
+const componentModuleBaseUrl = new URL("../components/", document.currentScript.src).href;
 
 document.addEventListener("DOMContentLoaded", async () => {
     const fallbackData = {
@@ -27,13 +28,21 @@ document.addEventListener("DOMContentLoaded", async () => {
         { clearStoredJson, loadMock, readStoredJson, writeStoredJson },
         { readSessionJson, removeSessionItem, writeSessionJson },
         { formatDate },
-        { isStrongPassword, isValidEmail }
+        { isStrongPassword, isValidEmail },
+        { hideAlert, showAlert },
+        { borderPriorityClass, priorityClass, stateText: renderStateText },
+        { clearErrors: clearFieldErrors, initPasswordToggles: componentInitPasswordToggles, setFieldError: applyFieldError },
+        { getBootstrapModal, hideModal, showModal }
     ] = await Promise.all([
         import(`${coreModuleBaseUrl}constants.js`),
         import(`${coreModuleBaseUrl}storage.js`),
         import(`${coreModuleBaseUrl}session.js`),
         import(`${coreModuleBaseUrl}formatters.js`),
-        import(`${coreModuleBaseUrl}validators.js`)
+        import(`${coreModuleBaseUrl}validators.js`),
+        import(`${componentModuleBaseUrl}alerts.js`),
+        import(`${componentModuleBaseUrl}badges.js`),
+        import(`${componentModuleBaseUrl}forms.js`),
+        import(`${componentModuleBaseUrl}modals.js`)
     ]);
 
     function setText(id, value) {
@@ -42,38 +51,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (element) {
             element.textContent = value;
         }
-    }
-
-    function priorityClass(priority) {
-        const normalizedPriority = priority.toLowerCase();
-
-        if (normalizedPriority === "alta" || normalizedPriority === "rojo") {
-            return "text-bg-danger";
-        }
-
-        if (normalizedPriority === "media" || normalizedPriority === "amarillo") {
-            return "text-bg-warning";
-        }
-        
-        if (normalizedPriority === "baja" || normalizedPriority === "verde") {
-            return "text-bg-success";
-        }
-
-        return "text-bg-success";
-    }
-
-    function borderPriorityClass(priorityColor) {
-        const normalizedPriority = priorityColor.toLowerCase();
-
-        if (normalizedPriority === "rojo") {
-            return "triage-result-danger";
-        }
-
-        if (normalizedPriority === "amarillo") {
-            return "triage-result-warning";
-        }
-
-        return "triage-result-success";
     }
 
     function renderHistory(history) {
@@ -88,7 +65,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 <td>${formatDate(turno.fecha)}</td>
                 <td>${turno.especialidad}</td>
                 <td>${turno.medico}</td>
-                <td>${stateText(turno.estado)}</td>
+                <td>${renderStateText(turno.estado)}</td>
             </tr>
         `).join("");
     }
@@ -342,10 +319,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             .sort((a, b) => new Date(`${b.fecha}T00:00:00`) - new Date(`${a.fecha}T00:00:00`))[0] || triaje.ultimoTriaje;
     }
 
-    function stateText(state) {
-        return `<strong class="fw-semibold">${state || "-"}</strong>`;
-    }
-
     async function initDashboard() {
         if (!document.getElementById("historialTurnos")) {
             return;
@@ -412,7 +385,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const cancelRequestButtons = document.querySelectorAll('[data-action="cancelar-solicitud"]');
         const cancelRequestModalElement = document.getElementById("cancelarSolicitudModal");
         const confirmExitRequestButton = document.getElementById("confirmarSalidaSolicitudBtn");
-        const cancelRequestModal = new bootstrap.Modal(cancelRequestModalElement);
+        const cancelRequestModal = getBootstrapModal(cancelRequestModalElement);
         let lastRequest = null;
         let selectedAvailability = null;
 
@@ -761,7 +734,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         cancelRequestButtons.forEach((button) => {
             button.addEventListener("click", (event) => {
                 event.preventDefault();
-                cancelRequestModal.show();
+                showModal(cancelRequestModal);
             });
         });
         confirmExitRequestButton.addEventListener("click", exitAppointmentRequest);
@@ -793,8 +766,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         const message = document.getElementById("misTurnosMensaje");
         const cancelModalElement = document.getElementById("cancelarTurnoModal");
         const modifyModalElement = document.getElementById("modificarTurnoModal");
-        const cancelModal = new bootstrap.Modal(cancelModalElement);
-        const modifyModal = new bootstrap.Modal(modifyModalElement);
+        const cancelModal = getBootstrapModal(cancelModalElement);
+        const modifyModal = getBootstrapModal(modifyModalElement);
         const confirmCancelButton = document.getElementById("confirmarCancelacionBtn");
         const confirmModifyButton = document.getElementById("confirmarModificacionBtn");
         const modifyList = document.getElementById("modificarDisponibilidadLista");
@@ -826,9 +799,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function showMessage(type, text) {
-            message.className = `alert alert-${type}`;
-            message.textContent = text;
-            message.classList.remove("d-none");
+            showAlert(message, type, text);
         }
 
         function appointmentDateTime(turn) {
@@ -900,7 +871,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     <td>${turn.medico}</td>
                     <td>${formatDate(turn.fecha)}</td>
                     <td>${turn.hora}</td>
-                    <td>${stateText(turn.estado)}</td>
+                    <td>${renderStateText(turn.estado)}</td>
                     <td>${priorityBadge(turn.prioridad)}</td>
                 `;
                 historyTable.appendChild(row);
@@ -957,7 +928,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             const twoHoursInMilliseconds = 2 * 60 * 60 * 1000;
 
             if (millisecondsToTurn < twoHoursInMilliseconds) {
-                cancelModal.hide();
+                hideModal(cancelModal);
                 showMessage("warning", "No es posible cancelar este turno desde la pagina por encontrarse fuera del tiempo permitido. Comuniquese telefonicamente con la clinica.");
                 return;
             }
@@ -975,7 +946,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             releaseAvailability(turn.disponibilidadId);
             persistState();
             renderAppointments();
-            cancelModal.hide();
+            hideModal(cancelModal);
             showMessage("success", "Turno cancelado correctamente. El horario quedo disponible para otros pacientes.");
         }
 
@@ -1027,7 +998,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
             selectedTurnId = turnId;
             renderModifyOptions(turn);
-            modifyModal.show();
+            showModal(modifyModal);
         }
 
         function modifySelectedTurn() {
@@ -1058,7 +1029,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             });
             persistState();
             renderAppointments();
-            modifyModal.hide();
+            hideModal(modifyModal);
             showMessage("success", "Turno modificado correctamente. Se libero el horario anterior y se ocupo el nuevo horario seleccionado.");
         }
 
@@ -1081,7 +1052,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             selectedTurnId = Number.parseInt(button.dataset.turnId, 10);
 
             if (button.dataset.action === "cancel") {
-                cancelModal.show();
+                showModal(cancelModal);
             }
 
             if (button.dataset.action === "modify") {
@@ -1136,20 +1107,18 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function setFieldError(fieldName, text) {
-            const field = fields[fieldName];
-            const error = document.getElementById(`perfil${fieldName.charAt(0).toUpperCase()}${fieldName.slice(1)}Error`);
-
-            if (!field || !error) {
-                return;
-            }
-
-            field.classList.toggle("is-invalid", text !== "");
-            error.textContent = text;
+            applyFieldError(
+                fields,
+                fieldName,
+                text,
+                (name) => document.getElementById(`perfil${name.charAt(0).toUpperCase()}${name.slice(1)}Error`)
+            );
         }
 
         function clearErrors() {
-            Object.keys(fields).forEach((fieldName) => setFieldError(fieldName, ""));
-            message.classList.add("d-none");
+            clearFieldErrors(fields, setFieldError, {
+                onClear: () => hideAlert(message)
+            });
         }
 
         function validateProfile() {
@@ -1213,9 +1182,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function showSuccess() {
-            message.className = "alert alert-success";
-            message.textContent = "Perfil actualizado correctamente.";
-            message.classList.remove("d-none");
+            showAlert(message, "success", "Perfil actualizado correctamente.");
         }
 
         function initPasswordToggles() {
@@ -1233,7 +1200,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         fillForm(storedPatient);
-        initPasswordToggles();
+        componentInitPasswordToggles(form);
 
         form.addEventListener("submit", (event) => {
             event.preventDefault();
