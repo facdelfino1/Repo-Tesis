@@ -1,3 +1,5 @@
+const coreModuleBaseUrl = new URL("../core/", document.currentScript.src).href;
+
 document.addEventListener("DOMContentLoaded", async () => {
     const fallbackData = {
         usuarios: {
@@ -15,37 +17,31 @@ document.addEventListener("DOMContentLoaded", async () => {
         disponibilidad: []
     };
 
-    async function loadMock(path, fallback) {
-        try {
-            const response = await fetch(path);
-
-            if (!response.ok) {
-                throw new Error("No se pudo leer el archivo mock.");
-            }
-
-            return await response.json();
-        } catch (error) {
-            return fallback;
-        }
-    }
-
-    function readStoredJson(key, fallback) {
-        const storedValue = localStorage.getItem(key);
-
-        if (!storedValue) {
-            return fallback;
-        }
-
-        try {
-            return JSON.parse(storedValue);
-        } catch (error) {
-            return fallback;
-        }
-    }
-
-    function writeStoredJson(key, value) {
-        localStorage.setItem(key, JSON.stringify(value));
-    }
+    const [
+        { LOCAL_STORAGE_KEYS, MOCK_PATHS, SESSION_STORAGE_KEYS },
+        { loadMock, readStoredJson, writeStoredJson },
+        { removeSessionItem },
+        { escapeHtml, normalizeState, normalizeText },
+        {
+            currentTimeValue,
+            formatDate,
+            formatToday,
+            minutesToTime,
+            priorityLabel: sharedPriorityLabel,
+            priorityRank,
+            timeToMinutes,
+            todayInputValue
+        },
+        { isStrongPassword, isValidEmail }
+    ] = await Promise.all([
+        import(`${coreModuleBaseUrl}constants.js`),
+        import(`${coreModuleBaseUrl}storage.js`),
+        import(`${coreModuleBaseUrl}session.js`),
+        import(`${coreModuleBaseUrl}helpers.js`),
+        import(`${coreModuleBaseUrl}formatters.js`),
+        import(`${coreModuleBaseUrl}validators.js`)
+    ]);
+    const priorityLabel = (priority) => sharedPriorityLabel(priority, priority || "Baja");
 
     function setText(id, value) {
         const element = document.getElementById(id);
@@ -64,7 +60,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     function currentUser() {
-        return readStoredJson("usuarioActualMock", null);
+        return readStoredJson(LOCAL_STORAGE_KEYS.CURRENT_USER, null);
     }
 
     function turnosList(turnos) {
@@ -110,44 +106,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             }));
     }
 
-    function formatToday() {
-        return new Intl.DateTimeFormat("es-AR", {
-            weekday: "long",
-            day: "2-digit",
-            month: "2-digit",
-            year: "numeric"
-        }).format(new Date());
-    }
-
-    function todayInputValue() {
-        const now = new Date();
-        const month = String(now.getMonth() + 1).padStart(2, "0");
-        const day = String(now.getDate()).padStart(2, "0");
-
-        return `${now.getFullYear()}-${month}-${day}`;
-    }
-
-    function formatDate(dateValue) {
-        if (!dateValue) {
-            return "-";
-        }
-
-        const date = new Date(`${dateValue}T00:00:00`);
-
-        return new Intl.DateTimeFormat("es-AR", {
-            day: "2-digit",
-            month: "2-digit",
-            year: "numeric"
-        }).format(date);
-    }
-
-    function currentTimeValue(date = new Date()) {
-        return date.toLocaleTimeString("es-AR", {
-            hour: "2-digit",
-            minute: "2-digit"
-        });
-    }
-
     function priorityClass(priority) {
         if (priority === "Alta" || priority === "Rojo") {
             return "text-bg-danger";
@@ -162,58 +120,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     function stateText(state) {
         return `<strong class="fw-semibold">${state || "-"}</strong>`;
-    }
-
-    function escapeHtml(value) {
-        return String(value || "")
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
-    }
-
-    function normalizeState(state) {
-        return String(state || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-    }
-
-    function normalizeText(value) {
-        return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-    }
-
-    function priorityLabel(priority) {
-        if (priority === "Rojo" || priority === "Alta") {
-            return "Alta";
-        }
-
-        if (priority === "Amarillo" || priority === "Media") {
-            return "Media";
-        }
-
-        if (priority === "Verde") {
-            return "Baja";
-        }
-
-        return priority || "Baja";
-    }
-
-    function priorityRank(priority) {
-        const label = priorityLabel(priority);
-
-        if (label === "Alta") {
-            return 0;
-        }
-
-        if (label === "Media") {
-            return 1;
-        }
-
-        return 2;
-    }
-
-    function timeToMinutes(timeValue) {
-        const [hours, minutes] = String(timeValue || "00:00").split(":").map(Number);
-        return (hours * 60) + minutes;
     }
 
     function consultationStartValue(turn) {
@@ -281,19 +187,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         return `${hours} h ${remainingMinutes.toString().padStart(2, "0")} min`;
     }
 
-    function minutesToTime(totalMinutes) {
-        const normalizedMinutes = ((totalMinutes % 1440) + 1440) % 1440;
-        const hours = Math.floor(normalizedMinutes / 60).toString().padStart(2, "0");
-        const minutes = (normalizedMinutes % 60).toString().padStart(2, "0");
-
-        return `${hours}:${minutes}`;
-    }
-
     function mergeStoredAvailability(baseAvailability) {
         const base = Array.isArray(baseAvailability) ? baseAvailability : [];
-        const storedSecretary = readStoredJson("disponibilidadSecretariaMock", null);
-        const storedPatient = readStoredJson("disponibilidadPacienteMock", null);
-        const storedDoctor = readStoredJson("disponibilidadMedicoMock", null);
+        const storedSecretary = readStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_AVAILABILITY, null);
+        const storedPatient = readStoredJson(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, null);
+        const storedDoctor = readStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_AVAILABILITY, null);
         const byId = new Map(base.map((item) => [String(item.id_disponibilidad), item]));
 
         [storedSecretary, storedPatient, storedDoctor].forEach((stored) => {
@@ -312,9 +210,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     function mergeStoredDoctorTurns(baseTurns) {
-        const storedSecretaryTurns = readStoredJson("turnosSecretariaMock", null);
-        const storedDoctorTurns = readStoredJson("turnosMedicoMock", null);
-        const storedPatientTurns = readStoredJson("turnosPacienteMock", []);
+        const storedSecretaryTurns = readStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_TURNS, null);
+        const storedDoctorTurns = readStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_TURNS, null);
+        const storedPatientTurns = readStoredJson(LOCAL_STORAGE_KEYS.PATIENT_TURNS, []);
         const base = Array.isArray(baseTurns) ? baseTurns : [];
         const stored = Array.isArray(storedSecretaryTurns) ? storedSecretaryTurns : [];
         const doctorStored = Array.isArray(storedDoctorTurns) ? storedDoctorTurns : [];
@@ -366,14 +264,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     }
 
-    function isValidEmail(value) {
-        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-    }
-
-    function isStrongPassword(value) {
-        return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/.test(value);
-    }
-
     async function initDoctorProfile() {
         const form = document.querySelector('[data-form="doctor-profile"]');
 
@@ -382,8 +272,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         const [usuarios, medicosData] = await Promise.all([
-            loadMock("../../assets/mock/usuarios.json", fallbackData.usuarios),
-            loadMock("../../assets/mock/medicos.json", fallbackData.medicos)
+            loadMock(MOCK_PATHS.USERS, fallbackData.usuarios),
+            loadMock(MOCK_PATHS.DOCTORS, fallbackData.medicos)
         ]);
         const loggedUser = currentUser();
         const message = document.getElementById("perfilMedicoMensaje");
@@ -397,7 +287,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const doctors = doctorsFromData(usuarios, medicosData);
         const mockDoctor = doctors.find((doctor) => String(doctor.id_medico || doctor.id) === String(loggedUser.id_medico))
             || loggedUser;
-        const storedDoctor = readStoredJson("perfilMedicoMock", null);
+        const storedDoctor = readStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_PROFILE, null);
         let doctor = storedDoctor && String(storedDoctor.id_medico) === String(mockDoctor.id_medico || mockDoctor.id)
             ? {
                 ...mockDoctor,
@@ -578,8 +468,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
 
             doctor = updatedDoctor;
-            writeStoredJson("perfilMedicoMock", updatedDoctor);
-            writeStoredJson("usuarioActualMock", {
+            writeStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_PROFILE, updatedDoctor);
+            writeStoredJson(LOCAL_STORAGE_KEYS.CURRENT_USER, {
                 ...loggedUser,
                 ...updatedDoctor,
                 matricula: mockDoctor.matricula,
@@ -593,7 +483,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         form.addEventListener("reset", () => {
             setTimeout(() => {
-                const storedProfile = readStoredJson("perfilMedicoMock", null);
+                const storedProfile = readStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_PROFILE, null);
                 const doctorData = storedProfile && String(storedProfile.id_medico) === String(mockDoctor.id_medico || mockDoctor.id)
                     ? {
                         ...mockDoctor,
@@ -617,9 +507,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         const [usuarios, medicosData, disponibilidadData] = await Promise.all([
-            loadMock("../../assets/mock/usuarios.json", fallbackData.usuarios),
-            loadMock("../../assets/mock/medicos.json", fallbackData.medicos),
-            loadMock("../../assets/mock/disponibilidad.json", fallbackData.disponibilidad)
+            loadMock(MOCK_PATHS.USERS, fallbackData.usuarios),
+            loadMock(MOCK_PATHS.DOCTORS, fallbackData.medicos),
+            loadMock(MOCK_PATHS.AVAILABILITY, fallbackData.disponibilidad)
         ]);
         const loggedUser = currentUser();
         const message = document.getElementById("disponibilidadMedicoMensaje");
@@ -653,7 +543,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const doctors = doctorsFromData(usuarios, medicosData);
         const mockDoctor = doctors.find((doctor) => String(doctor.id_medico || doctor.id) === String(loggedUser.id_medico))
             || loggedUser;
-        const storedDoctor = readStoredJson("perfilMedicoMock", null);
+        const storedDoctor = readStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_PROFILE, null);
         const doctor = storedDoctor && String(storedDoctor.id_medico) === String(mockDoctor.id_medico || mockDoctor.id)
             ? {
                 ...mockDoctor,
@@ -830,9 +720,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function persistAvailability() {
-            writeStoredJson("disponibilidadMedicoMock", availability);
-            writeStoredJson("disponibilidadSecretariaMock", availability);
-            writeStoredJson("disponibilidadPacienteMock", availability);
+            writeStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_AVAILABILITY, availability);
+            writeStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_AVAILABILITY, availability);
+            writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, availability);
         }
 
         function generateBlocks() {
@@ -875,7 +765,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             form.reset();
             renderPreview();
             clearErrors();
-            sessionStorage.removeItem("disponibilidadMedicoTemporal");
+            removeSessionItem(SESSION_STORAGE_KEYS.DOCTOR_TEMP_AVAILABILITY);
         }
 
         setText("disponibilidadMedicoNavbar", fullName(doctor));
@@ -924,10 +814,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         const [usuarios, medicosData, turnosData, triajeData] = await Promise.all([
-            loadMock("../../assets/mock/usuarios.json", fallbackData.usuarios),
-            loadMock("../../assets/mock/medicos.json", fallbackData.medicos),
-            loadMock("../../assets/mock/turnos.json", fallbackData.turnos),
-            loadMock("../../assets/mock/triaje.json", fallbackData.triaje)
+            loadMock(MOCK_PATHS.USERS, fallbackData.usuarios),
+            loadMock(MOCK_PATHS.DOCTORS, fallbackData.medicos),
+            loadMock(MOCK_PATHS.APPOINTMENTS, fallbackData.turnos),
+            loadMock(MOCK_PATHS.TRIAGE, fallbackData.triaje)
         ]);
         const loggedUser = currentUser();
         const form = document.getElementById("agendaMedicaFiltros");
@@ -965,7 +855,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const doctors = doctorsFromData(usuarios, medicosData);
         const mockDoctor = doctors.find((doctor) => String(doctor.id_medico || doctor.id) === String(loggedUser.id_medico))
             || loggedUser;
-        const storedDoctor = readStoredJson("perfilMedicoMock", null);
+        const storedDoctor = readStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_PROFILE, null);
         const doctor = storedDoctor && String(storedDoctor.id_medico) === String(mockDoctor.id_medico || mockDoctor.id)
             ? {
                 ...mockDoctor,
@@ -1019,7 +909,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function persistTurns() {
-            writeStoredJson("turnosMedicoMock", turns);
+            writeStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_TURNS, turns);
         }
 
         function doctorId() {
@@ -1357,11 +1247,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         const [usuarios, medicosData, turnosData, disponibilidadData, triajeData] = await Promise.all([
-            loadMock("../../assets/mock/usuarios.json", fallbackData.usuarios),
-            loadMock("../../assets/mock/medicos.json", fallbackData.medicos),
-            loadMock("../../assets/mock/turnos.json", fallbackData.turnos),
-            loadMock("../../assets/mock/disponibilidad.json", fallbackData.disponibilidad),
-            loadMock("../../assets/mock/triaje.json", fallbackData.triaje)
+            loadMock(MOCK_PATHS.USERS, fallbackData.usuarios),
+            loadMock(MOCK_PATHS.DOCTORS, fallbackData.medicos),
+            loadMock(MOCK_PATHS.APPOINTMENTS, fallbackData.turnos),
+            loadMock(MOCK_PATHS.AVAILABILITY, fallbackData.disponibilidad),
+            loadMock(MOCK_PATHS.TRIAGE, fallbackData.triaje)
         ]);
         const loggedUser = currentUser();
         const message = document.getElementById("reprogramacionMedicoMensaje");
@@ -1397,7 +1287,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const doctors = doctorsFromData(usuarios, medicosData);
         const mockDoctor = doctors.find((doctor) => String(doctor.id_medico || doctor.id) === String(loggedUser.id_medico))
             || loggedUser;
-        const storedDoctor = readStoredJson("perfilMedicoMock", null);
+        const storedDoctor = readStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_PROFILE, null);
         const doctor = storedDoctor && String(storedDoctor.id_medico) === String(mockDoctor.id_medico || mockDoctor.id)
             ? { ...mockDoctor, ...loggedUser, ...storedDoctor, matricula: mockDoctor.matricula, especialidad: mockDoctor.especialidad }
             : { ...mockDoctor, ...loggedUser, matricula: mockDoctor.matricula, especialidad: mockDoctor.especialidad };
@@ -1417,7 +1307,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 };
             });
         let availability = mergeStoredAvailability(Array.isArray(disponibilidadData) ? disponibilidadData : []);
-        const storedProcess = readStoredJson("reprogramacionMedicoMock", {});
+        const storedProcess = readStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_RESCHEDULE, {});
 
         if (storedProcess && String(storedProcess.id_medico) === String(doctorId)) {
             proposals = Array.isArray(storedProcess.proposals) ? storedProcess.proposals : [];
@@ -1565,11 +1455,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function persistState() {
-            writeStoredJson("turnosMedicoMock", turns);
-            writeStoredJson("disponibilidadMedicoMock", availability);
-            writeStoredJson("disponibilidadSecretariaMock", availability);
-            writeStoredJson("disponibilidadPacienteMock", availability);
-            writeStoredJson("reprogramacionMedicoMock", {
+            writeStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_TURNS, turns);
+            writeStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_AVAILABILITY, availability);
+            writeStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_AVAILABILITY, availability);
+            writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, availability);
+            writeStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_RESCHEDULE, {
                 id_medico: doctorId,
                 proposals,
                 waitlist
@@ -1911,10 +1801,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         const [usuarios, medicosData, turnosData, triajeData] = await Promise.all([
-            loadMock("../../assets/mock/usuarios.json", fallbackData.usuarios),
-            loadMock("../../assets/mock/medicos.json", fallbackData.medicos),
-            loadMock("../../assets/mock/turnos.json", fallbackData.turnos),
-            loadMock("../../assets/mock/triaje.json", fallbackData.triaje)
+            loadMock(MOCK_PATHS.USERS, fallbackData.usuarios),
+            loadMock(MOCK_PATHS.DOCTORS, fallbackData.medicos),
+            loadMock(MOCK_PATHS.APPOINTMENTS, fallbackData.turnos),
+            loadMock(MOCK_PATHS.TRIAGE, fallbackData.triaje)
         ]);
         const loggedUser = currentUser();
 
@@ -1927,7 +1817,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const doctors = doctorsFromData(usuarios, medicosData);
         const mockDoctor = doctors.find((item) => String(item.id_medico || item.id) === String(loggedUser.id_medico))
             || loggedUser;
-        const storedDoctor = readStoredJson("perfilMedicoMock", null);
+        const storedDoctor = readStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_PROFILE, null);
         const doctor = storedDoctor && String(storedDoctor.id_medico) === String(mockDoctor.id_medico || mockDoctor.id)
             ? {
                 ...mockDoctor,

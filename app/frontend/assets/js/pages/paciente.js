@@ -1,3 +1,5 @@
+const coreModuleBaseUrl = new URL("../core/", document.currentScript.src).href;
+
 document.addEventListener("DOMContentLoaded", async () => {
     const fallbackData = {
         usuarios: {
@@ -20,19 +22,19 @@ document.addEventListener("DOMContentLoaded", async () => {
         disponibilidad: []
     };
 
-    async function loadMock(path, fallback) {
-        try {
-            const response = await fetch(path);
-
-            if (!response.ok) {
-                throw new Error("No se pudo leer el archivo mock.");
-            }
-
-            return await response.json();
-        } catch (error) {
-            return fallback;
-        }
-    }
+    const [
+        { LOCAL_STORAGE_KEYS, MOCK_PATHS, SESSION_STORAGE_KEYS },
+        { clearStoredJson, loadMock, readStoredJson, writeStoredJson },
+        { readSessionJson, removeSessionItem, writeSessionJson },
+        { formatDate },
+        { isStrongPassword, isValidEmail }
+    ] = await Promise.all([
+        import(`${coreModuleBaseUrl}constants.js`),
+        import(`${coreModuleBaseUrl}storage.js`),
+        import(`${coreModuleBaseUrl}session.js`),
+        import(`${coreModuleBaseUrl}formatters.js`),
+        import(`${coreModuleBaseUrl}validators.js`)
+    ]);
 
     function setText(id, value) {
         const element = document.getElementById(id);
@@ -40,16 +42,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (element) {
             element.textContent = value;
         }
-    }
-
-    function formatDate(dateValue) {
-        const date = new Date(`${dateValue}T00:00:00`);
-
-        return new Intl.DateTimeFormat("es-AR", {
-            day: "2-digit",
-            month: "2-digit",
-            year: "numeric"
-        }).format(date);
     }
 
     function priorityClass(priority) {
@@ -150,28 +142,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             puntaje,
             duracionTurno: 40
         };
-    }
-
-    function readStoredJson(key, fallback) {
-        const storedValue = localStorage.getItem(key);
-
-        if (!storedValue) {
-            return fallback;
-        }
-
-        try {
-            return JSON.parse(storedValue);
-        } catch (error) {
-            return fallback;
-        }
-    }
-
-    function writeStoredJson(key, value) {
-        localStorage.setItem(key, JSON.stringify(value));
-    }
-
-    function clearStoredJson(key) {
-        localStorage.removeItem(key);
     }
 
     function doctorMatchesAvailability(item, doctors) {
@@ -288,7 +258,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     function currentUser() {
-        return readStoredJson("usuarioActualMock", null);
+        return readStoredJson(LOCAL_STORAGE_KEYS.CURRENT_USER, null);
     }
 
     function currentPatient(usuarios) {
@@ -382,9 +352,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         const [usuarios, turnos, triaje] = await Promise.all([
-            loadMock("../../assets/mock/usuarios.json", fallbackData.usuarios),
-            loadMock("../../assets/mock/turnos.json", fallbackData.turnos),
-            loadMock("../../assets/mock/triaje.json", fallbackData.triaje)
+            loadMock(MOCK_PATHS.USERS, fallbackData.usuarios),
+            loadMock(MOCK_PATHS.APPOINTMENTS, fallbackData.turnos),
+            loadMock(MOCK_PATHS.TRIAGE, fallbackData.triaje)
         ]);
 
         const paciente = currentPatient(usuarios);
@@ -447,9 +417,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         let selectedAvailability = null;
 
         const [usuariosData, medicosData, disponibilidadData] = await Promise.all([
-            loadMock("../../assets/mock/usuarios.json", fallbackData.usuarios),
-            loadMock("../../assets/mock/medicos.json", fallbackData.medicos),
-            loadMock("../../assets/mock/disponibilidad.json", fallbackData.disponibilidad)
+            loadMock(MOCK_PATHS.USERS, fallbackData.usuarios),
+            loadMock(MOCK_PATHS.DOCTORS, fallbackData.medicos),
+            loadMock(MOCK_PATHS.AVAILABILITY, fallbackData.disponibilidad)
         ]);
         const patient = currentPatient(usuariosData);
         const medicosMock = Array.isArray(medicosData.medicos) ? medicosData.medicos : [];
@@ -704,13 +674,13 @@ document.addEventListener("DOMContentLoaded", async () => {
                 fechaConfirmacion: new Date().toISOString()
             };
 
-            sessionStorage.setItem("solicitudTurnoPaciente", JSON.stringify(lastRequest));
-            sessionStorage.setItem("turnoReservadoPaciente", JSON.stringify(reservedAppointment));
+            writeSessionJson(SESSION_STORAGE_KEYS.PATIENT_APPOINTMENT_REQUEST, lastRequest);
+            writeSessionJson(SESSION_STORAGE_KEYS.PATIENT_RESERVED_APPOINTMENT, reservedAppointment);
 
             const patientId = patient.id_paciente || 1;
-            const storedTurns = readStoredJson("turnosPacienteMock", [])
+            const storedTurns = readStoredJson(LOCAL_STORAGE_KEYS.PATIENT_TURNS, [])
                 .filter((turn) => compatiblePatientTurn(turn, medicosMock, patientId));
-            const storedAvailability = mergeStoredAvailability("disponibilidadPacienteMock", disponibilidadMock, medicosMock);
+            const storedAvailability = mergeStoredAvailability(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, disponibilidadMock, medicosMock);
             const updatedAvailability = storedAvailability.map((item) => {
                 if (String(item.id_disponibilidad) === String(selectedAvailability.id_disponibilidad)) {
                     return {
@@ -738,14 +708,14 @@ document.addEventListener("DOMContentLoaded", async () => {
                 origenInterfaz: true
             };
 
-            writeStoredJson("turnosPacienteMock", [...storedTurns, patientTurn]);
-            writeStoredJson("disponibilidadPacienteMock", updatedAvailability);
+            writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_TURNS, [...storedTurns, patientTurn]);
+            writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, updatedAvailability);
             window.location.href = "turno-reservado.html";
         }
 
         function exitAppointmentRequest() {
-            sessionStorage.removeItem("solicitudTurnoPaciente");
-            sessionStorage.removeItem("turnoReservadoPaciente");
+            removeSessionItem(SESSION_STORAGE_KEYS.PATIENT_APPOINTMENT_REQUEST);
+            removeSessionItem(SESSION_STORAGE_KEYS.PATIENT_RESERVED_APPOINTMENT);
             lastRequest = null;
             selectedAvailability = null;
             window.location.href = "dashboard.html";
@@ -809,10 +779,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         const [usuarios, turnosMock, disponibilidadData, medicosData] = await Promise.all([
-            loadMock("../../assets/mock/usuarios.json", fallbackData.usuarios),
-            loadMock("../../assets/mock/turnos.json", fallbackData.turnos),
-            loadMock("../../assets/mock/disponibilidad.json", fallbackData.disponibilidad),
-            loadMock("../../assets/mock/medicos.json", fallbackData.medicos)
+            loadMock(MOCK_PATHS.USERS, fallbackData.usuarios),
+            loadMock(MOCK_PATHS.APPOINTMENTS, fallbackData.turnos),
+            loadMock(MOCK_PATHS.AVAILABILITY, fallbackData.disponibilidad),
+            loadMock(MOCK_PATHS.DOCTORS, fallbackData.medicos)
         ]);
         const currentPatientData = currentPatient(usuarios);
         const currentPatientId = currentPatientData.id_paciente || 1;
@@ -851,8 +821,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                 && compatiblePatientTurn(turn, medicosMock, currentPatientId)
             ));
 
-            writeStoredJson("turnosPacienteMock", localAppointments);
-            writeStoredJson("disponibilidadPacienteMock", availability);
+            writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_TURNS, localAppointments);
+            writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, availability);
         }
 
         function showMessage(type, text) {
@@ -1094,12 +1064,12 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         setText("misTurnosPaciente", patientName);
         appointments = mergeStoredPatientTurns(
-            "turnosPacienteMock",
+            LOCAL_STORAGE_KEYS.PATIENT_TURNS,
             normalizeMockAppointments(),
             medicosMock,
             currentPatientId
         );
-        availability = mergeStoredAvailability("disponibilidadPacienteMock", disponibilidadData, medicosMock);
+        availability = mergeStoredAvailability(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, disponibilidadData, medicosMock);
 
         reservedList.addEventListener("click", (event) => {
             const button = event.target.closest("button[data-action]");
@@ -1132,9 +1102,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             return;
         }
 
-        const usuarios = await loadMock("../../assets/mock/usuarios.json", fallbackData.usuarios);
+        const usuarios = await loadMock(MOCK_PATHS.USERS, fallbackData.usuarios);
         const mockPatient = currentPatient(usuarios);
-        const storedPatient = readStoredJson("perfilPacienteMock", mockPatient);
+        const storedPatient = readStoredJson(LOCAL_STORAGE_KEYS.PATIENT_PROFILE, mockPatient);
         const message = document.getElementById("perfilMensaje");
         const fields = {
             nombre: document.getElementById("perfilNombre"),
@@ -1180,14 +1150,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         function clearErrors() {
             Object.keys(fields).forEach((fieldName) => setFieldError(fieldName, ""));
             message.classList.add("d-none");
-        }
-
-        function isValidEmail(value) {
-            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-        }
-
-        function isStrongPassword(value) {
-            return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/.test(value);
         }
 
         function validateProfile() {
@@ -1296,14 +1258,14 @@ document.addEventListener("DOMContentLoaded", async () => {
                 updatedPatient.passwordActualizada = true;
             }
 
-            localStorage.setItem("perfilPacienteMock", JSON.stringify(updatedPatient));
+            writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_PROFILE, updatedPatient);
             fillForm(updatedPatient);
             clearErrors();
             showSuccess();
         });
 
         form.addEventListener("reset", () => {
-            fillForm(readStoredJson("perfilPacienteMock", mockPatient));
+            fillForm(readStoredJson(LOCAL_STORAGE_KEYS.PATIENT_PROFILE, mockPatient));
             clearErrors();
         });
     }
@@ -1316,14 +1278,13 @@ document.addEventListener("DOMContentLoaded", async () => {
             return;
         }
 
-        const storedAppointment = sessionStorage.getItem("turnoReservadoPaciente");
+        const appointment = readSessionJson(SESSION_STORAGE_KEYS.PATIENT_RESERVED_APPOINTMENT, null);
 
-        if (!storedAppointment) {
+        if (!appointment) {
             emptyState.classList.remove("d-none");
             return;
         }
 
-        const appointment = JSON.parse(storedAppointment);
         const priorityBadge = document.getElementById("turnoReservadoPrioridad");
         const appointmentType = appointment.esSobreturno
             ? "Sobreturno sugerido por prioridad alta"

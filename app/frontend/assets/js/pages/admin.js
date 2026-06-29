@@ -1,3 +1,5 @@
+const coreModuleBaseUrl = new URL("../core/", document.currentScript.src).href;
+
 document.addEventListener("DOMContentLoaded", async () => {
     const fallbackData = {
         usuarios: {
@@ -12,37 +14,19 @@ document.addEventListener("DOMContentLoaded", async () => {
         disponibilidad: []
     };
 
-    async function loadMock(path, fallback) {
-        try {
-            const response = await fetch(path);
-
-            if (!response.ok) {
-                throw new Error("No se pudo leer el archivo mock.");
-            }
-
-            return await response.json();
-        } catch (error) {
-            return fallback;
-        }
-    }
-
-    function readStoredJson(key, fallback) {
-        const storedValue = localStorage.getItem(key);
-
-        if (!storedValue) {
-            return fallback;
-        }
-
-        try {
-            return JSON.parse(storedValue);
-        } catch (error) {
-            return fallback;
-        }
-    }
-
-    function writeStoredJson(key, value) {
-        localStorage.setItem(key, JSON.stringify(value));
-    }
+    const [
+        { LOCAL_STORAGE_KEYS, MOCK_PATHS },
+        { loadMock, readStoredJson, writeStoredJson },
+        { escapeHtml, normalizeState, normalizeText },
+        { formatToday, priorityLabel, todayInputValue },
+        { isStrongPassword, isValidEmail }
+    ] = await Promise.all([
+        import(`${coreModuleBaseUrl}constants.js`),
+        import(`${coreModuleBaseUrl}storage.js`),
+        import(`${coreModuleBaseUrl}helpers.js`),
+        import(`${coreModuleBaseUrl}formatters.js`),
+        import(`${coreModuleBaseUrl}validators.js`)
+    ]);
 
     function setText(id, value) {
         const element = document.getElementById(id);
@@ -58,48 +42,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     function fullName(person) {
         return `${person.nombre} ${person.apellido}`;
-    }
-
-    function escapeHtml(value) {
-        return String(value || "")
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
-    }
-
-    function normalizeState(state) {
-        return String(state || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-    }
-
-    function todayInputValue() {
-        const now = new Date();
-        const month = String(now.getMonth() + 1).padStart(2, "0");
-        const day = String(now.getDate()).padStart(2, "0");
-
-        return `${now.getFullYear()}-${month}-${day}`;
-    }
-
-    function formatToday() {
-        return new Intl.DateTimeFormat("es-AR", {
-            weekday: "long",
-            day: "2-digit",
-            month: "2-digit",
-            year: "numeric"
-        }).format(new Date());
-    }
-
-    function priorityLabel(priority) {
-        if (priority === "Rojo" || priority === "Alta") {
-            return "Alta";
-        }
-
-        if (priority === "Amarillo" || priority === "Media") {
-            return "Media";
-        }
-
-        return "Baja";
     }
 
     function roleLabel(role) {
@@ -132,21 +74,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         return `<strong class="fw-semibold">${escapeHtml(state || "-")}</strong>`;
     }
 
-    function normalizeText(value) {
-        return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-    }
-
-    function isValidEmail(value) {
-        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-    }
-
-    function isStrongPassword(value) {
-        return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/.test(value);
-    }
-
     function mergeStoredUsers(baseUsers) {
         const base = Array.isArray(baseUsers) ? baseUsers : [];
-        const stored = readStoredJson("usuariosAdminMock", null);
+        const stored = readStoredJson(LOCAL_STORAGE_KEYS.ADMIN_USERS, null);
 
         if (!Array.isArray(stored)) {
             return base.map((user) => ({ ...user, estado: user.estado || "Activo" }));
@@ -156,7 +86,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     function persistUsers(users) {
-        writeStoredJson("usuariosAdminMock", users);
+        writeStoredJson(LOCAL_STORAGE_KEYS.ADMIN_USERS, users);
     }
 
     function turnosList(turnos) {
@@ -164,9 +94,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     function mergeStoredTurns(baseTurns) {
-        const storedSecretaryTurns = readStoredJson("turnosSecretariaMock", null);
-        const storedDoctorTurns = readStoredJson("turnosMedicoMock", null);
-        const storedPatientTurns = readStoredJson("turnosPacienteMock", []);
+        const storedSecretaryTurns = readStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_TURNS, null);
+        const storedDoctorTurns = readStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_TURNS, null);
+        const storedPatientTurns = readStoredJson(LOCAL_STORAGE_KEYS.PATIENT_TURNS, []);
         const base = Array.isArray(baseTurns) ? baseTurns : [];
         const byId = new Map(base.map((turn) => [String(turn.id_turno), turn]));
 
@@ -284,13 +214,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         Promise.all([
-            loadMock("../../assets/mock/usuarios.json", fallbackData.usuarios),
-            loadMock("../../assets/mock/turnos.json", fallbackData.turnos),
-            loadMock("../../assets/mock/disponibilidad.json", fallbackData.disponibilidad),
-            loadMock("../../assets/mock/triaje.json", fallbackData.triaje)
+            loadMock(MOCK_PATHS.USERS, fallbackData.usuarios),
+            loadMock(MOCK_PATHS.APPOINTMENTS, fallbackData.turnos),
+            loadMock(MOCK_PATHS.AVAILABILITY, fallbackData.disponibilidad),
+            loadMock(MOCK_PATHS.TRIAGE, fallbackData.triaje)
         ]).then(([usuariosData, turnosData, disponibilidadData, triajeData]) => {
             const users = mergeStoredUsers(usuariosData.usuarios || []);
-            const loggedUser = readStoredJson("usuarioActualMock", null);
+            const loggedUser = readStoredJson(LOCAL_STORAGE_KEYS.CURRENT_USER, null);
             const accessMessage = document.getElementById("adminAccesoMensaje");
 
             if (!loggedUser || !roleMatches(loggedUser, "administrador")) {
@@ -343,10 +273,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         Promise.all([
-            loadMock("../../assets/mock/usuarios.json", fallbackData.usuarios),
-            loadMock("../../assets/mock/medicos.json", { medicos: [] })
+            loadMock(MOCK_PATHS.USERS, fallbackData.usuarios),
+            loadMock(MOCK_PATHS.DOCTORS, { medicos: [] })
         ]).then(([usuariosData]) => {
-            const loggedUser = readStoredJson("usuarioActualMock", null);
+            const loggedUser = readStoredJson(LOCAL_STORAGE_KEYS.CURRENT_USER, null);
             const accessMessage = document.getElementById("adminUsuariosAccesoMensaje");
             const message = document.getElementById("adminUsuariosMensaje");
             const searchInput = document.getElementById("adminUsuariosBusqueda");
@@ -876,12 +806,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         Promise.all([
-            loadMock("../../assets/mock/usuarios.json", fallbackData.usuarios),
-            loadMock("../../assets/mock/turnos.json", fallbackData.turnos),
-            loadMock("../../assets/mock/disponibilidad.json", fallbackData.disponibilidad),
-            loadMock("../../assets/mock/triaje.json", fallbackData.triaje)
+            loadMock(MOCK_PATHS.USERS, fallbackData.usuarios),
+            loadMock(MOCK_PATHS.APPOINTMENTS, fallbackData.turnos),
+            loadMock(MOCK_PATHS.AVAILABILITY, fallbackData.disponibilidad),
+            loadMock(MOCK_PATHS.TRIAGE, fallbackData.triaje)
         ]).then(([usuariosData, turnosData, disponibilidadData, triajeData]) => {
-            const loggedUser = readStoredJson("usuarioActualMock", null);
+            const loggedUser = readStoredJson(LOCAL_STORAGE_KEYS.CURRENT_USER, null);
             const accessMessage = document.getElementById("adminMetricasAccesoMensaje");
 
             if (!loggedUser || !roleMatches(loggedUser, "administrador")) {
@@ -1091,8 +1021,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             return;
         }
 
-        loadMock("../../assets/mock/usuarios.json", fallbackData.usuarios).then((usuariosData) => {
-            const loggedUser = readStoredJson("usuarioActualMock", null);
+        loadMock(MOCK_PATHS.USERS, fallbackData.usuarios).then((usuariosData) => {
+            const loggedUser = readStoredJson(LOCAL_STORAGE_KEYS.CURRENT_USER, null);
             const accessMessage = document.getElementById("perfilAdminAccesoMensaje");
             const message = document.getElementById("perfilAdminMensaje");
 
@@ -1251,7 +1181,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 ));
                 admin = updatedAdmin;
                 persistUsers(users);
-                writeStoredJson("usuarioActualMock", updatedAdmin);
+                writeStoredJson(LOCAL_STORAGE_KEYS.CURRENT_USER, updatedAdmin);
                 fillForm(updatedAdmin);
                 clearErrors();
                 showMessage("success", "Perfil actualizado correctamente.");
