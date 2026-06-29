@@ -1,5 +1,6 @@
 const coreModuleBaseUrl = new URL("../core/", document.currentScript.src).href;
 const componentModuleBaseUrl = new URL("../components/", document.currentScript.src).href;
+const featureModuleBaseUrl = new URL("../features/", document.currentScript.src).href;
 
 document.addEventListener("DOMContentLoaded", async () => {
     const fallbackData = {
@@ -26,7 +27,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         { clearErrors: clearFieldErrors, setFieldError: applyFieldError },
         { getBootstrapModal, hideModal, showModal },
         { fillSelect },
-        { renderTableEmptyRow }
+        { renderTableEmptyRow },
+        { initAdminDashboardMetrics, initAdminMetrics: initAdminMetricsFeature }
     ] = await Promise.all([
         import(`${coreModuleBaseUrl}constants.js`),
         import(`${coreModuleBaseUrl}storage.js`),
@@ -38,7 +40,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         import(`${componentModuleBaseUrl}forms.js`),
         import(`${componentModuleBaseUrl}modals.js`),
         import(`${componentModuleBaseUrl}selects.js`),
-        import(`${componentModuleBaseUrl}tables.js`)
+        import(`${componentModuleBaseUrl}tables.js`),
+        import(`${featureModuleBaseUrl}metrics/metrics-ui.js`)
     ]);
 
     function setText(id, value) {
@@ -152,113 +155,20 @@ document.addEventListener("DOMContentLoaded", async () => {
         return triajes.find((triaje) => String(triaje.id_turno) === String(idTurno)) || null;
     }
 
-    function timeDifferenceMinutes(startValue, endValue) {
-        if (!startValue || !endValue) {
-            return null;
-        }
-
-        const startDate = new Date(startValue);
-        const endDate = new Date(endValue);
-
-        if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
-            return null;
-        }
-
-        return Math.max(0, Math.round((endDate.getTime() - startDate.getTime()) / 60000));
-    }
-
-    function turnDateTime(turn, timeField) {
-        const timeValue = turn[timeField];
-
-        if (!turn.fecha || !timeValue) {
-            return null;
-        }
-
-        return `${turn.fecha}T${timeValue}:00`;
-    }
-
-    function averageLabel(values) {
-        const usableValues = values.filter((value) => Number.isFinite(value));
-
-        if (usableValues.length === 0) {
-            return "No disponible";
-        }
-
-        const average = Math.round(usableValues.reduce((sum, value) => sum + value, 0) / usableValues.length);
-
-        return `${average} min`;
-    }
-
-    function mostFrequentLabel(counts) {
-        const entries = Object.entries(counts);
-
-        if (entries.length === 0) {
-            return "-";
-        }
-
-        return entries.sort((a, b) => b[1] - a[1])[0][0];
-    }
-
     function doctorById(users, idMedico) {
         return users.find((user) => String(user.id_medico) === String(idMedico)) || null;
     }
 
     function initAdminDashboard() {
-        const dashboardMetric = document.getElementById("adminMetricUsuarios");
-
-        if (!dashboardMetric) {
-            return;
-        }
-
-        Promise.all([
-            loadMock(MOCK_PATHS.USERS, fallbackData.usuarios),
-            loadMock(MOCK_PATHS.APPOINTMENTS, fallbackData.turnos),
-            loadMock(MOCK_PATHS.AVAILABILITY, fallbackData.disponibilidad),
-            loadMock(MOCK_PATHS.TRIAGE, fallbackData.triaje)
-        ]).then(([usuariosData, turnosData, disponibilidadData, triajeData]) => {
-            const users = mergeStoredUsers(usuariosData.usuarios || []);
-            const loggedUser = readStoredJson(LOCAL_STORAGE_KEYS.CURRENT_USER, null);
-            const accessMessage = document.getElementById("adminAccesoMensaje");
-
-            if (!loggedUser || !roleMatches(loggedUser, "administrador")) {
-                if (accessMessage) {
-                    accessMessage.classList.remove("d-none");
-                }
-
-                return;
-            }
-
-            const turns = mergeStoredTurns(turnosList(turnosData));
-            const availability = Array.isArray(disponibilidadData) ? disponibilidadData : [];
-            const triages = Array.isArray(triajeData.triajes) ? triajeData.triajes : [];
-            const today = todayInputValue();
-            const turnsWithPriority = turns.map((turn) => {
-                const triage = triajeByTurnId(triages, turn.id_turno);
-
-                return {
-                    ...turn,
-                    prioridad: priorityLabel(turn.prioridad || (triage ? triage.prioridad : "")),
-                    color_prioridad: turn.color_prioridad || (triage ? triage.color_prioridad : "")
-                };
-            });
-            const reprogramacionesPendientes = turnsWithPriority.filter((turn) => (
-                normalizeState(turn.estado) === "cancelado"
-                || (
-                    turn.reprogramado
-                    && normalizeState(turn.estado) !== "completado"
-                )
-            )).length;
-
-            setText("adminNombreNavbar", fullName(loggedUser));
-            setText("adminFechaActual", formatToday());
-            setText("adminMetricUsuarios", users.length);
-            setText("adminMetricPacientes", users.filter((user) => roleMatches(user, "paciente")).length);
-            setText("adminMetricMedicos", users.filter((user) => roleMatches(user, "medico")).length);
-            setText("adminMetricSecretarias", users.filter((user) => roleMatches(user, "secretaria")).length);
-            setText("adminMetricTurnosDia", turnsWithPriority.filter((turn) => turn.fecha === today).length);
-            setText("adminMetricPresentes", turnsWithPriority.filter((turn) => normalizeState(turn.estado) === "presente").length);
-            setText("adminMetricAtencion", turnsWithPriority.filter((turn) => normalizeState(turn.estado) === "en atencion").length);
-            setText("adminMetricReprogramaciones", reprogramacionesPendientes);
+        initAdminDashboardMetrics({
+            fallbackData,
+            fullName,
+            mergeStoredTurns,
+            mergeStoredUsers,
+            roleMatches,
+            setText,
+            triajeByTurnId,
+            turnosList
         });
     }
 
@@ -785,203 +695,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     function initAdminMetrics() {
-        const metricsForm = document.getElementById("adminMetricasFiltros");
-
-        if (!metricsForm) {
-            return;
-        }
-
-        Promise.all([
-            loadMock(MOCK_PATHS.USERS, fallbackData.usuarios),
-            loadMock(MOCK_PATHS.APPOINTMENTS, fallbackData.turnos),
-            loadMock(MOCK_PATHS.AVAILABILITY, fallbackData.disponibilidad),
-            loadMock(MOCK_PATHS.TRIAGE, fallbackData.triaje)
-        ]).then(([usuariosData, turnosData, disponibilidadData, triajeData]) => {
-            const loggedUser = readStoredJson(LOCAL_STORAGE_KEYS.CURRENT_USER, null);
-            const accessMessage = document.getElementById("adminMetricasAccesoMensaje");
-
-            if (!loggedUser || !roleMatches(loggedUser, "administrador")) {
-                if (accessMessage) {
-                    accessMessage.classList.remove("d-none");
-                }
-
-                return;
-            }
-
-            const users = mergeStoredUsers(usuariosData.usuarios || []);
-            const doctors = users.filter((user) => roleMatches(user, "medico"));
-            const triages = Array.isArray(triajeData.triajes) ? triajeData.triajes : [];
-            const availability = Array.isArray(disponibilidadData) ? disponibilidadData : [];
-            const fields = {
-                from: document.getElementById("metricasFechaDesde"),
-                to: document.getElementById("metricasFechaHasta"),
-                doctor: document.getElementById("metricasMedico"),
-                specialty: document.getElementById("metricasEspecialidad"),
-                state: document.getElementById("metricasEstado")
-            };
-            const priorityContainer = document.getElementById("metricasPrioridadDistribucion");
-            const stateTable = document.getElementById("metricasEstadoTabla");
-            const doctorTable = document.getElementById("metricasMedicosTabla");
-            const turns = mergeStoredTurns(turnosList(turnosData)).map((turn) => {
-                const triage = triajeByTurnId(triages, turn.id_turno);
-                const doctor = doctorById(users, turn.id_medico);
-
-                return {
-                    ...turn,
-                    prioridad: priorityLabel(turn.prioridad || (triage ? triage.prioridad : "")),
-                    puntaje_triaje: turn.puntaje_triaje ?? (triage ? triage.puntaje : ""),
-                    especialidad: turn.especialidad || (doctor ? doctor.especialidad : ""),
-                    espera_minutos: timeDifferenceMinutes(
-                        turn.fecha_hora_arribo || turn.fecha_arribo || turn.hora_arribo && turnDateTime(turn, "hora_arribo"),
-                        turn.fecha_hora_inicio || turn.fecha_inicio_atencion || turn.hora_inicio_atencion && turnDateTime(turn, "hora_inicio_atencion")
-                    ),
-                    atencion_minutos: timeDifferenceMinutes(
-                        turn.fecha_hora_inicio || turn.fecha_inicio_atencion || turn.hora_inicio_atencion && turnDateTime(turn, "hora_inicio_atencion"),
-                        turn.fecha_hora_cierre || turn.fecha_cierre || turn.hora_cierre && turnDateTime(turn, "hora_cierre")
-                    )
-                };
-            });
-
-            function filteredTurns() {
-                return turns.filter((turn) => {
-                    const doctor = doctorById(users, turn.id_medico);
-                    const matchesFrom = !fields.from.value || turn.fecha >= fields.from.value;
-                    const matchesTo = !fields.to.value || turn.fecha <= fields.to.value;
-                    const matchesDoctor = !fields.doctor.value || String(turn.id_medico) === fields.doctor.value;
-                    const matchesSpecialty = !fields.specialty.value || (doctor && doctor.especialidad === fields.specialty.value);
-                    const matchesState = !fields.state.value || normalizeState(turn.estado) === normalizeState(fields.state.value);
-
-                    return matchesFrom && matchesTo && matchesDoctor && matchesSpecialty && matchesState;
-                });
-            }
-
-            function countBy(items, labelFactory) {
-                return items.reduce((counts, item) => {
-                    const label = labelFactory(item);
-                    counts[label] = (counts[label] || 0) + 1;
-                    return counts;
-                }, {});
-            }
-
-            function renderPriorityDistribution(visibleTurns) {
-                const counts = countBy(visibleTurns, (turn) => priorityLabel(turn.prioridad));
-                const total = visibleTurns.length;
-                const slices = [
-                    { label: "Baja", count: counts.Baja || 0, color: "#198754" },
-                    { label: "Media", count: counts.Media || 0, color: "#ffc107" },
-                    { label: "Alta", count: counts.Alta || 0, color: "#dc3545" }
-                ];
-                let accumulatedPercent = 0;
-                const gradientStops = total === 0
-                    ? "#e9ecef 0 100%"
-                    : slices.map((slice) => {
-                        const slicePercent = (slice.count / total) * 100;
-                        const start = accumulatedPercent;
-                        const end = accumulatedPercent + slicePercent;
-                        accumulatedPercent = end;
-
-                        return `${slice.color} ${start}% ${end}%`;
-                    }).join(", ");
-
-                priorityContainer.innerHTML = `
-                    <div class="metric-donut-layout">
-                        <div class="metric-donut" style="background: conic-gradient(${gradientStops});" aria-label="Distribucion por prioridad">
-                            <div class="metric-donut-center">
-                                <span class="text-secondary small">Total</span>
-                                <strong>${total} turnos</strong>
-                            </div>
-                        </div>
-                        <div class="metric-donut-legend">
-                            ${slices.map((slice) => {
-                                const percent = total === 0 ? 0 : Math.round((slice.count / total) * 100);
-
-                                return `
-                                    <div class="metric-donut-legend-item">
-                                        <span class="metric-donut-dot" style="background-color: ${slice.color};"></span>
-                                        <span class="fw-semibold">${escapeHtml(slice.label)}</span>
-                                        <span class="text-secondary ms-auto">${slice.count} (${percent}%)</span>
-                                    </div>
-                                `;
-                            }).join("")}
-                        </div>
-                    </div>
-                `;
-            }
-
-            function renderStateDistribution(visibleTurns) {
-                const counts = countBy(visibleTurns, (turn) => turn.estado || "-");
-                const states = ["Reservado", "Presente", "En atención", "Completado", "Cancelado", "Ausente"];
-
-                stateTable.innerHTML = states.map((state) => {
-                    const count = Object.entries(counts).reduce((total, [key, value]) => (
-                        normalizeState(key) === normalizeState(state) ? total + value : total
-                    ), 0);
-
-                    return `
-                        <tr>
-                            <td>${renderStateText(state, escapeHtml)}</td>
-                            <td class="fw-semibold">${count}</td>
-                        </tr>
-                    `;
-                }).join("");
-            }
-
-            function renderDoctorMetrics(visibleTurns) {
-                if (doctors.length === 0) {
-                    doctorTable.innerHTML = renderTableEmptyRow(8, "No hay medicos registrados.");
-                    return;
-                }
-
-                doctorTable.innerHTML = doctors.map((doctor) => {
-                    const doctorTurns = visibleTurns.filter((turn) => String(turn.id_medico) === String(doctor.id_medico));
-                    const priorityCounts = countBy(doctorTurns, (turn) => priorityLabel(turn.prioridad));
-
-                    return `
-                        <tr>
-                            <td class="fw-semibold">${escapeHtml(fullName(doctor))}</td>
-                            <td>${escapeHtml(doctor.especialidad || "-")}</td>
-                            <td>${doctorTurns.length}</td>
-                            <td>${doctorTurns.filter((turn) => normalizeState(turn.estado) === "completado").length}</td>
-                            <td>${doctorTurns.filter((turn) => normalizeState(turn.estado) === "cancelado").length}</td>
-                            <td>${doctorTurns.filter((turn) => normalizeState(turn.estado) === "ausente").length}</td>
-                            <td>${averageLabel(doctorTurns.map((turn) => turn.atencion_minutos))}</td>
-                            <td>Alta ${priorityCounts.Alta || 0} | Media ${priorityCounts.Media || 0} | Baja ${priorityCounts.Baja || 0}</td>
-                        </tr>
-                    `;
-                }).join("");
-            }
-
-            function renderMetrics() {
-                const visibleTurns = filteredTurns();
-                const priorityCounts = countBy(visibleTurns, (turn) => priorityLabel(turn.prioridad));
-                const absentCount = visibleTurns.filter((turn) => normalizeState(turn.estado) === "ausente").length;
-
-                setText("metricasTotalTurnos", visibleTurns.length);
-                setText("metricasCompletados", visibleTurns.filter((turn) => normalizeState(turn.estado) === "completado").length);
-                setText("metricasCancelados", visibleTurns.filter((turn) => normalizeState(turn.estado) === "cancelado").length);
-                setText("metricasAusentes", absentCount);
-                setText("metricasEsperaPromedio", averageLabel(visibleTurns.map((turn) => turn.espera_minutos)));
-                setText("metricasAtencionPromedio", averageLabel(visibleTurns.map((turn) => turn.atencion_minutos)));
-                setText("metricasPrioridadFrecuente", mostFrequentLabel(priorityCounts));
-                setText("metricasTasaAusentismo", `${visibleTurns.length ? Math.round((absentCount / visibleTurns.length) * 100) : 0}%`);
-                renderPriorityDistribution(visibleTurns);
-                renderStateDistribution(visibleTurns);
-                renderDoctorMetrics(visibleTurns);
-            }
-
-            setText("adminMetricasNavbar", fullName(loggedUser));
-            fillSelect(fields.doctor, "Todos", doctors, (doctor) => String(doctor.id_medico), (doctor) => fullName(doctor));
-            fillSelect(fields.specialty, "Todas", [...new Set(doctors.map((doctor) => doctor.especialidad).filter(Boolean))], (specialty) => specialty, (specialty) => specialty);
-            fillSelect(fields.state, "Todos", [...new Set(turns.map((turn) => turn.estado).filter(Boolean))], (state) => state, (state) => state);
-
-            Object.values(fields).forEach((field) => {
-                field.addEventListener("input", renderMetrics);
-                field.addEventListener("change", renderMetrics);
-            });
-            metricsForm.addEventListener("reset", () => {
-                setTimeout(renderMetrics, 0);
-            });
-            renderMetrics();
+        initAdminMetricsFeature({
+            fallbackData,
+            doctorById,
+            fullName,
+            mergeStoredTurns,
+            mergeStoredUsers,
+            roleMatches,
+            setText,
+            triajeByTurnId,
+            turnosList
         });
     }
 
