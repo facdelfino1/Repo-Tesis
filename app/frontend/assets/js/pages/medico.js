@@ -1,5 +1,6 @@
 const coreModuleBaseUrl = new URL("../core/", document.currentScript.src).href;
 const componentModuleBaseUrl = new URL("../components/", document.currentScript.src).href;
+const featureModuleBaseUrl = new URL("../features/", document.currentScript.src).href;
 
 document.addEventListener("DOMContentLoaded", async () => {
     const fallbackData = {
@@ -19,17 +20,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     };
 
     const [
-        { LOCAL_STORAGE_KEYS, MOCK_PATHS, SESSION_STORAGE_KEYS },
+        { LOCAL_STORAGE_KEYS, MOCK_PATHS },
         { loadMock, readStoredJson, writeStoredJson },
-        { removeSessionItem },
         { escapeHtml, normalizeState, normalizeText },
         {
             currentTimeValue,
             formatDate,
             formatToday,
-            minutesToTime,
             priorityLabel: sharedPriorityLabel,
-            priorityRank,
             timeToMinutes,
             todayInputValue
         },
@@ -38,11 +36,30 @@ document.addEventListener("DOMContentLoaded", async () => {
         { priorityClass, stateText: renderStateText },
         { clearErrors: clearFieldErrors, initPasswordToggles: componentInitPasswordToggles, setFieldError: applyFieldError },
         { getBootstrapModal, hideModal, showModal },
-        { renderTableEmptyRow }
+        { renderTableEmptyRow },
+        { mergeStoredDoctorTurns, turnosList },
+        { triajeByTurnId },
+        { renderTriageResponses },
+        { mergeAllStoredAvailability },
+        {
+            availableSlotsForReschedule: getAvailableSlotsForReschedule,
+            buildRescheduleProposals,
+            confirmRescheduleProposal,
+            isAffectedTurn: isRescheduleAffectedTurn,
+            rejectRescheduleProposal,
+            sortedByPriority
+        },
+        {
+            renderDoctorAffected,
+            renderDoctorNotifications,
+            renderDoctorProposals,
+            renderDoctorWaitlist,
+            showAvailabilityWarning: showRescheduleAvailabilityWarning
+        },
+        { initDoctorAvailability: initDoctorAvailabilityFeature }
     ] = await Promise.all([
         import(`${coreModuleBaseUrl}constants.js`),
         import(`${coreModuleBaseUrl}storage.js`),
-        import(`${coreModuleBaseUrl}session.js`),
         import(`${coreModuleBaseUrl}helpers.js`),
         import(`${coreModuleBaseUrl}formatters.js`),
         import(`${coreModuleBaseUrl}validators.js`),
@@ -50,7 +67,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         import(`${componentModuleBaseUrl}badges.js`),
         import(`${componentModuleBaseUrl}forms.js`),
         import(`${componentModuleBaseUrl}modals.js`),
-        import(`${componentModuleBaseUrl}tables.js`)
+        import(`${componentModuleBaseUrl}tables.js`),
+        import(`${featureModuleBaseUrl}appointments/appointments-service.js`),
+        import(`${featureModuleBaseUrl}triage/triage-service.js`),
+        import(`${featureModuleBaseUrl}triage/triage-ui.js`),
+        import(`${featureModuleBaseUrl}availability/availability-service.js`),
+        import(`${featureModuleBaseUrl}rescheduling/rescheduling-service.js`),
+        import(`${featureModuleBaseUrl}rescheduling/rescheduling-ui.js`),
+        import(`${featureModuleBaseUrl}availability/availability-ui.js`)
     ]);
     const priorityLabel = (priority) => sharedPriorityLabel(priority, priority || "Baja");
 
@@ -72,10 +96,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     function currentUser() {
         return readStoredJson(LOCAL_STORAGE_KEYS.CURRENT_USER, null);
-    }
-
-    function turnosList(turnos) {
-        return Array.isArray(turnos.turnos) ? turnos.turnos : [];
     }
 
     function patientsFromUsers(usuarios) {
@@ -182,69 +202,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         return `${hours} h ${remainingMinutes.toString().padStart(2, "0")} min`;
     }
 
-    function mergeStoredAvailability(baseAvailability) {
-        const base = Array.isArray(baseAvailability) ? baseAvailability : [];
-        const storedSecretary = readStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_AVAILABILITY, null);
-        const storedPatient = readStoredJson(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, null);
-        const storedDoctor = readStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_AVAILABILITY, null);
-        const byId = new Map(base.map((item) => [String(item.id_disponibilidad), item]));
-
-        [storedSecretary, storedPatient, storedDoctor].forEach((stored) => {
-            if (!Array.isArray(stored)) {
-                return;
-            }
-
-            stored.forEach((item) => {
-                if (item && item.id_disponibilidad !== undefined && item.fecha && item.hora_inicio && item.hora_fin) {
-                    byId.set(String(item.id_disponibilidad), item);
-                }
-            });
-        });
-
-        return [...byId.values()];
-    }
-
-    function mergeStoredDoctorTurns(baseTurns) {
-        const storedSecretaryTurns = readStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_TURNS, null);
-        const storedDoctorTurns = readStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_TURNS, null);
-        const storedPatientTurns = readStoredJson(LOCAL_STORAGE_KEYS.PATIENT_TURNS, []);
-        const base = Array.isArray(baseTurns) ? baseTurns : [];
-        const stored = Array.isArray(storedSecretaryTurns) ? storedSecretaryTurns : [];
-        const doctorStored = Array.isArray(storedDoctorTurns) ? storedDoctorTurns : [];
-        const convertedPatientTurns = Array.isArray(storedPatientTurns)
-            ? storedPatientTurns.map((turn) => ({
-                id_turno: turn.id,
-                id_paciente: turn.pacienteId,
-                id_medico: turn.medicoId,
-                id_disponibilidad: turn.disponibilidadId,
-                id_triaje: turn.idTriaje,
-                fecha: turn.fecha,
-                hora_inicio: turn.hora,
-                hora_fin: turn.horaFin,
-                estado: turn.estado,
-                prioridad: turn.prioridad === "Rojo" ? "Alta" : turn.prioridad === "Amarillo" ? "Media" : turn.prioridad === "Verde" ? "Baja" : turn.prioridad,
-                color_prioridad: turn.prioridad,
-                duracion_estimada: Number.parseInt(turn.tiempoEstimado, 10) || 20,
-                origen: turn.origen || "Paciente"
-            }))
-            : [];
-        const byId = new Map(base.map((turn) => [String(turn.id_turno), turn]));
-
-        [...stored, ...doctorStored, ...convertedPatientTurns].forEach((turn) => {
-            if (turn && turn.id_turno !== undefined && turn.id_medico !== undefined) {
-                byId.set(String(turn.id_turno), turn);
-            }
-        });
-
-        return [...byId.values()];
-    }
-
     function patientById(patients, idPaciente) {
         return patients.find((patient) => String(patient.id_paciente) === String(idPaciente)) || null;
-    }
-
-    function triajeByTurnId(triajes, idTurno) {
-        return triajes.find((triaje) => String(triaje.id_turno) === String(idTurno)) || null;
     }
 
     function renderUnauthorized() {
@@ -481,297 +440,6 @@ document.addEventListener("DOMContentLoaded", async () => {
                 clearErrors();
             }, 0);
         });
-    }
-
-    async function initDoctorAvailability() {
-        const form = document.querySelector('[data-form="doctor-availability"]');
-
-        if (!form) {
-            return;
-        }
-
-        const [usuarios, medicosData, disponibilidadData] = await Promise.all([
-            loadMock(MOCK_PATHS.USERS, fallbackData.usuarios),
-            loadMock(MOCK_PATHS.DOCTORS, fallbackData.medicos),
-            loadMock(MOCK_PATHS.AVAILABILITY, fallbackData.disponibilidad)
-        ]);
-        const loggedUser = currentUser();
-        const message = document.getElementById("disponibilidadMedicoMensaje");
-        const tableBody = document.getElementById("disponibilidadMedicoTabla");
-        const generateButton = document.getElementById("generarBloquesMedicoBtn");
-        const cancelButton = document.getElementById("cancelarDisponibilidadMedicoBtn");
-        const confirmExitButton = document.getElementById("confirmarSalirSinGuardarMedicoBtn");
-        const exitModalElement = document.getElementById("salirSinGuardarMedicoModal");
-        const exitModal = getBootstrapModal(exitModalElement);
-        const preview = document.getElementById("bloquesMedicoPreview");
-        const emptyPreview = document.getElementById("bloquesMedicoVacio");
-        const fields = {
-            date: document.getElementById("disponibilidadMedicoFecha"),
-            start: document.getElementById("disponibilidadMedicoHoraInicio"),
-            end: document.getElementById("disponibilidadMedicoHoraFin")
-        };
-        const baseSlotDuration = 20;
-        let generatedBlocks = [];
-
-        if (!loggedUser || !roleMatches(loggedUser, "medico")) {
-            renderUnauthorized();
-            form.classList.add("d-none");
-
-            if (tableBody) {
-                tableBody.innerHTML = renderTableEmptyRow(5, "No hay informacion disponible para este usuario.");
-            }
-
-            return;
-        }
-
-        const doctors = doctorsFromData(usuarios, medicosData);
-        const mockDoctor = doctors.find((doctor) => String(doctor.id_medico || doctor.id) === String(loggedUser.id_medico))
-            || loggedUser;
-        const storedDoctor = readStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_PROFILE, null);
-        const doctor = storedDoctor && String(storedDoctor.id_medico) === String(mockDoctor.id_medico || mockDoctor.id)
-            ? {
-                ...mockDoctor,
-                ...loggedUser,
-                ...storedDoctor,
-                matricula: mockDoctor.matricula,
-                especialidad: mockDoctor.especialidad
-            }
-            : {
-                ...mockDoctor,
-                ...loggedUser,
-                matricula: mockDoctor.matricula,
-                especialidad: mockDoctor.especialidad
-            };
-        let availability = mergeStoredAvailability(Array.isArray(disponibilidadData) ? disponibilidadData : []);
-
-        function doctorId() {
-            return doctor.id_medico || doctor.id;
-        }
-
-        function ownAvailability() {
-            return availability
-                .filter((item) => String(item.id_medico) === String(doctorId()))
-                .sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)) || timeToMinutes(a.hora_inicio) - timeToMinutes(b.hora_inicio));
-        }
-
-        function setFieldError(fieldName, text) {
-            const errorIds = {
-                date: "disponibilidadMedicoFechaError",
-                start: "disponibilidadMedicoHoraInicioError",
-                end: "disponibilidadMedicoHoraFinError"
-            };
-            applyFieldError(fields, fieldName, text, (name) => document.getElementById(errorIds[name]));
-        }
-
-        function clearErrors() {
-            clearFieldErrors(fields, setFieldError, {
-                onClear: () => hideAlert(message)
-            });
-        }
-
-        function showMessage(type, text) {
-            showAlert(message, type, text);
-        }
-
-        function hasOverlap(date, start, end) {
-            const startMinutes = timeToMinutes(start);
-            const endMinutes = timeToMinutes(end);
-
-            return ownAvailability().some((item) => (
-                item.fecha === date
-                && startMinutes < timeToMinutes(item.hora_fin)
-                && endMinutes > timeToMinutes(item.hora_inicio)
-            ));
-        }
-
-        function validateForm() {
-            let isValid = true;
-
-            clearErrors();
-
-            if (fields.date.value === "") {
-                setFieldError("date", "La fecha es obligatoria.");
-                isValid = false;
-            }
-
-            if (fields.start.value === "") {
-                setFieldError("start", "La hora de inicio es obligatoria.");
-                isValid = false;
-            }
-
-            if (fields.end.value === "") {
-                setFieldError("end", "La hora fin es obligatoria.");
-                isValid = false;
-            }
-
-            if (fields.start.value !== "" && fields.end.value !== ""
-                && timeToMinutes(fields.start.value) >= timeToMinutes(fields.end.value)) {
-                setFieldError("start", "La hora de inicio debe ser menor que la hora fin.");
-                setFieldError("end", "Revise el rango horario.");
-                isValid = false;
-            }
-
-            if (fields.start.value !== "" && fields.end.value !== ""
-                && timeToMinutes(fields.end.value) - timeToMinutes(fields.start.value) < baseSlotDuration) {
-                setFieldError("end", "El rango horario debe permitir al menos un bloque de 20 minutos.");
-                isValid = false;
-            }
-
-            if (isValid && hasOverlap(fields.date.value, fields.start.value, fields.end.value)) {
-                setFieldError("start", "El rango se superpone con disponibilidad existente.");
-                setFieldError("end", "Seleccione un horario libre de su agenda.");
-                isValid = false;
-            }
-
-            return isValid;
-        }
-
-        function buildAvailabilityBlocks() {
-            const startMinutes = timeToMinutes(fields.start.value);
-            const endMinutes = timeToMinutes(fields.end.value);
-            const blocks = [];
-
-            for (let current = startMinutes; current + baseSlotDuration <= endMinutes; current += baseSlotDuration) {
-                blocks.push({
-                    id_medico: doctorId(),
-                    medico: fullName(doctor),
-                    especialidad: doctor.especialidad,
-                    fecha: fields.date.value,
-                    hora_inicio: minutesToTime(current),
-                    hora_fin: minutesToTime(current + baseSlotDuration),
-                    duracion_turno: baseSlotDuration,
-                    estado: "Disponible",
-                    origen: "Medico"
-                });
-            }
-
-            return blocks;
-        }
-
-        function renderPreview() {
-            if (!preview || !emptyPreview) {
-                return;
-            }
-
-            emptyPreview.classList.toggle("d-none", generatedBlocks.length > 0);
-            preview.innerHTML = generatedBlocks.map((block) => `
-                <div class="col-12 col-sm-6 col-xl-3">
-                    <div class="metric-box rounded-3 p-3 h-100">
-                        <p class="text-secondary small mb-1">${formatDate(block.fecha)}</p>
-                        <p class="fw-semibold mb-0">${escapeHtml(block.hora_inicio)} - ${escapeHtml(block.hora_fin)}</p>
-                    </div>
-                </div>
-            `).join("");
-        }
-
-        function renderAvailabilityTable() {
-            const rows = ownAvailability();
-
-            if (!tableBody) {
-                return;
-            }
-
-            if (rows.length === 0) {
-                tableBody.innerHTML = renderTableEmptyRow(5, "No existe disponibilidad cargada para su agenda profesional.");
-                return;
-            }
-
-            tableBody.innerHTML = rows.map((item) => `
-                <tr>
-                    <td>${formatDate(item.fecha)}</td>
-                    <td>${escapeHtml(item.hora_inicio)}</td>
-                    <td>${escapeHtml(item.hora_fin)}</td>
-                    <td>${renderStateText(item.estado, escapeHtml)}</td>
-                    <td>${escapeHtml(item.origen || "Mock")}</td>
-                </tr>
-            `).join("");
-        }
-
-        function persistAvailability() {
-            writeStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_AVAILABILITY, availability);
-            writeStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_AVAILABILITY, availability);
-            writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, availability);
-        }
-
-        function generateBlocks() {
-            if (!validateForm()) {
-                generatedBlocks = [];
-                renderPreview();
-                return;
-            }
-
-            generatedBlocks = buildAvailabilityBlocks();
-            renderPreview();
-        }
-
-        function saveAvailability(event) {
-            event.preventDefault();
-
-            if (generatedBlocks.length === 0) {
-                showMessage("danger", "Debe generar bloques antes de guardar la disponibilidad.");
-                return;
-            }
-
-            const maxId = availability.reduce((maxValue, item) => Math.max(maxValue, Number(item.id_disponibilidad) || 0), 0);
-            const blocksToSave = generatedBlocks.map((block, index) => ({
-                id_disponibilidad: maxId + index + 1,
-                ...block,
-                origenInterfaz: true
-            }));
-
-            availability = [...availability, ...blocksToSave];
-            persistAvailability();
-            generatedBlocks = [];
-            form.reset();
-            renderPreview();
-            renderAvailabilityTable();
-            showMessage("success", "Disponibilidad medica cargada correctamente.");
-        }
-
-        function clearTemporaryData() {
-            generatedBlocks = [];
-            form.reset();
-            renderPreview();
-            clearErrors();
-            removeSessionItem(SESSION_STORAGE_KEYS.DOCTOR_TEMP_AVAILABILITY);
-        }
-
-        setText("disponibilidadMedicoNavbar", fullName(doctor));
-        renderPreview();
-        renderAvailabilityTable();
-
-        Object.values(fields).forEach((field) => {
-            field.addEventListener("input", () => {
-                generatedBlocks = [];
-                renderPreview();
-                clearErrors();
-            });
-        });
-
-        if (generateButton) {
-            generateButton.addEventListener("click", generateBlocks);
-        }
-
-        if (cancelButton) {
-            cancelButton.addEventListener("click", () => {
-                if (exitModal) {
-                    showModal(exitModal);
-                    return;
-                }
-
-                clearTemporaryData();
-                window.location.href = "dashboard.html";
-            });
-        }
-
-        if (confirmExitButton) {
-            confirmExitButton.addEventListener("click", () => {
-                clearTemporaryData();
-                window.location.href = "dashboard.html";
-            });
-        }
-
-        form.addEventListener("submit", saveAvailability);
     }
 
     async function initDoctorAgenda() {
@@ -1082,20 +750,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             selectedAction = null;
         }
 
-        function renderTriageResponses(responses) {
-            if (!responses || typeof responses !== "object") {
-                return "<p class=\"text-secondary mb-0\">Sin respuestas registradas.</p>";
-            }
-
-            return `
-                <ul class="mb-0">
-                    ${Object.entries(responses).map(([key, value]) => `
-                        <li><span class="text-secondary">${escapeHtml(key.replace(/_/g, " "))}:</span> ${escapeHtml(value)}</li>
-                    `).join("")}
-                </ul>
-            `;
-        }
-
         function renderDetail(turnId) {
             const turn = turns.find((item) => String(item.id_turno) === String(turnId));
 
@@ -1222,6 +876,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         const availabilityWarning = document.getElementById("reprogramacionMedicoDisponibilidadAviso");
         const availabilityWarningText = document.getElementById("reprogramacionMedicoDisponibilidadTexto");
         const availabilityLoadButton = document.getElementById("reprogramacionMedicoCargarDisponibilidadBtn");
+        const availabilityWarningElements = {
+            container: availabilityWarning,
+            text: availabilityWarningText,
+            loadButton: availabilityLoadButton
+        };
         const executeButton = document.getElementById("ejecutarReprogramacionMedicoBtn");
         const searchButton = document.getElementById("buscarAfectadosMedicoBtn");
         const confirmButton = document.getElementById("confirmarReprogramacionMedicoBtn");
@@ -1266,7 +925,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     duracion_estimada: turn.duracion_estimada || (triaje ? triaje.duracion_estimada : "")
                 };
             });
-        let availability = mergeStoredAvailability(Array.isArray(disponibilidadData) ? disponibilidadData : []);
+        let availability = mergeAllStoredAvailability(Array.isArray(disponibilidadData) ? disponibilidadData : []);
         const storedProcess = readStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_RESCHEDULE, {});
 
         if (storedProcess && String(storedProcess.id_medico) === String(doctorId)) {
@@ -1333,50 +992,17 @@ document.addEventListener("DOMContentLoaded", async () => {
             return isValid;
         }
 
-        function sortedByPriority(items) {
-            return [...items].sort((a, b) => {
-                const rankDiff = priorityRank(a.prioridad || a.priority) - priorityRank(b.prioridad || b.priority);
-
-                if (rankDiff !== 0) {
-                    return rankDiff;
-                }
-
-                return String(a.hora_inicio || "").localeCompare(String(b.hora_inicio || ""));
-            });
+        function rescheduleCriteria() {
+            return {
+                doctorId,
+                date: fields.date.value,
+                start: fields.start.value,
+                end: fields.end.value
+            };
         }
 
-        function blockOverlaps(startValue, endValue) {
-            const blockStart = timeToMinutes(fields.start.value);
-            const blockEnd = timeToMinutes(fields.end.value);
-
-            return timeToMinutes(startValue) < blockEnd && timeToMinutes(endValue || startValue) > blockStart;
-        }
-
-        function isAffectedTurn(turn) {
-            const state = normalizeState(turn.estado);
-
-            return String(turn.id_medico) === String(doctorId)
-                && turn.fecha === fields.date.value
-                && (state === "reservado" || state === "presente")
-                && blockOverlaps(turn.hora_inicio, turn.hora_fin || turn.hora_inicio);
-        }
-
-        function blockContainsSlot(slot) {
-            return String(slot.id_medico) === String(doctorId)
-                && slot.fecha === fields.date.value
-                && blockOverlaps(slot.hora_inicio, slot.hora_fin || slot.hora_inicio);
-        }
-
-        function slotDateTime(slot) {
-            return new Date(`${slot.fecha}T${slot.hora_inicio}:00`).getTime();
-        }
-
-        function availableSlotsForReschedule() {
-            return availability
-                .filter((slot) => String(slot.id_medico) === String(doctorId))
-                .filter((slot) => slot.estado === "Disponible")
-                .filter((slot) => !blockContainsSlot(slot))
-                .sort((a, b) => slotDateTime(a) - slotDateTime(b));
+        function currentRescheduleSlots() {
+            return getAvailableSlotsForReschedule(availability, rescheduleCriteria());
         }
 
         function turnLabel(turn) {
@@ -1385,17 +1011,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         function slotLabel(slot) {
             return slot ? `${formatDate(slot.fecha)} ${slot.hora_inicio} - ${slot.hora_fin}` : "Lista de espera";
-        }
-
-        function showAvailabilityWarning(text, showLoadButton) {
-            availabilityWarningText.textContent = text;
-            availabilityLoadButton.classList.toggle("d-none", !showLoadButton);
-            availabilityWarning.classList.remove("d-none");
-        }
-
-        function hideAvailabilityWarning() {
-            availabilityWarning.classList.add("d-none");
-            availabilityLoadButton.classList.add("d-none");
         }
 
         function persistState() {
@@ -1410,111 +1025,35 @@ document.addEventListener("DOMContentLoaded", async () => {
             });
         }
 
-        function renderAffected() {
-            executeButton.disabled = affectedTurns.length === 0;
-
-            if (affectedTurns.length === 0) {
-                affectedTable.innerHTML = '<tr><td colspan="6" class="text-secondary">No se encontraron turnos Reservados o Presentes dentro del bloque seleccionado.</td></tr>';
-                return;
-            }
-
-            affectedTable.innerHTML = affectedTurns.map((turn) => {
-                const patient = patientByTurn(turn);
-                const priority = priorityLabel(turn.prioridad);
-
-                return `
-                    <tr>
-                        <td class="fw-semibold">${escapeHtml(patient ? fullName(patient) : "Paciente")}</td>
-                        <td>${escapeHtml(patient ? patient.dni : "-")}</td>
-                        <td>${formatDate(turn.fecha)}</td>
-                        <td>${escapeHtml(turn.hora_inicio)}</td>
-                        <td><span class="badge ${priorityClass(priority)}">${escapeHtml(priority)}</span></td>
-                        <td>${renderStateText(turn.estado, escapeHtml)}</td>
-                    </tr>
-                `;
-            }).join("");
-        }
-
-        function proposalStateText(status) {
-            return `<strong class="fw-semibold">${escapeHtml(status)}</strong>`;
-        }
-
-        function renderProposals() {
-            if (waitlist.some((item) => item.reason === "Sin disponibilidad suficiente")) {
-                showAvailabilityWarning("No hay disponibilidad suficiente para reprogramar todos los turnos. Los pacientes restantes seran colocados en lista de espera prioritaria.", false);
-            } else {
-                hideAvailabilityWarning();
-            }
-
-            if (proposals.length === 0) {
-                proposalTable.innerHTML = '<tr><td colspan="5" class="text-secondary">Ejecute la reprogramacion para generar propuestas.</td></tr>';
-                return;
-            }
-
-            proposalTable.innerHTML = sortedByPriority(proposals).map((proposal) => `
-                <tr>
-                    <td class="fw-semibold">${escapeHtml(proposal.patientName)}</td>
-                    <td><span class="badge ${priorityClass(proposal.priority)}">${escapeHtml(proposal.priority)}</span></td>
-                    <td>${escapeHtml(proposal.previousLabel)}</td>
-                    <td>${escapeHtml(slotLabel(proposal.slot))}</td>
-                    <td>${proposalStateText(proposal.status)}</td>
-                </tr>
-            `).join("");
-        }
-
-        function renderNotifications() {
-            if (proposals.length === 0) {
-                notificationContainer.innerHTML = '<div class="col-12"><div class="alert alert-info mb-0" role="alert">Las notificaciones se mostraran luego de generar propuestas con disponibilidad.</div></div>';
-                return;
-            }
-
-            notificationContainer.innerHTML = proposals.map((proposal) => {
-                const canAnswer = proposal.status === "Pendiente de confirmacion";
-                const messageText = `Turno anterior: ${proposal.previousLabel}. Nuevo turno propuesto: ${slotLabel(proposal.slot)}.`;
-
-                return `
-                    <div class="col-12 col-lg-6">
-                        <article class="card appointment-card border h-100">
-                            <div class="card-body">
-                                <p class="text-secondary small mb-1">${escapeHtml(proposal.contact || "Sin contacto")}</p>
-                                <h3 class="h6 fw-semibold">${escapeHtml(proposal.patientName)}</h3>
-                                <p class="small">${escapeHtml(messageText)}</p>
-                                <p class="small">Estado: <strong class="fw-semibold">${escapeHtml(proposal.notificationStatus)}</strong></p>
-                                <div class="d-grid d-sm-flex gap-2 justify-content-sm-end">
-                                    <button type="button" class="btn btn-outline-success btn-sm" data-action="confirm-proposal" data-proposal-id="${proposal.id}" ${canAnswer ? "" : "disabled"}>Confirmar cambio</button>
-                                    <button type="button" class="btn btn-outline-danger btn-sm" data-action="reject-proposal" data-proposal-id="${proposal.id}" ${canAnswer ? "" : "disabled"}>Rechazar cambio</button>
-                                </div>
-                            </div>
-                        </article>
-                    </div>
-                `;
-            }).join("");
-        }
-
-        function renderWaitlist() {
-            const sortedWaitlist = sortedByPriority(waitlist.map((item) => ({ ...item, prioridad: item.priority })));
-
-            if (sortedWaitlist.length === 0) {
-                waitlistTable.innerHTML = '<tr><td colspan="5" class="text-secondary">No hay pacientes en espera prioritaria.</td></tr>';
-                return;
-            }
-
-            waitlistTable.innerHTML = sortedWaitlist.map((item) => `
-                <tr>
-                    <td class="fw-semibold">${escapeHtml(item.patientName)}</td>
-                    <td>${escapeHtml(item.dni || "-")}</td>
-                    <td><span class="badge ${priorityClass(item.priority)}">${escapeHtml(item.priority)}</span></td>
-                    <td>${escapeHtml(item.reason)}</td>
-                    <td><strong class="fw-semibold">En espera prioritaria</strong></td>
-                </tr>
-            `).join("");
+        function renderAffectedState() {
+            renderDoctorAffected({
+                affectedTable,
+                affectedTurns,
+                executeButton,
+                patientByTurn,
+                fullName,
+                priorityLabel
+            });
         }
 
         function renderAll() {
-            renderAffected();
-            renderProposals();
-            renderNotifications();
-            renderWaitlist();
+            renderAffectedState();
+            renderDoctorProposals({
+                proposalTable,
+                proposals,
+                waitlist,
+                slotLabel,
+                warningElements: availabilityWarningElements
+            });
+            renderDoctorNotifications({
+                notificationContainer,
+                proposals,
+                slotLabel
+            });
+            renderDoctorWaitlist({
+                waitlistTable,
+                waitlist
+            });
         }
 
         function searchAffectedTurns() {
@@ -1522,7 +1061,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 return;
             }
 
-            affectedTurns = sortedByPriority(turns.filter(isAffectedTurn));
+            affectedTurns = sortedByPriority(turns.filter((turn) => isRescheduleAffectedTurn(turn, rescheduleCriteria())));
             proposals = [];
             waitlist = [];
             persistState();
@@ -1536,10 +1075,10 @@ document.addEventListener("DOMContentLoaded", async () => {
                 return;
             }
 
-            const slots = availableSlotsForReschedule();
+            const slots = currentRescheduleSlots();
 
             if (slots.length === 0) {
-                showAvailabilityWarning("No existen horarios alternativos cargados para su agenda. Debe cargar una nueva disponibilidad antes de ejecutar la reprogramacion masiva.", true);
+                showRescheduleAvailabilityWarning(availabilityWarningElements, "No existen horarios alternativos cargados para su agenda. Debe cargar una nueva disponibilidad antes de ejecutar la reprogramacion masiva.", true);
                 showMessage("warning", "No existen horarios alternativos cargados para su agenda.");
 
                 if (confirmModal) {
@@ -1549,45 +1088,21 @@ document.addEventListener("DOMContentLoaded", async () => {
                 return;
             }
 
-            const nextProposals = [];
-            const nextWaitlist = [];
-
-            affectedTurns.forEach((turn, index) => {
-                const patient = patientByTurn(turn);
-                const slot = slots[index] || null;
-                const priority = priorityLabel(turn.prioridad);
-
-                if (!slot) {
-                    nextWaitlist.push({
-                        id: `espera-medico-${turn.id_turno}`,
-                        turnId: turn.id_turno,
-                        patientName: patient ? fullName(patient) : "Paciente",
-                        dni: patient ? patient.dni : "-",
-                        priority,
-                        reason: "Sin disponibilidad suficiente",
-                        status: "En espera prioritaria"
-                    });
-                    return;
-                }
-
-                nextProposals.push({
-                    id: `propuesta-medico-${turn.id_turno}`,
-                    turnId: turn.id_turno,
-                    slot,
-                    oldAvailabilityId: turn.id_disponibilidad,
-                    patientName: patient ? fullName(patient) : "Paciente",
-                    dni: patient ? patient.dni : "-",
-                    contact: patient ? patient.telefono : "",
-                    priority,
-                    previousLabel: turnLabel(turn),
-                    status: "Pendiente de confirmacion",
-                    notificationStatus: "Pendiente de respuesta",
-                    reason: fields.reason.value
-                });
+            const nextProcess = buildRescheduleProposals({
+                affectedTurns,
+                slots,
+                patientByTurn,
+                fullName,
+                priorityLabel,
+                turnLabel,
+                reason: fields.reason.value,
+                proposalIdPrefix: "propuesta-medico-",
+                waitlistIdPrefix: "espera-medico-",
+                notificationStatus: "Pendiente de respuesta"
             });
 
-            proposals = nextProposals;
-            waitlist = nextWaitlist;
+            proposals = nextProcess.proposals;
+            waitlist = nextProcess.waitlist;
             persistState();
             renderAll();
 
@@ -1598,85 +1113,41 @@ document.addEventListener("DOMContentLoaded", async () => {
             showMessage("success", "Propuestas generadas y notificaciones simuladas enviadas.");
         }
 
-        function releaseAvailability(disponibilidadId) {
-            availability = availability.map((slot) => {
-                if (String(slot.id_disponibilidad) === String(disponibilidadId)) {
-                    const released = { ...slot, estado: "Disponible" };
-                    delete released.id_turno;
-                    return released;
-                }
-
-                return slot;
-            });
-        }
-
-        function occupyAvailability(disponibilidadId, turnId) {
-            availability = availability.map((slot) => (
-                String(slot.id_disponibilidad) === String(disponibilidadId)
-                    ? { ...slot, estado: "Ocupado", id_turno: turnId }
-                    : slot
-            ));
-        }
-
         function confirmProposal(proposalId) {
-            const proposal = proposals.find((item) => item.id === proposalId);
+            const nextState = confirmRescheduleProposal({
+                turns,
+                availability,
+                proposals,
+                proposalId,
+                doctorId
+            });
 
-            if (!proposal || proposal.status !== "Pendiente de confirmacion") {
+            if (!nextState) {
                 return;
             }
 
-            const slot = proposal.slot;
-            turns = turns.map((turn) => (
-                String(turn.id_turno) === String(proposal.turnId)
-                    ? {
-                        ...turn,
-                        id_medico: doctorId,
-                        id_disponibilidad: slot.id_disponibilidad,
-                        fecha: slot.fecha,
-                        hora_inicio: slot.hora_inicio,
-                        hora_fin: slot.hora_fin,
-                        estado: "Reservado",
-                        motivo_reprogramacion: proposal.reason,
-                        reprogramado: true
-                    }
-                    : turn
-            ));
-            releaseAvailability(proposal.oldAvailabilityId);
-            occupyAvailability(slot.id_disponibilidad, proposal.turnId);
-            proposals = proposals.map((item) => (
-                item.id === proposalId
-                    ? { ...item, status: "Confirmada", notificationStatus: "Confirmada por paciente" }
-                    : item
-            ));
+            turns = nextState.turns;
+            availability = nextState.availability;
+            proposals = nextState.proposals;
             persistState();
             renderAll();
             showMessage("success", "Cambio confirmado y turno actualizado correctamente.");
         }
 
         function rejectProposal(proposalId) {
-            const proposal = proposals.find((item) => item.id === proposalId);
+            const nextState = rejectRescheduleProposal({
+                proposals,
+                waitlist,
+                proposalId,
+                waitlistIdPrefix: "espera-rechazo-medico-"
+            });
 
-            if (!proposal || proposal.status !== "Pendiente de confirmacion") {
+            if (!nextState) {
                 return;
             }
 
-            proposals = proposals.map((item) => (
-                item.id === proposalId
-                    ? { ...item, status: "Rechazada", notificationStatus: "Rechazada por paciente" }
-                    : item
-            ));
-            waitlist = [
-                ...waitlist,
-                {
-                    id: `espera-rechazo-medico-${proposal.turnId}`,
-                    turnId: proposal.turnId,
-                    patientName: proposal.patientName,
-                    dni: proposal.dni,
-                    priority: proposal.priority,
-                    reason: "Paciente rechazo la propuesta",
-                    status: "En espera prioritaria"
-                }
-            ];
+            proposals = nextState.proposals;
+            waitlist = nextState.waitlist;
             persistState();
             renderAll();
             showMessage("warning", "El paciente fue agregado a lista de espera prioritaria.");
@@ -1689,12 +1160,12 @@ document.addEventListener("DOMContentLoaded", async () => {
             field.addEventListener("input", () => {
                 affectedTurns = [];
                 executeButton.disabled = true;
-                renderAffected();
+                renderAffectedState();
             });
             field.addEventListener("change", () => {
                 affectedTurns = [];
                 executeButton.disabled = true;
-                renderAffected();
+                renderAffectedState();
             });
         });
 
@@ -1705,8 +1176,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                 return;
             }
 
-            if (availableSlotsForReschedule().length === 0) {
-                showAvailabilityWarning("No existen horarios alternativos cargados para su agenda. Debe cargar una nueva disponibilidad antes de ejecutar la reprogramacion masiva.", true);
+            if (currentRescheduleSlots().length === 0) {
+                showRescheduleAvailabilityWarning(availabilityWarningElements, "No existen horarios alternativos cargados para su agenda. Debe cargar una nueva disponibilidad antes de ejecutar la reprogramacion masiva.", true);
                 showMessage("warning", "No existen horarios alternativos cargados para su agenda.");
                 return;
             }
@@ -1839,7 +1310,15 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     await initDoctorDashboard();
     await initDoctorProfile();
-    await initDoctorAvailability();
+    await initDoctorAvailabilityFeature({
+        currentUser,
+        doctorsFromData,
+        fallbackData,
+        fullName,
+        renderUnauthorized,
+        roleMatches,
+        setText
+    });
     await initDoctorAgenda();
     await initDoctorMassReschedule();
 });
