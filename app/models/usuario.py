@@ -16,7 +16,6 @@ class Usuario:
             "nombre": self.nombre,
             "apellido": self.apellido,
             "email": self.email,
-            "contraseña": self.contraseña,
             "telefono": self.telefono
         }
         return usuario
