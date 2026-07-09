@@ -222,7 +222,7 @@ export function initAdminMetrics(config) {
             users,
             { doctorById, priorityLabel, triajeByTurnId }
         );
-        const states = ["Reservado", "Presente", "En atenciÃ³n", "Completado", "Cancelado", "Ausente"];
+        const states = ["Reservado", "Presente", "En atención", "Completado", "Cancelado", "Ausente"];
 
         function renderMetrics() {
             const visibleTurns = filterTurnsByMetrics(turns, {
