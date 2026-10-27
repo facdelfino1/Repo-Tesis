@@ -29,7 +29,7 @@
                     <span class="badge text-bg-primary mb-3">Portal del Paciente</span>
                     <h1 class="h2 fw-bold mb-2">Solicitar turno</h1>
                     <p class="text-secondary mb-0">
-                        Seleccione una especialidad o medico y complete el triaje para estimar prioridad y duracion del turno.
+                        Seleccione una especialidad o medico y complete el triaje para establecer una prioridad preliminar.
                     </p>
                 </div>
                 <div class="col-lg-4">
@@ -89,53 +89,73 @@
                                 Complete todas las preguntas del triaje antes de confirmar.
                             </div>
 
-                            <fieldset class="mb-3">
-                                <legend class="form-label">1. Tiene fiebre?</legend>
-                                <div class="d-flex gap-3">
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="fiebre" id="fiebreSi" value="si">
-                                        <label class="form-check-label" for="fiebreSi">Si</label>
+                            <p class="small">Importante: Este cuestionario tiene como finalidad establecer una prioridad preliminar para la gestión de solicitudes de turnos. No constituye un diagnóstico médico ni reemplaza la evaluación de un profesional de la salud. Ante una situación que considere una emergencia, diríjase a un servicio de urgencias.</p>
+                            <div data-triage-specialty="common" class="d-none">
+                                <fieldset class="mb-3">
+                                    <legend class="form-label">¿Tiene fiebre?</legend>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="fiebre" id="fiebresi" value="si">
+                                        <label class="form-check-label" for="fiebresi">Sí</label>
                                     </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="fiebre" id="fiebreNo" value="no">
-                                        <label class="form-check-label" for="fiebreNo">No</label>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="fiebre" id="fiebreno" value="no">
+                                        <label class="form-check-label" for="fiebreno">No</label>
                                     </div>
-                                </div>
-                            </fieldset>
-
-                            <fieldset class="mb-3">
-                                <legend class="form-label">2. Presenta dolor intenso?</legend>
-                                <div class="d-flex gap-3">
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="dolorIntenso" id="dolorIntensoSi" value="si">
-                                        <label class="form-check-label" for="dolorIntensoSi">Si</label>
+                                </fieldset>
+                                <fieldset class="mb-3">
+                                    <legend class="form-label">¿Presenta dificultad para respirar?</legend>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="dificultadRespirar" id="dificultadRespirarsi" value="si">
+                                        <label class="form-check-label" for="dificultadRespirarsi">Sí</label>
                                     </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="dolorIntenso" id="dolorIntensoNo" value="no">
-                                        <label class="form-check-label" for="dolorIntensoNo">No</label>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="dificultadRespirar" id="dificultadRespirarno" value="no">
+                                        <label class="form-check-label" for="dificultadRespirarno">No</label>
                                     </div>
-                                </div>
-                            </fieldset>
-
-                            <fieldset class="mb-3">
-                                <legend class="form-label">3. Presenta dificultad para respirar?</legend>
-                                <div class="d-flex gap-3">
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="dificultadRespirar" id="respirarSi" value="si">
-                                        <label class="form-check-label" for="respirarSi">Si</label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="dificultadRespirar" id="respirarNo" value="no">
-                                        <label class="form-check-label" for="respirarNo">No</label>
-                                    </div>
-                                </div>
-                            </fieldset>
-
-                            <div class="mb-0">
-                                <label for="rangoDolor" class="form-label">4. En una escala del 0 al 10, cuanto dolor siente?</label>
-                                <input type="number" class="form-control" id="rangoDolor" name="rangoDolor" min="0" max="10" step="1" placeholder="0 a 10">
-                                <div class="form-text">Ingrese un numero entero entre 0 y 10.</div>
+                                </fieldset>
                             </div>
+                            <div data-triage-specialty="clinica_medica" class="d-none">
+                                <label for="rangoDolor" class="form-label">Dolor de 0 a 10</label>
+                                <input type="number" class="form-control" id="rangoDolor" name="rangoDolor" min="0" max="10" step="1">
+                            </div>
+                            <div data-triage-specialty="pediatria" class="d-none">
+                                <label for="fechaNacimiento" class="form-label">Fecha de nacimiento</label>
+                                <input type="date" class="form-control mb-3" id="fechaNacimiento" name="fechaNacimiento">
+                                <label for="duracionFiebreHoras" class="form-label">Duración de la fiebre en horas</label>
+                                <input type="number" class="form-control mb-3" id="duracionFiebreHoras" name="duracionFiebreHoras" min="0" step="any" disabled>
+                                <fieldset class="mb-3">
+                                    <legend class="form-label">¿Está muy agitado?</legend>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="muyAgitado" id="muyAgitadosi" value="si">
+                                        <label class="form-check-label" for="muyAgitadosi">Sí</label>
+                                    </div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="muyAgitado" id="muyAgitadono" value="no">
+                                        <label class="form-check-label" for="muyAgitadono">No</label>
+                                    </div>
+                                </fieldset>
+                                <label for="estadoGeneral" class="form-label">Estado general</label>
+                                <select class="form-select mb-3" id="estadoGeneral" name="estadoGeneral">
+                                    <option value="">Seleccione</option>
+                                    <option value="alerta_normal">Alerta / normal</option>
+                                    <option value="decaido_responde_normalmente">Decaído pero responde normalmente</option>
+                                    <option value="letargico_muy_somnoliento">Letárgico o muy somnoliento</option>
+                                    <option value="pobre_respuesta_estimulos">Pobre respuesta a estímulos</option>
+                                    <option value="dificultad_despertar">Dificultad para despertar</option>
+                                </select>
+                                <fieldset class="mb-3">
+                                    <legend class="form-label">¿Presenta vómitos repetidos?</legend>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="vomitosRepetidos" id="vomitosRepetidossi" value="si">
+                                        <label class="form-check-label" for="vomitosRepetidossi">Sí</label>
+                                    </div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="vomitosRepetidos" id="vomitosRepetidosno" value="no">
+                                        <label class="form-check-label" for="vomitosRepetidosno">No</label>
+                                    </div>
+                                </fieldset>
+                            </div>
+                            <p id="sinTriajeEspecifico" class="text-secondary d-none">Esta especialidad continúa con la gestión del turno sin un triaje específico.</p>
                         </div>
                     </div>
 
@@ -166,19 +186,10 @@
                             <div>
                                 <p class="text-secondary small mb-1">Resultado del triaje</p>
                                 <h3 class="h5 mb-0">
-                                    Prioridad <span id="resultadoColor" class="badge">-</span>
+                                    Prioridad <span id="resultadoPrioridad" class="badge">-</span>
                                 </h3>
                             </div>
-                            <div class="d-flex gap-3">
-                                <div>
-                                    <p class="text-secondary small mb-1">Puntaje</p>
-                                    <p class="h5 mb-0" id="resultadoPuntaje">-</p>
-                                </div>
-                                <div>
-                                    <p class="text-secondary small mb-1">Duracion</p>
-                                    <p class="h5 mb-0"><span id="resultadoDuracion">-</span> min</p>
-                                </div>
-                            </div>
+
                         </div>
                     </div>
 

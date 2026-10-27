@@ -45,12 +45,14 @@ document.addEventListener("DOMContentLoaded", async () => {
             turnosList
         },
         {
-            calculatePatientTriage: calculateTriage,
-            isTriageComplete,
+            calculateTriagePriority,
+            validateTriageInput,
             latestTriageForPatient
         },
         {
             readAnswers,
+            updateTriageQuestionnaire,
+            renderTriageErrors,
             renderResult
         },
         { initPatientAppointments }
@@ -189,9 +191,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         const medico = document.getElementById("medico");
         const seleccionError = document.getElementById("seleccionTurnoError");
         const triajeError = document.getElementById("triajeError");
-        const rangoDolor = document.getElementById("rangoDolor");
         const resultBox = document.getElementById("triajeResultado");
-        const resultColor = document.getElementById("resultadoColor");
+        const resultColor = document.getElementById("resultadoPrioridad");
         const disponibilidadSection = document.getElementById("disponibilidadSection");
         const disponibilidadLista = document.getElementById("disponibilidadLista");
         const disponibilidadError = document.getElementById("disponibilidadError");
@@ -258,7 +259,14 @@ document.addEventListener("DOMContentLoaded", async () => {
             return especialidad.value !== "" || selectedDoctor() !== null;
         }
 
+        function triageSpecialty() {
+            const label = selectedDoctor()?.especialidad || especialidad.value;
+            const normalized = label.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+            return ({ "clinica medica": "clinica_medica", pediatria: "pediatria" })[normalized] || normalized;
+        }
+
         function clearAvailabilityStep() {
+            updateTriageQuestionnaire(form, triageSpecialty());
             lastRequest = null;
             selectedAvailability = null;
             disponibilidadSection.classList.add("d-none");
@@ -288,11 +296,11 @@ document.addEventListener("DOMContentLoaded", async () => {
                 hora_fin: "09:00",
                 estado: "Disponible",
                 tipo: "Sobreturno",
-                esSobreturno: true,
-                duracionTurno: result.duracionTurno
+                esSobreturno: true
             };
         }
 
+        // Compatibilidad 2A: conserva la política anterior; recibe prioridad, nunca color.
         function filterAvailability(request, result) {
             const filtered = disponibilidadMock.filter((item) => {
                 const isAvailable = item.estado === "Disponible";
@@ -306,13 +314,13 @@ document.addEventListener("DOMContentLoaded", async () => {
                 return isAvailable && matchesDoctor && matchesSpecialty;
             });
 
-            if (result.color === "Verde") {
+            if (!result || result === "Baja") {
                 return filtered;
             }
 
             const ordered = [...filtered].sort((a, b) => availabilityDateTime(a) - availabilityDateTime(b));
 
-            if (result.color !== "Rojo") {
+            if (result !== "Alta") {
                 return ordered;
             }
 
@@ -374,34 +382,28 @@ document.addEventListener("DOMContentLoaded", async () => {
                 return;
             }
 
-            const answers = readAnswers(form, rangoDolor);
-
-            if (!isTriageComplete(answers)) {
-                triajeError.classList.remove("d-none");
-                clearAvailabilityStep();
-                return;
+            const specialty = triageSpecialty();
+            const input = ["clinica_medica", "pediatria"].includes(specialty) ? readAnswers(form, specialty) : null;
+            if (input) {
+                const validation = validateTriageInput(input);
+                if (!validation.valid) {
+                    clearAvailabilityStep();
+                    renderTriageErrors(triajeError, validation.errors);
+                    return;
+                }
             }
-
+            const result = input ? calculateTriagePriority(input) : null;
             const doctor = selectedDoctor();
-            const result = calculateTriage(answers);
             lastRequest = {
                 especialidad: especialidad.value || (doctor ? doctor.especialidad : ""),
                 medico: doctor ? doctorFullName(doctor) : "",
                 medicoId: doctor ? doctor.id : null,
-                triaje: {
-                    fiebre: answers.fiebre,
-                    dolorIntenso: answers.dolorIntenso,
-                    dificultadRespirar: answers.dificultadRespirar,
-                    rangoDolor: answers.rangoDolor,
-                    colorPrioridad: result.color,
-                    puntaje: result.puntaje,
-                    duracionTurno: result.duracionTurno
-                },
+                triaje: input ? { ...input, prioridad: result } : null,
                 estado: "Pendiente de horario",
                 fechaSolicitud: new Date().toISOString()
             };
-
-            renderResult(result, { resultBox, resultColor, setText });
+            if (result) renderResult(result, { resultBox, resultColor });
+            else resultBox.classList.add("d-none");
             disponibilidadSection.classList.remove("d-none");
             renderAvailability(filterAvailability(lastRequest, result));
             disponibilidadSection.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -455,9 +457,9 @@ document.addEventListener("DOMContentLoaded", async () => {
                 hora: reservedAppointment.hora,
                 horaFin: reservedAppointment.horaFin,
                 estado: "Reservado",
-                prioridad: reservedAppointment.triaje.colorPrioridad,
-                puntaje: reservedAppointment.triaje.puntaje,
-                tiempoEstimado: `${reservedAppointment.triaje.duracionTurno} minutos`,
+                // Compatibilidad temporal 2A: estructura local existente; duración del bloque de agenda.
+                prioridad: reservedAppointment.triaje?.prioridad ?? null,
+                tiempoEstimado: `${(new Date(`2000-01-01T${reservedAppointment.horaFin}:00`) - new Date(`2000-01-01T${reservedAppointment.hora}:00`)) / 60000} minutos`,
                 disponibilidadId: reservedAppointment.disponibilidadId,
                 origenInterfaz: true
             };
@@ -495,10 +497,10 @@ document.addEventListener("DOMContentLoaded", async () => {
             clearAvailabilityStep();
         });
 
-        rangoDolor.addEventListener("input", () => {
+        form.querySelectorAll("[data-triage-specialty] input, [data-triage-specialty] select").forEach(field => field.addEventListener("input", () => {
             triajeError.classList.add("d-none");
             clearAvailabilityStep();
-        });
+        }));
 
         form.querySelectorAll('input[type="radio"]').forEach((radio) => {
             radio.addEventListener("change", () => {
@@ -522,6 +524,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         confirmarTurnoBtn.addEventListener("click", confirmAppointment);
         renderSpecialties();
         renderDoctorsBySpecialty(especialidad.value);
+        updateTriageQuestionnaire(form, triageSpecialty());
     }
 
 
@@ -722,11 +725,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         setText("turnoReservadoFecha", formatDate(appointment.fecha));
         setText("turnoReservadoHora", `${appointment.hora} a ${appointment.horaFin}`);
         setText("turnoReservadoTipo", appointmentType);
-        setText("turnoReservadoDuracion", appointment.triaje.duracionTurno);
+        setText("turnoReservadoDuracion", (new Date(`2000-01-01T${appointment.horaFin}:00`) - new Date(`2000-01-01T${appointment.hora}:00`)) / 60000);
 
         if (priorityBadge) {
-            priorityBadge.textContent = `Prioridad ${appointment.triaje.colorPrioridad}`;
-            priorityBadge.className = `badge align-self-start ${priorityClass(appointment.triaje.colorPrioridad)}`;
+            priorityBadge.textContent = appointment.triaje?.prioridad ? `Prioridad ${appointment.triaje.prioridad}` : "Sin triaje específico";
+            priorityBadge.className = `badge align-self-start ${appointment.triaje?.prioridad ? priorityClass(appointment.triaje.prioridad) : "text-bg-secondary"}`;
         }
     }
 

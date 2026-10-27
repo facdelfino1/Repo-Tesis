@@ -1,20 +1,41 @@
 import { escapeHtml } from "../../core/helpers.js";
-import { borderPriorityClass, priorityClass } from "../../components/badges.js";
+import { priorityClass } from "../../components/badges.js";
 
 export function getRadioValue(form, name) {
     const checkedOption = form.querySelector(`input[name="${name}"]:checked`);
     return checkedOption ? checkedOption.value : "";
 }
 
-export function readAnswers(form, rangoDolor) {
-    const painValue = Number.parseInt(rangoDolor.value, 10);
+export function readAnswers(form, especialidad) {
+    const boolean = name => { const value = getRadioValue(form, name); return value === "si" ? true : value === "no" ? false : undefined; };
+    const number = name => { const value = form.elements.namedItem(name).value; return value.trim() === "" ? NaN : Number(value); };
+    const fiebre = boolean("fiebre");
+    return { especialidad, respuestas: especialidad === "clinica_medica" ? {
+        fiebre, dificultadRespirar: boolean("dificultadRespirar"), dolor: number("rangoDolor")
+    } : {
+        fechaNacimiento: form.elements.namedItem("fechaNacimiento").value, fiebre,
+        duracionFiebreHoras: fiebre === false ? null : number("duracionFiebreHoras"),
+        dificultadRespirar: boolean("dificultadRespirar"), muyAgitado: boolean("muyAgitado"),
+        estadoGeneral: form.elements.namedItem("estadoGeneral").value, vomitosRepetidos: boolean("vomitosRepetidos")
+    } };
+}
 
-    return {
-        fiebre: getRadioValue(form, "fiebre"),
-        dolorIntenso: getRadioValue(form, "dolorIntenso"),
-        dificultadRespirar: getRadioValue(form, "dificultadRespirar"),
-        rangoDolor: painValue
-    };
+export function updateTriageQuestionnaire(form, especialidad) {
+    const supported = ["clinica_medica", "pediatria"].includes(especialidad);
+    form.querySelectorAll("[data-triage-specialty]").forEach(section => {
+        const active = section.dataset.triageSpecialty === "common" ? supported : section.dataset.triageSpecialty === especialidad;
+        section.classList.toggle("d-none", !active);
+        section.querySelectorAll("input, select").forEach(control => { control.disabled = !active; });
+    });
+    const duration = form.elements.namedItem("duracionFiebreHoras");
+    duration.disabled = especialidad !== "pediatria" || getRadioValue(form, "fiebre") !== "si";
+    duration.required = !duration.disabled;
+    form.querySelector("#sinTriajeEspecifico").classList.toggle("d-none", supported || !especialidad);
+}
+
+export function renderTriageErrors(element, errors) {
+    element.textContent = Object.values(errors).join(" ");
+    element.classList.toggle("d-none", Object.keys(errors).length === 0);
 }
 
 export function readRadioValue(name) {
@@ -22,16 +43,11 @@ export function readRadioValue(name) {
     return selected ? selected.value : "";
 }
 
-export function renderResult(result, elements) {
-    const { resultBox, resultColor, setText } = elements;
-
+export function renderResult(prioridad, { resultBox, resultColor }) {
     resultBox.classList.remove("d-none", "triage-result-success", "triage-result-warning", "triage-result-danger");
-    resultBox.classList.add(borderPriorityClass(result.color));
-
-    resultColor.textContent = result.color;
-    resultColor.className = `badge ${priorityClass(result.color)}`;
-    setText("resultadoPuntaje", result.puntaje);
-    setText("resultadoDuracion", result.duracionTurno);
+    resultBox.classList.add("triage-result-" + (prioridad === "Alta" ? "danger" : prioridad === "Media" ? "warning" : "success"));
+    resultColor.textContent = prioridad;
+    resultColor.className = "badge " + priorityClass(prioridad);
 }
 
 export function renderTriageResponses(responses) {
