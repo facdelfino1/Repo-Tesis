@@ -67,12 +67,46 @@ export function mergeStoredAvailability(key, baseAvailability, doctors) {
     return merged;
 }
 
-export function mergeAllStoredAvailability(baseAvailability) {
+export function mergeAllStoredAvailability(baseAvailability, { conservative = false, doctors = [] } = {}) {
     const base = Array.isArray(baseAvailability) ? baseAvailability : [];
     const storedSecretary = readStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_AVAILABILITY, null);
     const storedPatient = readStoredJson(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, null);
     const storedDoctor = readStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_AVAILABILITY, null);
-    const byId = new Map(base.map((item) => [String(item.id_disponibilidad), item]));
+    // El modo conservador es de lectura y solo se activa en la solicitud del paciente.
+    // Sin versiones compartidas no podemos distinguir una liberacion de una copia antigua.
+    const validPatientSlot = (item) => {
+        if (!item || item.id_disponibilidad == null || item.id_disponibilidad === ""
+            || !item.id_medico || !compatibleAvailability(item, doctors)
+            || !/^\d{4}-\d{2}-\d{2}$/.test(item.fecha)
+            || !/^([01]\d|2[0-3]):[0-5]\d$/.test(item.hora_inicio)
+            || !/^([01]\d|2[0-3]):[0-5]\d$/.test(item.hora_fin)) {
+            return false;
+        }
+        const date = new Date(`${item.fecha}T00:00:00Z`);
+        return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === item.fecha
+            && item.hora_fin > item.hora_inicio;
+    };
+    const byId = new Map();
+    const addItem = (item) => {
+        if (conservative && !validPatientSlot(item)) {
+            return;
+        }
+        const id = String(item.id_disponibilidad);
+        const previous = byId.get(id);
+        if (conservative && previous) {
+            const sameBlock = ["id_medico", "especialidad", "fecha", "hora_inicio", "hora_fin"]
+                .every((field) => String(previous[field]) === String(item[field]));
+            if (!sameBlock || previous.estado === "Ocupado" || item.estado === "Ocupado") {
+                byId.set(id, { ...previous, estado: "Ocupado" });
+                return;
+            }
+        }
+        byId.set(id, item);
+    };
+    base.forEach((item) => {
+        if (conservative) addItem(item);
+        else byId.set(String(item.id_disponibilidad), item);
+    });
 
     [storedSecretary, storedPatient, storedDoctor].forEach((stored) => {
         if (!Array.isArray(stored)) {
@@ -81,7 +115,7 @@ export function mergeAllStoredAvailability(baseAvailability) {
 
         stored.forEach((item) => {
             if (item && item.id_disponibilidad !== undefined && item.fecha && item.hora_inicio && item.hora_fin) {
-                byId.set(String(item.id_disponibilidad), item);
+                addItem(item);
             }
         });
     });

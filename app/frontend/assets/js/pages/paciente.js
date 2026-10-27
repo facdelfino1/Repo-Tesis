@@ -36,6 +36,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         { getBootstrapModal, showModal },
         {
             availabilityDateTime,
+            mergeAllStoredAvailability,
             mergeStoredAvailability
         },
         {
@@ -269,6 +270,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             updateTriageQuestionnaire(form, triageSpecialty());
             lastRequest = null;
             selectedAvailability = null;
+            confirmarTurnoBtn.disabled = true;
             disponibilidadSection.classList.add("d-none");
             disponibilidadLista.innerHTML = "";
             disponibilidadError.classList.add("d-none");
@@ -277,74 +279,39 @@ document.addEventListener("DOMContentLoaded", async () => {
             resultBox.classList.remove("triage-result-success", "triage-result-warning", "triage-result-danger");
         }
 
-        function buildOverbooking(result, requestDoctor, requestSpecialty) {
-            const doctorForOverbooking = requestDoctor
-                || medicosMock.find((doctor) => doctor.especialidad === requestSpecialty)
-                || medicosMock[0];
-
-            if (!doctorForOverbooking) {
-                return null;
-            }
-
-            return {
-                id_disponibilidad: `sobreturno-${Date.now()}`,
-                id_medico: doctorForOverbooking.id,
-                medico: doctorFullName(doctorForOverbooking),
-                especialidad: doctorForOverbooking.especialidad,
-                fecha: "2026-06-24",
-                hora_inicio: "08:30",
-                hora_fin: "09:00",
-                estado: "Disponible",
-                tipo: "Sobreturno",
-                esSobreturno: true
-            };
-        }
-
-        // Compatibilidad 2A: conserva la política anterior; recibe prioridad, nunca color.
-        function filterAvailability(request, result) {
-            const filtered = disponibilidadMock.filter((item) => {
+        function filterAvailability(request, priority) {
+            const now = Date.now();
+            const availability = mergeAllStoredAvailability(disponibilidadMock, {
+                conservative: true,
+                doctors: medicosMock
+            });
+            const filtered = availability.filter((item) => {
                 const isAvailable = item.estado === "Disponible";
                 const matchesDoctor = request.medicoId
-                    ? item.id_medico === request.medicoId
+                    ? String(item.id_medico) === String(request.medicoId)
                     : true;
-                const matchesSpecialty = request.medicoId
-                    ? true
-                    : item.especialidad === request.especialidad;
+                const matchesSpecialty = item.especialidad === request.especialidad;
 
-                return isAvailable && matchesDoctor && matchesSpecialty;
+                return isAvailable && matchesDoctor && matchesSpecialty && availabilityDateTime(item) >= now;
             });
 
-            if (!result || result === "Baja") {
-                return filtered;
-            }
-
-            const ordered = [...filtered].sort((a, b) => availabilityDateTime(a) - availabilityDateTime(b));
-
-            if (result !== "Alta") {
-                return ordered;
-            }
-
-            const immediateLimit = new Date("2026-06-25T23:59:59").getTime();
-            const hasImmediateAvailability = ordered.some((item) => availabilityDateTime(item) <= immediateLimit);
-
-            if (hasImmediateAvailability) {
-                return ordered;
-            }
-
-            const overbooking = buildOverbooking(result, selectedDoctor(), request.especialidad);
-            return overbooking ? [overbooking, ...ordered] : ordered;
+            return priority === "Media" || priority === "Alta"
+                ? filtered.sort((a, b) => availabilityDateTime(a) - availabilityDateTime(b))
+                : filtered;
         }
 
-        function renderAvailability(items) {
+        function renderAvailability(items, priority) {
             selectedAvailability = null;
+            confirmarTurnoBtn.disabled = true;
             disponibilidadLista.innerHTML = "";
             disponibilidadError.classList.add("d-none");
             sinDisponibilidad.classList.toggle("d-none", items.length > 0);
+            sinDisponibilidad.textContent = priority === "Alta"
+                ? "No hay horarios compatibles disponibles. La solicitud requiere revisión de agenda. No se ha reservado un turno; la gestión de esa revisión queda pendiente."
+                : "No hay horarios disponibles para la seleccion realizada.";
 
             items.forEach((item, index) => {
                 const optionId = `disponibilidad-${index}`;
-                const badgeClass = item.esSobreturno ? "text-bg-danger" : "text-bg-success";
-                const badgeText = item.esSobreturno ? "Sobreturno sugerido por prioridad alta" : "Disponible";
                 const column = document.createElement("div");
                 column.className = "col-12 col-md-6 col-xl-4";
                 column.innerHTML = `
@@ -357,7 +324,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                             <p class="text-secondary small mb-2">${item.hora_inicio} a ${item.hora_fin}</p>
                             <p class="mb-2">${item.medico}</p>
                             <p class="text-secondary small mb-2">${item.especialidad}</p>
-                            <span class="badge ${badgeClass}">${badgeText}</span>
+                            <span class="badge text-bg-success">Disponible</span>
                         </div>
                     </label>
                 `;
@@ -368,6 +335,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             disponibilidadLista.querySelectorAll('input[name="disponibilidad"]').forEach((radio) => {
                 radio.addEventListener("change", () => {
                     selectedAvailability = items[Number.parseInt(radio.value, 10)];
+                    confirmarTurnoBtn.disabled = !selectedAvailability;
                     disponibilidadError.classList.add("d-none");
                 });
             });
@@ -405,7 +373,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (result) renderResult(result, { resultBox, resultColor });
             else resultBox.classList.add("d-none");
             disponibilidadSection.classList.remove("d-none");
-            renderAvailability(filterAvailability(lastRequest, result));
+            renderAvailability(filterAvailability(lastRequest, result), result);
             disponibilidadSection.scrollIntoView({ behavior: "smooth", block: "start" });
         }
 
@@ -425,7 +393,6 @@ document.addEventListener("DOMContentLoaded", async () => {
                 horaFin: selectedAvailability.hora_fin,
                 disponibilidadId: selectedAvailability.id_disponibilidad,
                 tipo: selectedAvailability.tipo,
-                esSobreturno: Boolean(selectedAvailability.esSobreturno),
                 estado: "Confirmado",
                 fechaConfirmacion: new Date().toISOString()
             };
@@ -525,6 +492,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         renderSpecialties();
         renderDoctorsBySpecialty(especialidad.value);
         updateTriageQuestionnaire(form, triageSpecialty());
+        confirmarTurnoBtn.disabled = true;
     }
 
 
