@@ -10,14 +10,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         turnos: {
             turnos: []
         },
-        triaje: {
-            ultimoTriaje: {
-                prioridad: "Baja",
-                color_prioridad: "Verde",
-                puntaje: 2,
-                recomendacion: "Sin triajes registrados."
-            }
-        },
         medicos: {
             medicos: []
         },
@@ -36,19 +28,19 @@ document.addEventListener("DOMContentLoaded", async () => {
         { getBootstrapModal, showModal },
         {
             availabilityDateTime,
+            availabilityDurationMinutes,
             mergeAllStoredAvailability,
-            mergeStoredAvailability
         },
         {
-            compatiblePatientTurn,
+            mergeStoredTurns,
+            occupyPatientAppointmentAvailability,
+            persistPatientTurns,
             nextPatientTurn,
             patientAppointments,
-            turnosList
         },
         {
             calculateTriagePriority,
-            validateTriageInput,
-            latestTriageForPatient
+            validateTriageInput
         },
         {
             readAnswers,
@@ -142,15 +134,14 @@ document.addEventListener("DOMContentLoaded", async () => {
             return;
         }
 
-        const [usuarios, turnos, triaje] = await Promise.all([
+        const [usuarios, turnosData] = await Promise.all([
             loadMock(MOCK_PATHS.USERS, fallbackData.usuarios),
-            loadMock(MOCK_PATHS.APPOINTMENTS, fallbackData.turnos),
-            loadMock(MOCK_PATHS.TRIAGE, fallbackData.triaje)
+            loadMock(MOCK_PATHS.APPOINTMENTS, fallbackData.turnos)
         ]);
 
         const paciente = currentPatient(usuarios);
+        const turnos = { turnos: mergeStoredTurns(turnosData.turnos) };
         const proximoTurno = nextPatientTurn(turnos, usuarios, paciente.id_paciente);
-        const ultimoTriaje = latestTriageForPatient(triaje, turnos, paciente.id_paciente, turnosList) || triaje.ultimoTriaje;
         const nombreCompleto = fullName(paciente);
 
         setText("pacienteNavbar", nombreCompleto);
@@ -163,17 +154,16 @@ document.addEventListener("DOMContentLoaded", async () => {
         setText("turnoHora", proximoTurno ? proximoTurno.hora : "-");
         setText("turnoEstado", proximoTurno ? proximoTurno.estado : "-");
 
-        setText("triajePrioridad", `${ultimoTriaje.prioridad} (${ultimoTriaje.color_prioridad || ultimoTriaje.color})`);
-        setText("triajePuntaje", ultimoTriaje.puntaje);
-        setText("triajeRecomendacion", ultimoTriaje.recomendacion);
+        const priority = proximoTurno?.prioridad ?? null;
+        setText("triajePrioridad", priority || "Sin triaje espec\u00edfico");
 
         const priorityBadge = document.getElementById("triajePrioridad");
 
         if (priorityBadge) {
-            priorityBadge.className = `badge ${priorityClass(ultimoTriaje.prioridad)}`;
+            priorityBadge.className = `badge ${priority ? priorityClass(priority) : "text-bg-secondary"}`;
         }
 
-        setText("esperaEstimada", proximoTurno ? (proximoTurno.esperaEstimada || "18 minutos") : "-");
+        setText("esperaEstimada", "-");
         setText("duracionEstimada", proximoTurno ? (proximoTurno.duracionEstimada || proximoTurno.tiempoEstimado) : "-");
 
         renderHistory(patientAppointments(turnos, usuarios, paciente.id_paciente).filter((turn) => (
@@ -204,6 +194,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const confirmExitRequestButton = document.getElementById("confirmarSalidaSolicitudBtn");
         const cancelRequestModal = getBootstrapModal(cancelRequestModalElement);
         let lastRequest = null;
+        let requestCreationDate = null;
         let selectedAvailability = null;
 
         const [usuariosData, medicosData, disponibilidadData] = await Promise.all([
@@ -292,7 +283,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     : true;
                 const matchesSpecialty = item.especialidad === request.especialidad;
 
-                return isAvailable && matchesDoctor && matchesSpecialty && availabilityDateTime(item) >= now;
+                return isAvailable && matchesDoctor && matchesSpecialty && availabilityDateTime(item) > now;
             });
 
             return priority === "Media" || priority === "Alta"
@@ -362,13 +353,14 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
             const result = input ? calculateTriagePriority(input) : null;
             const doctor = selectedDoctor();
+            requestCreationDate ??= new Date().toISOString();
             lastRequest = {
                 especialidad: especialidad.value || (doctor ? doctor.especialidad : ""),
                 medico: doctor ? doctorFullName(doctor) : "",
                 medicoId: doctor ? doctor.id : null,
                 triaje: input ? { ...input, prioridad: result } : null,
-                estado: "Pendiente de horario",
-                fechaSolicitud: new Date().toISOString()
+                estado: "Pendiente",
+                fecha_hora_creacion: requestCreationDate
             };
             if (result) renderResult(result, { resultBox, resultColor });
             else resultBox.classList.add("d-none");
@@ -383,40 +375,54 @@ document.addEventListener("DOMContentLoaded", async () => {
                 return;
             }
 
+            if (typeof lastRequest.fecha_hora_creacion !== "string"
+                || !Number.isFinite(Date.parse(lastRequest.fecha_hora_creacion))) {
+                disponibilidadError.textContent = "La solicitud no tiene una fecha de creacion valida. No se puede confirmar.";
+                disponibilidadError.classList.remove("d-none");
+                return;
+            }
+
+            const priority = lastRequest.triaje?.prioridad ?? null;
+            const candidates = filterAvailability(lastRequest, priority);
+            const slot = candidates.find((item) => String(item.id_disponibilidad) === String(selectedAvailability.id_disponibilidad)
+                && ["id_medico", "especialidad", "fecha", "hora_inicio", "hora_fin"]
+                    .every((field) => String(item[field]) === String(selectedAvailability[field])));
+            const duration = slot ? availabilityDurationMinutes(slot.hora_inicio, slot.hora_fin) : null;
+            if (!slot || duration === null) {
+                renderAvailability(candidates, priority);
+                disponibilidadError.textContent = "El horario seleccionado ya no esta disponible o cambio. Seleccione nuevamente un horario válido.";
+                disponibilidadError.classList.remove("d-none");
+                return;
+            }
+
+            const previousTurns = readStoredJson(LOCAL_STORAGE_KEYS.PATIENT_TURNS, []);
+            const storedTurns = Array.isArray(previousTurns) ? previousTurns : [];
+            const storedAvailability = mergeAllStoredAvailability(disponibilidadMock, { conservative: true, doctors: medicosMock });
+            const idTurno = Math.max(Date.now(), ...storedTurns.map((turn) => (Number(turn?.id) || 0) + 1),
+                ...storedAvailability.map((item) => (Number(item.id_turno) || 0) + 1));
             const reservedAppointment = {
                 ...lastRequest,
-                medico: selectedAvailability.medico,
-                medicoId: selectedAvailability.id_medico,
-                especialidad: selectedAvailability.especialidad,
-                fecha: selectedAvailability.fecha,
-                hora: selectedAvailability.hora_inicio,
-                horaFin: selectedAvailability.hora_fin,
-                disponibilidadId: selectedAvailability.id_disponibilidad,
-                tipo: selectedAvailability.tipo,
-                estado: "Confirmado",
+                id: idTurno,
+                id_turno: idTurno,
+                prioridad: priority,
+                medico: slot.medico,
+                medicoId: slot.id_medico,
+                especialidad: slot.especialidad,
+                fecha: slot.fecha,
+                hora: slot.hora_inicio,
+                horaFin: slot.hora_fin,
+                duracion_estimada: duration,
+                disponibilidadId: slot.id_disponibilidad,
+                tipo: slot.tipo || "Consulta",
+                estado: "Reservado",
                 fechaConfirmacion: new Date().toISOString()
             };
-
-            writeSessionJson(SESSION_STORAGE_KEYS.PATIENT_APPOINTMENT_REQUEST, lastRequest);
-            writeSessionJson(SESSION_STORAGE_KEYS.PATIENT_RESERVED_APPOINTMENT, reservedAppointment);
-
             const patientId = patient.id_paciente || 1;
-            const storedTurns = readStoredJson(LOCAL_STORAGE_KEYS.PATIENT_TURNS, [])
-                .filter((turn) => compatiblePatientTurn(turn, medicosMock, patientId));
-            const storedAvailability = mergeStoredAvailability(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, disponibilidadMock, medicosMock);
-            const updatedAvailability = storedAvailability.map((item) => {
-                if (String(item.id_disponibilidad) === String(selectedAvailability.id_disponibilidad)) {
-                    return {
-                        ...item,
-                        estado: "Ocupado"
-                    };
-                }
-
-                return item;
-            });
+            const updatedAvailability = occupyPatientAppointmentAvailability(storedAvailability, slot.id_disponibilidad, idTurno);
             const patientTurn = {
-                id: Date.now(),
-                pacienteId: patient.id_paciente || 1,
+                id: idTurno,
+                id_turno: idTurno,
+                pacienteId: patientId,
                 especialidad: reservedAppointment.especialidad,
                 medico: reservedAppointment.medico,
                 medicoId: reservedAppointment.medicoId,
@@ -424,15 +430,42 @@ document.addEventListener("DOMContentLoaded", async () => {
                 hora: reservedAppointment.hora,
                 horaFin: reservedAppointment.horaFin,
                 estado: "Reservado",
-                // Compatibilidad temporal 2A: estructura local existente; duración del bloque de agenda.
-                prioridad: reservedAppointment.triaje?.prioridad ?? null,
-                tiempoEstimado: `${(new Date(`2000-01-01T${reservedAppointment.horaFin}:00`) - new Date(`2000-01-01T${reservedAppointment.hora}:00`)) / 60000} minutos`,
+                prioridad: priority,
+                triaje: reservedAppointment.triaje,
+                fecha_hora_creacion: reservedAppointment.fecha_hora_creacion,
+                duracion_estimada: duration,
+                tiempoEstimado: `${duration} minutos`,
                 disponibilidadId: reservedAppointment.disponibilidadId,
                 origenInterfaz: true
             };
 
-            writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_TURNS, [...storedTurns, patientTurn]);
-            writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, updatedAvailability);
+            try {
+                persistPatientTurns(LOCAL_STORAGE_KEYS.PATIENT_TURNS,
+                    [...storedTurns.filter((turn) => turn && String(turn.pacienteId) === String(patientId)), patientTurn], patientId);
+                writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, updatedAvailability);
+            } catch (error) {
+                // Recuperacion local minima; la atomicidad real corresponde al backend.
+                try { writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_TURNS, previousTurns); } catch (_) { /* El almacenamiento puede seguir inaccesible. */ }
+                removeSessionItem(SESSION_STORAGE_KEYS.PATIENT_RESERVED_APPOINTMENT);
+                disponibilidadError.textContent = "No se pudo completar la reserva. Revise sus turnos antes de volver a intentar.";
+                disponibilidadError.classList.remove("d-none");
+                selectedAvailability = null;
+                confirmarTurnoBtn.disabled = true;
+                return;
+            }
+            // La pantalla de confirmacion solo recibe datos despues de guardar turno y bloque.
+            requestCreationDate = null;
+            selectedAvailability = null;
+            confirmarTurnoBtn.disabled = true;
+            try {
+                writeSessionJson(SESSION_STORAGE_KEYS.PATIENT_APPOINTMENT_REQUEST, lastRequest);
+                writeSessionJson(SESSION_STORAGE_KEYS.PATIENT_RESERVED_APPOINTMENT, reservedAppointment);
+            } catch (error) {
+                removeSessionItem(SESSION_STORAGE_KEYS.PATIENT_RESERVED_APPOINTMENT);
+                disponibilidadError.textContent = "El turno fue reservado. Consulte Mis turnos; no se pudo guardar la pantalla de confirmaci\u00f3n.";
+                disponibilidadError.classList.remove("d-none");
+                return;
+            }
             window.location.href = "turno-reservado.html";
         }
 
@@ -440,6 +473,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             removeSessionItem(SESSION_STORAGE_KEYS.PATIENT_APPOINTMENT_REQUEST);
             removeSessionItem(SESSION_STORAGE_KEYS.PATIENT_RESERVED_APPOINTMENT);
             lastRequest = null;
+            requestCreationDate = null;
             selectedAvailability = null;
             window.location.href = "dashboard.html";
         }
@@ -693,7 +727,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         setText("turnoReservadoFecha", formatDate(appointment.fecha));
         setText("turnoReservadoHora", `${appointment.hora} a ${appointment.horaFin}`);
         setText("turnoReservadoTipo", appointmentType);
-        setText("turnoReservadoDuracion", (new Date(`2000-01-01T${appointment.horaFin}:00`) - new Date(`2000-01-01T${appointment.hora}:00`)) / 60000);
+        setText("turnoReservadoDuracion", availabilityDurationMinutes(appointment.hora, appointment.horaFin) ?? "-");
 
         if (priorityBadge) {
             priorityBadge.textContent = appointment.triaje?.prioridad ? `Prioridad ${appointment.triaje.prioridad}` : "Sin triaje específico";

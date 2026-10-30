@@ -23,7 +23,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         { LOCAL_STORAGE_KEYS, MOCK_PATHS },
         { clearStoredJson, loadMock, readStoredJson, writeStoredJson },
         { escapeHtml, normalizeState, normalizeText },
-        { currentTimeValue, formatDate, formatToday, priorityLabel },
+        { currentTimeValue, formatDate, formatToday, priorityLabel, timeToMinutes },
         { isStrongPassword, isValidEmail },
         { hideAlert, renderEmptyState, showAlert },
         { priorityClass, stateText: renderStateText },
@@ -40,6 +40,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             mergeStoredPresenceTurns,
             mergeStoredSecretaryTurns: mergeStoredTurns,
             registerPresence,
+            turnCreationDate,
+            preserveTurnCreationDate,
             turnosList
         },
         {
@@ -67,7 +69,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             confirmRescheduleProposal,
             isAffectedTurn: isRescheduleAffectedTurn,
             rejectRescheduleProposal,
-            sortedByPriority
+            orderRescheduleTurns,
+            reschedulePriority,
+            restoreRescheduleItems
         },
         {
             renderSecretaryAffected,
@@ -738,6 +742,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             const nextTurnId = turns.reduce((maxValue, turn) => Math.max(maxValue, Number(turn.id_turno) || 0), 1000) + 1;
             const nextTriageId = triages.reduce((maxValue, item) => Math.max(maxValue, Number(item.id_triaje) || 0), 500) + 1;
             const occupiedSlot = occupyAvailability(slot, nextTurnId);
+            const creationDate = new Date().toISOString();
             const newTurn = {
                 id_turno: nextTurnId,
                 id_paciente: patient.id_paciente,
@@ -751,7 +756,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                 prioridad: triageResult.priority,
                 color_prioridad: triageResult.color,
                 duracion_estimada: triageResult.duration,
-                fecha_solicitud: new Date().toISOString(),
+                fecha_hora_creacion: creationDate,
+                fecha_solicitud: creationDate,
                 origen: "Secretaria"
             };
             const newTriage = {
@@ -1478,10 +1484,19 @@ document.addEventListener("DOMContentLoaded", async () => {
             Array.isArray(disponibilidadData) ? disponibilidadData : [],
             doctors
         );
+        const message = document.getElementById("reprogramacionMensaje");
         const storedProcess = readStoredJson(LOCAL_STORAGE_KEYS.MASS_RESCHEDULE, {});
         let affectedTurns = [];
-        let proposals = Array.isArray(storedProcess.proposals) ? storedProcess.proposals : [];
-        let waitlist = Array.isArray(storedProcess.waitlist) ? storedProcess.waitlist : [];
+        let proposals = [];
+        let waitlist = [];
+        try {
+            proposals = restoreRescheduleItems(Array.isArray(storedProcess.proposals) ? storedProcess.proposals : [], turns);
+            waitlist = restoreRescheduleItems(Array.isArray(storedProcess.waitlist) ? storedProcess.waitlist : [], turns);
+            orderRescheduleTurns([...proposals, ...waitlist]);
+        } catch (error) {
+            proposals = []; waitlist = [];
+            showAlert(message, "warning", error.message);
+        }
 
         const fields = {
             specialty: document.getElementById("reprogramacionEspecialidad"),
@@ -1491,7 +1506,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             end: document.getElementById("reprogramacionHoraFin"),
             reason: document.getElementById("reprogramacionMotivo")
         };
-        const message = document.getElementById("reprogramacionMensaje");
         const affectedTable = document.getElementById("reprogramacionAfectadosTabla");
         const proposalTable = document.getElementById("reprogramacionPropuestasTabla");
         const notificationContainer = document.getElementById("reprogramacionNotificaciones");
@@ -1565,20 +1579,27 @@ document.addEventListener("DOMContentLoaded", async () => {
                     hora_inicio: turn.hora,
                     hora_fin: turn.horaFin || addMinutes(turn.hora, 20),
                     estado: turn.estado,
-                    prioridad: priorityLabel(turn.prioridad),
-                    color_prioridad: priorityColor(priorityLabel(turn.prioridad)),
+                    especialidad: turn.especialidad,
+                    prioridad: turn.prioridad,
                     duracion_estimada: Number.parseInt(turn.tiempoEstimado, 10) || 20,
-                    fecha_solicitud: turn.fechaSolicitud || new Date().toISOString(),
+                    fecha_hora_creacion: turnCreationDate(turn),
+                    fecha_solicitud: turnCreationDate(turn),
                     origen: turn.origen || "Paciente"
                 }))
                 : [];
-            const byId = new Map(base.map((turn) => [String(turn.id_turno), turn]));
+            const byId = new Map();
+            base.forEach((turn) => byId.set(String(turn.id_turno), preserveTurnCreationDate(byId.get(String(turn.id_turno)), turn)));
 
             [...stored, ...convertedPatientTurns].filter(compatibleMassTurn).forEach((turn) => {
-                byId.set(String(turn.id_turno), turn);
+                byId.set(String(turn.id_turno), preserveTurnCreationDate(byId.get(String(turn.id_turno)), turn));
             });
 
-            return [...byId.values()];
+            return [...byId.values()].map((turn) => {
+                const doctor = doctors.find((item) => String(item.id_medico || item.id) === String(turn.id_medico));
+                const specialty = turn.especialidad || doctor?.especialidad;
+                return { ...preserveTurnCreationDate(null, turn), especialidad: specialty,
+                    prioridad: reschedulePriority({ ...turn, especialidad: specialty }) };
+            });
         }
 
         function persistState() {
@@ -1773,7 +1794,14 @@ document.addEventListener("DOMContentLoaded", async () => {
                 return;
             }
 
-            affectedTurns = sortedByPriority(turns.filter((turn) => isRescheduleAffectedTurn(turn, rescheduleCriteria())));
+            try {
+                affectedTurns = orderRescheduleTurns(turns.filter((turn) => isRescheduleAffectedTurn(turn, rescheduleCriteria())));
+            } catch (error) {
+                affectedTurns = [];
+                renderAll();
+                showMessage("warning", error.message);
+                return;
+            }
             proposals = [];
             waitlist = [];
             persistState();
@@ -1800,18 +1828,23 @@ document.addEventListener("DOMContentLoaded", async () => {
                 return;
             }
 
-            const nextProcess = buildRescheduleProposals({
-                affectedTurns,
-                slots,
-                patientByTurn,
-                fullName,
-                priorityLabel,
-                turnLabel,
-                reason: fields.reason.value,
-                proposalIdPrefix: "propuesta-",
-                waitlistIdPrefix: "espera-",
-                notificationStatus: "Enviada - Pendiente de respuesta"
-            });
+            let nextProcess;
+            try {
+                nextProcess = buildRescheduleProposals({
+                    affectedTurns,
+                    slots,
+                    patientByTurn,
+                    fullName,
+                    turnLabel,
+                    reason: fields.reason.value,
+                    proposalIdPrefix: "propuesta-",
+                    waitlistIdPrefix: "espera-",
+                    notificationStatus: "Enviada - Pendiente de respuesta"
+                });
+            } catch (error) {
+                showMessage("warning", error.message);
+                return;
+            }
 
             proposals = nextProcess.proposals;
             waitlist = nextProcess.waitlist;
@@ -1830,6 +1863,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             });
 
             if (!nextState) {
+                showMessage("warning", "No se pudo confirmar: revise que turno y horario pertenezcan a la misma agenda.");
                 return;
             }
 

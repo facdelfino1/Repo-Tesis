@@ -2,7 +2,13 @@ import { escapeHtml } from "../../core/helpers.js";
 import { formatDate } from "../../core/formatters.js";
 import { priorityClass, stateText as renderStateText } from "../../components/badges.js";
 import { renderTableEmptyRow } from "../../components/tables.js";
-import { sortedByPriority } from "./rescheduling-service.js";
+import { orderRescheduleTurns, reschedulePriority, hasRescheduleTriage } from "./rescheduling-service.js";
+
+function rescheduleBadge(item) {
+    const priority = reschedulePriority(item);
+    const text = priority ?? (hasRescheduleTriage(item.especialidad) ? "Sin prioridad registrada" : "Sin triaje espec\u00edfico");
+    return `<span class="badge ${priority ? priorityClass(priority) : "text-bg-secondary"}">${escapeHtml(text)}</span>`;
+}
 
 export function showAvailabilityWarning(elements, text, showLoadButton) {
     elements.text.textContent = text;
@@ -36,7 +42,7 @@ export function renderDoctorAffected({
 
     affectedTable.innerHTML = affectedTurns.map((turn) => {
         const patient = patientByTurn(turn);
-        const priority = priorityLabel(turn.prioridad);
+
 
         return `
                     <tr>
@@ -44,7 +50,7 @@ export function renderDoctorAffected({
                         <td>${escapeHtml(patient ? patient.dni : "-")}</td>
                         <td>${formatDate(turn.fecha)}</td>
                         <td>${escapeHtml(turn.hora_inicio)}</td>
-                        <td><span class="badge ${priorityClass(priority)}">${escapeHtml(priority)}</span></td>
+                        <td>${rescheduleBadge(turn)}</td>
                         <td>${renderStateText(turn.estado, escapeHtml)}</td>
                     </tr>
                 `;
@@ -59,7 +65,7 @@ export function renderDoctorProposals({
     warningElements
 }) {
     if (waitlist.some((item) => item.reason === "Sin disponibilidad suficiente")) {
-        showAvailabilityWarning(warningElements, "No hay disponibilidad suficiente para reprogramar todos los turnos. Los pacientes restantes seran colocados en lista de espera prioritaria.", false);
+        showAvailabilityWarning(warningElements, "No hay disponibilidad suficiente para reprogramar todos los turnos. Los pacientes restantes seran colocados en lista de espera.", false);
     } else {
         hideAvailabilityWarning(warningElements);
     }
@@ -69,10 +75,13 @@ export function renderDoctorProposals({
         return;
     }
 
-    proposalTable.innerHTML = sortedByPriority(proposals).map((proposal) => `
+    let ordered;
+    try { ordered = orderRescheduleTurns(proposals); }
+    catch (error) { proposalTable.innerHTML = renderTableEmptyRow(5, error.message); return; }
+    proposalTable.innerHTML = ordered.map((proposal) => `
                 <tr>
                     <td class="fw-semibold">${escapeHtml(proposal.patientName)}</td>
-                    <td><span class="badge ${priorityClass(proposal.priority)}">${escapeHtml(proposal.priority)}</span></td>
+                    <td>${rescheduleBadge(proposal)}</td>
                     <td>${escapeHtml(proposal.previousLabel)}</td>
                     <td>${escapeHtml(slotLabel(proposal.slot))}</td>
                     <td>${proposalStateText(proposal.status)}</td>
@@ -117,10 +126,12 @@ export function renderDoctorWaitlist({
     waitlistTable,
     waitlist
 }) {
-    const sortedWaitlist = sortedByPriority(waitlist.map((item) => ({ ...item, prioridad: item.priority })));
+    let sortedWaitlist;
+    try { sortedWaitlist = orderRescheduleTurns(waitlist); }
+    catch (error) { waitlistTable.innerHTML = renderTableEmptyRow(5, error.message); return; }
 
     if (sortedWaitlist.length === 0) {
-        waitlistTable.innerHTML = '<tr><td colspan="5" class="text-secondary">No hay pacientes en espera prioritaria.</td></tr>';
+        waitlistTable.innerHTML = '<tr><td colspan="5" class="text-secondary">No hay pacientes en espera.</td></tr>';
         return;
     }
 
@@ -128,9 +139,9 @@ export function renderDoctorWaitlist({
                 <tr>
                     <td class="fw-semibold">${escapeHtml(item.patientName)}</td>
                     <td>${escapeHtml(item.dni || "-")}</td>
-                    <td><span class="badge ${priorityClass(item.priority)}">${escapeHtml(item.priority)}</span></td>
+                    <td>${rescheduleBadge(item)}</td>
                     <td>${escapeHtml(item.reason)}</td>
-                    <td><strong class="fw-semibold">En espera prioritaria</strong></td>
+                    <td><strong class="fw-semibold">${reschedulePriority(item) === null ? "En espera" : "En espera prioritaria"}</strong></td>
                 </tr>
             `).join("");
 }
@@ -163,7 +174,7 @@ export function renderSecretaryAffected({
                         <td>${escapeHtml(doctor ? doctor.especialidad : turn.especialidad || "-")}</td>
                         <td>${formatDate(turn.fecha)}</td>
                         <td>${escapeHtml(turn.hora_inicio)}</td>
-                        <td><span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(turn.color_prioridad || turn.prioridad)}</span></td>
+                        <td>${rescheduleBadge(turn)}</td>
                         <td>${renderStateText(turn.estado, escapeHtml)}</td>
                         <td>${escapeHtml(turn.origen || "-")}</td>
                     </tr>
@@ -181,7 +192,7 @@ export function renderSecretaryProposals({
     if (waitlist.some((item) => item.reason === "Sin disponibilidad suficiente")) {
         showAvailabilityWarning(
             warningElements,
-            "No hay disponibilidad suficiente para reprogramar todos los turnos. Los pacientes restantes seran colocados en lista de espera prioritaria.",
+            "No hay disponibilidad suficiente para reprogramar todos los turnos. Los pacientes restantes seran colocados en lista de espera.",
             false
         );
     } else {
@@ -193,10 +204,13 @@ export function renderSecretaryProposals({
         return;
     }
 
-    proposalTable.innerHTML = sortedByPriority(proposals).map((proposal) => `
+    let ordered;
+    try { ordered = orderRescheduleTurns(proposals); }
+    catch (error) { proposalTable.innerHTML = renderTableEmptyRow(5, error.message); return; }
+    proposalTable.innerHTML = ordered.map((proposal) => `
                 <tr>
                     <td class="fw-semibold">${escapeHtml(proposal.patientName)}</td>
-                    <td><span class="badge ${priorityClass(proposal.priority)}">${escapeHtml(proposal.priority)}</span></td>
+                    <td>${rescheduleBadge(proposal)}</td>
                     <td>${escapeHtml(proposal.previousLabel)}</td>
                     <td>${escapeHtml(slotLabel(proposal.slot))}</td>
                     <td>${proposalStateText(proposal.status)}</td>
@@ -254,13 +268,12 @@ export function renderSecretaryWaitlist({
     waitlistTable,
     waitlist
 }) {
-    const sortedWaitlist = sortedByPriority(waitlist.map((item) => ({
-        ...item,
-        prioridad: item.priority
-    })));
+    let sortedWaitlist;
+    try { sortedWaitlist = orderRescheduleTurns(waitlist); }
+    catch (error) { waitlistTable.innerHTML = renderTableEmptyRow(5, error.message); return; }
 
     if (sortedWaitlist.length === 0) {
-        waitlistTable.innerHTML = renderTableEmptyRow(5, "No hay pacientes en espera prioritaria.");
+        waitlistTable.innerHTML = renderTableEmptyRow(5, "No hay pacientes en espera.");
         return;
     }
 
@@ -268,9 +281,9 @@ export function renderSecretaryWaitlist({
                 <tr>
                     <td class="fw-semibold">${escapeHtml(item.patientName)}</td>
                     <td>${escapeHtml(item.dni || "-")}</td>
-                    <td><span class="badge ${priorityClass(item.priority)}">${escapeHtml(item.priority)}</span></td>
+                    <td>${rescheduleBadge(item)}</td>
                     <td>${escapeHtml(item.reason)}</td>
-                    <td><strong class="fw-semibold">En espera prioritaria</strong></td>
+                    <td><strong class="fw-semibold">${reschedulePriority(item) === null ? "En espera" : "En espera prioritaria"}</strong></td>
                 </tr>
             `).join("");
 }

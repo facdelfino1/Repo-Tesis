@@ -1,20 +1,21 @@
 import { LOCAL_STORAGE_KEYS, MOCK_PATHS } from "../../core/constants.js";
-import { loadMock, writeStoredJson } from "../../core/storage.js";
+import { loadMock, readStoredJson, writeStoredJson } from "../../core/storage.js";
 import { escapeHtml, normalizeState } from "../../core/helpers.js";
 import { formatDate } from "../../core/formatters.js";
 import { showAlert } from "../../components/alerts.js";
 import { priorityClass, stateText as renderStateText } from "../../components/badges.js";
 import { getBootstrapModal, hideModal, showModal } from "../../components/modals.js";
 import { renderTableEmptyRow } from "../../components/tables.js";
-import { mergeStoredAvailability } from "../availability/availability-service.js";
+import { mergeAllStoredAvailability, mergeStoredAvailability } from "../availability/availability-service.js";
 import {
     appointmentDateTime,
     canCancelPatientAppointment,
     cancelPatientAppointment,
-    compatiblePatientTurn,
+    isActivePatientAppointment,
     isHistoricalPatientAppointment,
     isReservedPatientAppointment,
-    mergeStoredPatientTurns,
+    mergeStoredTurns,
+    persistPatientTurns,
     modifyPatientAppointment,
     occupyPatientAppointmentAvailability,
     patientAppointments,
@@ -213,24 +214,18 @@ export async function initPatientAppointments(config) {
     let appointments = [];
     let availability = [];
 
-    function normalizeMockAppointments() {
-        const normalizedTurns = patientAppointments(turnosMock, usuarios, currentPatientId);
-
-        if (normalizedTurns.length > 0) {
-            return normalizedTurns;
-        }
-
-        return [];
+    function currentPatientAppointments() {
+        return patientAppointments({ turnos: mergeStoredTurns(turnosMock.turnos) }, usuarios, currentPatientId);
     }
 
-    function persistState() {
-        const baseIds = new Set(normalizeMockAppointments().map((turn) => String(turn.id)));
-        const localAppointments = appointments.filter((turn) => (
-            !baseIds.has(String(turn.id))
-            && compatiblePatientTurn(turn, medicosMock, currentPatientId)
-        ));
+    function persistState(updatedTurn) {
+        const stored = readStoredJson(LOCAL_STORAGE_KEYS.PATIENT_TURNS, []);
+        const localAppointments = (Array.isArray(stored) ? stored : []).filter((turn) => turn
+            && String(turn.pacienteId) === String(currentPatientId) && String(turn.id) !== String(updatedTurn.id));
+        // Override del mismo ID, incluso si el turno original procede del JSON.
+        localAppointments.push({ ...updatedTurn, origenInterfaz: true });
 
-        writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_TURNS, localAppointments);
+        persistPatientTurns(LOCAL_STORAGE_KEYS.PATIENT_TURNS, localAppointments, currentPatientId);
         writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, availability);
     }
 
@@ -238,7 +233,17 @@ export async function initPatientAppointments(config) {
         showAlert(message, type, text);
     }
 
+    function refreshPatientState(useEffectiveAvailability = false) {
+        appointments = currentPatientAppointments();
+        availability = useEffectiveAvailability
+            ? mergeAllStoredAvailability(disponibilidadData, { conservative: true, doctors: medicosMock })
+            : mergeStoredAvailability(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, disponibilidadData, medicosMock);
+    }
+
     function priorityBadge(priority) {
+        if (priority == null) {
+            return '<span class="badge text-bg-secondary">Sin triaje espec\u00edfico</span>';
+        }
         return `<span class="badge ${priorityClass(priority)}">${priority}</span>`;
     }
 
@@ -270,10 +275,10 @@ export async function initPatientAppointments(config) {
                             <dd class="col-7 fw-medium mb-0">${turn.tiempoEstimado}</dd>
                         </dl>
                         <div class="d-grid d-sm-flex gap-2 justify-content-sm-end">
-                            <button type="button" class="btn btn-outline-primary btn-sm" data-action="modify" data-turn-id="${turn.id}">
+                            <button type="button" class="btn btn-outline-primary btn-sm" data-action="modify" data-turn-id="${turn.id}" ${isReservedPatientAppointment(turn) ? "" : "disabled"}>
                                 <i class="bi bi-pencil-square me-1"></i>Modificar
                             </button>
-                            <button type="button" class="btn btn-outline-danger btn-sm" data-action="cancel" data-turn-id="${turn.id}">
+                            <button type="button" class="btn btn-outline-danger btn-sm" data-action="cancel" data-turn-id="${turn.id}" ${isReservedPatientAppointment(turn) ? "" : "disabled"}>
                                 <i class="bi bi-x-circle me-1"></i>Cancelar
                             </button>
                         </div>
@@ -303,9 +308,9 @@ export async function initPatientAppointments(config) {
     }
 
     function renderAppointments() {
-        const ownAppointments = appointments.filter((turn) => turn.pacienteId === currentPatientId);
+        const ownAppointments = appointments.filter((turn) => String(turn.pacienteId) === String(currentPatientId));
         const reservedTurns = ownAppointments
-            .filter(isReservedPatientAppointment)
+            .filter((turn) => isReservedPatientAppointment(turn) || isActivePatientAppointment(turn))
             .sort((a, b) => appointmentDateTime(a) - appointmentDateTime(b));
         const historicalTurns = ownAppointments
             .filter(isHistoricalPatientAppointment)
@@ -316,9 +321,11 @@ export async function initPatientAppointments(config) {
     }
 
     function cancelSelectedTurn() {
+        refreshPatientState();
         const turn = appointments.find((item) => item.id === selectedTurnId);
 
-        if (!turn) {
+        if (!turn || !isReservedPatientAppointment(turn)) {
+            showMessage("warning", "El turno ya no se encuentra en un estado cancelable. Recargue sus turnos.");
             return;
         }
 
@@ -328,9 +335,15 @@ export async function initPatientAppointments(config) {
             return;
         }
 
+        const currentSlot = availability.find((item) => String(item.id_disponibilidad) === String(turn.disponibilidadId));
+        if (currentSlot?.id_turno != null && String(currentSlot.id_turno) !== String(turn.id)) {
+            showMessage("warning", "El bloque del turno tiene una asociacion incompatible. No se pudo cancelar.");
+            return;
+        }
+
         appointments = cancelPatientAppointment(appointments, turn.id);
         availability = releasePatientAppointmentAvailability(availability, turn.disponibilidadId);
-        persistState();
+        persistState(appointments.find((item) => item.id === turn.id));
         renderAppointments();
         hideModal(cancelModal);
         showMessage("success", "Turno cancelado correctamente. El horario quedo disponible para otros pacientes.");
@@ -341,7 +354,7 @@ export async function initPatientAppointments(config) {
         selectedAvailabilityId = null;
         modifyList.innerHTML = "";
         modifyError.classList.toggle("d-none", slots.length > 0);
-        confirmModifyButton.disabled = slots.length === 0;
+        confirmModifyButton.disabled = true;
 
         slots.forEach((slot) => {
             const optionId = `modificar-${slot.id_disponibilidad}`;
@@ -365,14 +378,17 @@ export async function initPatientAppointments(config) {
         modifyList.querySelectorAll('input[name="modificarDisponibilidad"]').forEach((radio) => {
             radio.addEventListener("change", () => {
                 selectedAvailabilityId = radio.value;
+                confirmModifyButton.disabled = false;
             });
         });
     }
 
     function openModifyModal(turnId) {
+        refreshPatientState(true);
         const turn = appointments.find((item) => item.id === turnId);
 
-        if (!turn) {
+        if (!turn || !isReservedPatientAppointment(turn)) {
+            showMessage("warning", "El turno ya no se encuentra en un estado modificable.");
             return;
         }
 
@@ -382,29 +398,52 @@ export async function initPatientAppointments(config) {
     }
 
     function modifySelectedTurn() {
+        const displayedSlot = availability.find((item) => String(item.id_disponibilidad) === String(selectedAvailabilityId));
+        const storedSlots = readStoredJson(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, []);
+        const storedSlot = (Array.isArray(storedSlots) ? storedSlots : [])
+            .find((item) => item && String(item.id_disponibilidad) === String(selectedAvailabilityId));
+        if (storedSlot && displayedSlot && ["id_medico", "especialidad", "fecha", "hora_inicio", "hora_fin"]
+            .some((field) => String(storedSlot[field]) !== String(displayedSlot[field]))) {
+            selectedAvailabilityId = null;
+            confirmModifyButton.disabled = true;
+            showMessage("warning", "El horario seleccionado cambio. Recargue las alternativas antes de confirmar.");
+            return;
+        }
+        refreshPatientState(true);
         const turn = appointments.find((item) => item.id === selectedTurnId);
-        const selectedSlot = availability.find((item) => String(item.id_disponibilidad) === String(selectedAvailabilityId));
+        const selectedSlot = turn && patientAvailableSlotsForTurn(availability, turn)
+            .find((item) => String(item.id_disponibilidad) === String(selectedAvailabilityId)
+                && displayedSlot && ["id_medico", "especialidad", "fecha", "hora_inicio", "hora_fin"]
+                    .every((field) => String(item[field]) === String(displayedSlot[field])));
 
-        if (!turn || !selectedSlot) {
+        if (!turn || !isReservedPatientAppointment(turn) || !selectedSlot) {
+            selectedAvailabilityId = null;
+            confirmModifyButton.disabled = true;
+            showMessage("warning", "El turno o el horario seleccionado ya no permiten el cambio. Seleccione nuevamente un horario valido.");
             return;
         }
 
+        const currentSlot = availability.find((item) => String(item.id_disponibilidad) === String(turn.disponibilidadId));
+        if (currentSlot?.id_turno != null && String(currentSlot.id_turno) !== String(turn.id)) {
+            showMessage("warning", "El bloque anterior tiene una asociacion incompatible. No se pudo modificar.");
+            return;
+        }
+        const updatedAppointments = modifyPatientAppointment(appointments, turn.id, selectedSlot);
+        if (updatedAppointments.find((item) => item.id === turn.id) === turn) {
+            showMessage("warning", "El horario ya no permite el cambio. Seleccione nuevamente un horario valido.");
+            return;
+        }
         availability = releasePatientAppointmentAvailability(availability, turn.disponibilidadId);
-        availability = occupyPatientAppointmentAvailability(availability, selectedSlot.id_disponibilidad);
-        appointments = modifyPatientAppointment(appointments, turn.id, selectedSlot);
-        persistState();
+        availability = occupyPatientAppointmentAvailability(availability, selectedSlot.id_disponibilidad, turn.id);
+        appointments = updatedAppointments;
+        persistState(appointments.find((item) => item.id === turn.id));
         renderAppointments();
         hideModal(modifyModal);
         showMessage("success", "Turno modificado correctamente. Se libero el horario anterior y se ocupo el nuevo horario seleccionado.");
     }
 
     setText("misTurnosPaciente", patientName);
-    appointments = mergeStoredPatientTurns(
-        LOCAL_STORAGE_KEYS.PATIENT_TURNS,
-        normalizeMockAppointments(),
-        medicosMock,
-        currentPatientId
-    );
+    appointments = currentPatientAppointments();
     availability = mergeStoredAvailability(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, disponibilidadData, medicosMock);
 
     reservedList.addEventListener("click", (event) => {
@@ -427,6 +466,5 @@ export async function initPatientAppointments(config) {
 
     confirmCancelButton.addEventListener("click", cancelSelectedTurn);
     confirmModifyButton.addEventListener("click", modifySelectedTurn);
-    persistState();
     renderAppointments();
 }

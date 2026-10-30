@@ -47,7 +47,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             confirmRescheduleProposal,
             isAffectedTurn: isRescheduleAffectedTurn,
             rejectRescheduleProposal,
-            sortedByPriority
+            orderRescheduleTurns,
+            reschedulePriority,
+            restoreRescheduleItems
         },
         {
             renderDoctorAffected,
@@ -705,7 +707,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
                     return {
                         ...turn,
-                        estado: "En atencion",
+                        estado: "En atención",
                         fecha_inicio_atencion: now.toISOString(),
                         hora_inicio_atencion: currentHour
                     };
@@ -920,7 +922,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
                 return {
                     ...turn,
-                    prioridad: priorityLabel(turn.prioridad || (triaje ? triaje.prioridad : "")),
+                    especialidad: turn.especialidad || doctor.especialidad,
+                    prioridad: reschedulePriority({ ...turn, especialidad: turn.especialidad || doctor.especialidad,
+                        ...(!Object.hasOwn(turn, "prioridad") ? { prioridad: triaje?.prioridad ?? null } : {}) }),
                     color_prioridad: turn.color_prioridad || (triaje ? triaje.color_prioridad : ""),
                     duracion_estimada: turn.duracion_estimada || (triaje ? triaje.duracion_estimada : "")
                 };
@@ -929,8 +933,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         const storedProcess = readStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_RESCHEDULE, {});
 
         if (storedProcess && String(storedProcess.id_medico) === String(doctorId)) {
-            proposals = Array.isArray(storedProcess.proposals) ? storedProcess.proposals : [];
-            waitlist = Array.isArray(storedProcess.waitlist) ? storedProcess.waitlist : [];
+            try {
+                proposals = restoreRescheduleItems(Array.isArray(storedProcess.proposals) ? storedProcess.proposals : [], turns);
+                waitlist = restoreRescheduleItems(Array.isArray(storedProcess.waitlist) ? storedProcess.waitlist : [], turns);
+                orderRescheduleTurns([...proposals, ...waitlist]);
+            } catch (error) {
+                proposals = []; waitlist = [];
+                showAlert(message, "warning", error.message);
+            }
         }
 
         function patientByTurn(turn) {
@@ -1061,7 +1071,14 @@ document.addEventListener("DOMContentLoaded", async () => {
                 return;
             }
 
-            affectedTurns = sortedByPriority(turns.filter((turn) => isRescheduleAffectedTurn(turn, rescheduleCriteria())));
+            try {
+                affectedTurns = orderRescheduleTurns(turns.filter((turn) => isRescheduleAffectedTurn(turn, rescheduleCriteria())));
+            } catch (error) {
+                affectedTurns = [];
+                renderAffectedState();
+                showMessage("warning", error.message);
+                return;
+            }
             proposals = [];
             waitlist = [];
             persistState();
@@ -1088,18 +1105,23 @@ document.addEventListener("DOMContentLoaded", async () => {
                 return;
             }
 
-            const nextProcess = buildRescheduleProposals({
-                affectedTurns,
-                slots,
-                patientByTurn,
-                fullName,
-                priorityLabel,
-                turnLabel,
-                reason: fields.reason.value,
-                proposalIdPrefix: "propuesta-medico-",
-                waitlistIdPrefix: "espera-medico-",
-                notificationStatus: "Pendiente de respuesta"
-            });
+            let nextProcess;
+            try {
+                nextProcess = buildRescheduleProposals({
+                    affectedTurns,
+                    slots,
+                    patientByTurn,
+                    fullName,
+                    turnLabel,
+                    reason: fields.reason.value,
+                    proposalIdPrefix: "propuesta-medico-",
+                    waitlistIdPrefix: "espera-medico-",
+                    notificationStatus: "Pendiente de respuesta"
+                });
+            } catch (error) {
+                showMessage("warning", error.message);
+                return;
+            }
 
             proposals = nextProcess.proposals;
             waitlist = nextProcess.waitlist;
@@ -1123,6 +1145,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             });
 
             if (!nextState) {
+                showMessage("warning", "No se pudo confirmar: revise que turno y horario pertenezcan a la misma agenda.");
                 return;
             }
 

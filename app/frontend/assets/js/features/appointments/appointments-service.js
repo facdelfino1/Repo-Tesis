@@ -2,6 +2,7 @@ import { LOCAL_STORAGE_KEYS } from "../../core/constants.js";
 import { clearStoredJson, readStoredJson, writeStoredJson } from "../../core/storage.js";
 import { normalizeState } from "../../core/helpers.js";
 import { priorityLabel } from "../../core/formatters.js";
+import { availabilityDateTime, availabilityDurationMinutes } from "../availability/availability-service.js";
 
 function fullName(person) {
     return `${person.nombre} ${person.apellido}`;
@@ -11,51 +12,28 @@ function doctorById(usuarios, idMedico) {
     return (usuarios.usuarios || []).find((user) => user.id_medico === idMedico) || null;
 }
 
-function priorityColor(priority) {
-    if (priority === "Alta") {
-        return "Rojo";
-    }
-
-    if (priority === "Media") {
-        return "Amarillo";
-    }
-
-    return "Verde";
+export function turnCreationDate(turn) {
+    return [turn?.fecha_hora_creacion, turn?.fecha_solicitud, turn?.fechaSolicitud]
+        .find((value) => typeof value === "string" && value.trim() !== "") ?? null;
 }
 
-function timeToMinutes(timeValue) {
-    const [hours, minutes] = String(timeValue).split(":").map(Number);
-    return (hours * 60) + minutes;
-}
-
-function minutesToTime(totalMinutes) {
-    const hours = Math.floor(totalMinutes / 60).toString().padStart(2, "0");
-    const minutes = (totalMinutes % 60).toString().padStart(2, "0");
-    return `${hours}:${minutes}`;
-}
-
-function addMinutes(timeValue, minutes) {
-    return minutesToTime(timeToMinutes(timeValue) + minutes);
-}
-
-function normalizePatientPriority(priority) {
-    if (priority === "Rojo") {
-        return "Alta";
+export function preserveTurnCreationDate(existing, incoming) {
+    const previousDate = turnCreationDate(existing);
+    const incomingDate = turnCreationDate(incoming);
+    if (previousDate && incomingDate && previousDate !== incomingDate
+        && !(Number.isFinite(Date.parse(previousDate)) && Date.parse(previousDate) === Date.parse(incomingDate))) {
+        // No hay versiones ni fuente de verdad para resolver dos antiguedades distintas.
+        console.warn("Fechas de creacion en conflicto; se conserva la existente.", {
+            id_turno: incoming.id_turno ?? incoming.id,
+            fecha_existente: previousDate,
+            fecha_entrante: incomingDate
+        });
     }
-
-    if (priority === "Amarillo") {
-        return "Media";
-    }
-
-    if (priority === "Verde") {
-        return "Baja";
-    }
-
-    return priority;
+    return { ...incoming, fecha_hora_creacion: previousDate ?? incomingDate };
 }
 
 function storedPatientTurnToAppointmentTurn(turn, options = {}) {
-    const normalizedPriority = priorityLabel(turn.prioridad);
+    const normalizedPriority = turn.triaje === null ? null : priorityLabel(turn.prioridad, null);
 
     const appointmentTurn = {
         id_turno: turn.id,
@@ -65,16 +43,17 @@ function storedPatientTurnToAppointmentTurn(turn, options = {}) {
         id_triaje: turn.idTriaje,
         fecha: turn.fecha,
         hora_inicio: turn.hora,
-        hora_fin: turn.horaFin || (options.defaultEnd ? addMinutes(turn.hora, options.defaultEnd) : turn.horaFin),
+        hora_fin: turn.horaFin,
         estado: turn.estado,
-        prioridad: options.normalizeColorPriority ? normalizedPriority : normalizePatientPriority(turn.prioridad),
-        color_prioridad: options.usePriorityColor ? priorityColor(normalizedPriority) : turn.prioridad,
-        duracion_estimada: Number.parseInt(turn.tiempoEstimado, 10) || 20,
+        prioridad: normalizedPriority,
+        triaje: turn.triaje,
+        fecha_hora_creacion: turnCreationDate(turn),
+        duracion_estimada: availabilityDurationMinutes(turn.hora, turn.horaFin),
         origen: turn.origen || "Paciente"
     };
 
     if (options.includeRequestDate) {
-        appointmentTurn.fecha_solicitud = turn.fechaSolicitud || new Date().toISOString();
+        appointmentTurn.fecha_solicitud = appointmentTurn.fecha_hora_creacion;
     }
 
     return appointmentTurn;
@@ -101,7 +80,8 @@ export function mergeStoredTurns(baseTurns) {
     const storedDoctorTurns = readStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_TURNS, null);
     const storedPatientTurns = readStoredJson(LOCAL_STORAGE_KEYS.PATIENT_TURNS, []);
     const base = Array.isArray(baseTurns) ? baseTurns : [];
-    const byId = new Map(base.map((turn) => [String(turn.id_turno), turn]));
+    const byId = new Map();
+    base.forEach((turn) => byId.set(String(turn.id_turno), preserveTurnCreationDate(byId.get(String(turn.id_turno)), turn)));
 
     [storedSecretaryTurns, storedDoctorTurns].forEach((stored) => {
         if (!Array.isArray(stored)) {
@@ -110,7 +90,7 @@ export function mergeStoredTurns(baseTurns) {
 
         stored.forEach((turn) => {
             if (turn && turn.id_turno !== undefined) {
-                byId.set(String(turn.id_turno), turn);
+                byId.set(String(turn.id_turno), preserveTurnCreationDate(byId.get(String(turn.id_turno)), turn));
             }
         });
     });
@@ -121,25 +101,11 @@ export function mergeStoredTurns(baseTurns) {
                 return;
             }
 
-            byId.set(String(turn.id), {
-                id_turno: turn.id,
-                id_paciente: turn.pacienteId,
-                id_medico: turn.medicoId,
-                id_disponibilidad: turn.disponibilidadId,
-                id_triaje: turn.idTriaje,
-                fecha: turn.fecha,
-                hora_inicio: turn.hora,
-                hora_fin: turn.horaFin,
-                estado: turn.estado,
-                prioridad: priorityLabel(turn.prioridad),
-                color_prioridad: turn.prioridad,
-                duracion_estimada: Number.parseInt(turn.tiempoEstimado, 10) || 20,
-                origen: turn.origen || "Paciente"
-            });
+            byId.set(String(turn.id), preserveTurnCreationDate(byId.get(String(turn.id)), storedPatientTurnToAppointmentTurn(turn)));
         });
     }
 
-    return [...byId.values()];
+    return [...byId.values()].map((turn) => preserveTurnCreationDate(null, turn));
 }
 
 export function mergeStoredDoctorTurns(baseTurns) {
@@ -152,15 +118,16 @@ export function mergeStoredDoctorTurns(baseTurns) {
     const convertedPatientTurns = Array.isArray(storedPatientTurns)
         ? storedPatientTurns.map((turn) => storedPatientTurnToAppointmentTurn(turn))
         : [];
-    const byId = new Map(base.map((turn) => [String(turn.id_turno), turn]));
+    const byId = new Map();
+    base.forEach((turn) => byId.set(String(turn.id_turno), preserveTurnCreationDate(byId.get(String(turn.id_turno)), turn)));
 
     [...stored, ...doctorStored, ...convertedPatientTurns].forEach((turn) => {
         if (turn && turn.id_turno !== undefined && turn.id_medico !== undefined) {
-            byId.set(String(turn.id_turno), turn);
+            byId.set(String(turn.id_turno), preserveTurnCreationDate(byId.get(String(turn.id_turno)), turn));
         }
     });
 
-    return [...byId.values()];
+    return [...byId.values()].map((turn) => preserveTurnCreationDate(null, turn));
 }
 
 export function mergeStoredSecretaryTurns(baseTurns) {
@@ -170,19 +137,17 @@ export function mergeStoredSecretaryTurns(baseTurns) {
     const stored = Array.isArray(storedSecretaryTurns) ? storedSecretaryTurns : [];
     const convertedPatientTurns = Array.isArray(storedPatientTurns)
         ? storedPatientTurns.map((turn) => storedPatientTurnToAppointmentTurn(turn, {
-            defaultEnd: 20,
-            includeRequestDate: true,
-            normalizeColorPriority: true,
-            usePriorityColor: true
+            includeRequestDate: true
         }))
         : [];
-    const byId = new Map(base.map((turn) => [String(turn.id_turno), turn]));
+    const byId = new Map();
+    base.forEach((turn) => byId.set(String(turn.id_turno), preserveTurnCreationDate(byId.get(String(turn.id_turno)), turn)));
 
     [...stored, ...convertedPatientTurns].filter(isCompatibleTurn).forEach((turn) => {
-        byId.set(String(turn.id_turno), turn);
+        byId.set(String(turn.id_turno), preserveTurnCreationDate(byId.get(String(turn.id_turno)), turn));
     });
 
-    return [...byId.values()];
+    return [...byId.values()].map((turn) => preserveTurnCreationDate(null, turn));
 }
 
 export function compatiblePresenceTurn(turn) {
@@ -206,19 +171,17 @@ function mergeStoredOperationalTurns(baseTurns, isCompatible) {
     const stored = Array.isArray(storedSecretaryTurns) ? storedSecretaryTurns : [];
     const convertedPatientTurns = Array.isArray(storedPatientTurns)
         ? storedPatientTurns.map((turn) => storedPatientTurnToAppointmentTurn(turn, {
-            defaultEnd: 20,
-            includeRequestDate: true,
-            normalizeColorPriority: true,
-            usePriorityColor: true
+            includeRequestDate: true
         }))
         : [];
-    const byId = new Map(base.map((turn) => [String(turn.id_turno), turn]));
+    const byId = new Map();
+    base.forEach((turn) => byId.set(String(turn.id_turno), preserveTurnCreationDate(byId.get(String(turn.id_turno)), turn)));
 
     [...stored, ...convertedPatientTurns].filter(isCompatible).forEach((turn) => {
-        byId.set(String(turn.id_turno), turn);
+        byId.set(String(turn.id_turno), preserveTurnCreationDate(byId.get(String(turn.id_turno)), turn));
     });
 
-    return [...byId.values()];
+    return [...byId.values()].map((turn) => preserveTurnCreationDate(null, turn));
 }
 
 export function mergeStoredPresenceTurns(baseTurns) {
@@ -230,7 +193,7 @@ export function mergeStoredClosureTurns(baseTurns) {
 }
 
 export function compatiblePatientTurn(turn, doctors, currentPatientId) {
-    const validStates = ["Reservado", "Cancelado", "Completado", "Ausente"];
+    const validStates = ["Reservado", "Pendiente", "Presente", "En atenci\u00f3n", "Cancelado", "Completado", "Ausente"];
 
     if (!turn) {
         return false;
@@ -239,10 +202,10 @@ export function compatiblePatientTurn(turn, doctors, currentPatientId) {
     const doctor = doctors.find((currentDoctor) => String(currentDoctor.id) === String(turn.medicoId));
 
     return turn.origenInterfaz === true
-        && turn.pacienteId === currentPatientId
+        && String(turn.pacienteId) === String(currentPatientId)
         && doctor
         && turn.especialidad === doctor.especialidad
-        && validStates.includes(turn.estado)
+        && validStates.some((state) => normalizeState(state) === normalizeState(turn.estado))
         && turn.fecha
         && turn.hora;
 }
@@ -251,26 +214,46 @@ export function mergeStoredPatientTurns(key, baseTurns, doctors, currentPatientI
     const stored = readStoredJson(key, null);
 
     if (!stored) {
-        return baseTurns;
+        return baseTurns.map((turn) => preserveTurnCreationDate(null, turn));
     }
 
     if (!Array.isArray(stored)) {
         clearStoredJson(key);
-        return baseTurns;
+        return baseTurns.map((turn) => preserveTurnCreationDate(null, turn));
     }
 
-    const baseIds = new Set(baseTurns.map((turn) => String(turn.id)));
-    const compatibleStoredTurns = stored.filter((turn) => (
-        !baseIds.has(String(turn.id))
-        && compatiblePatientTurn(turn, doctors, currentPatientId)
-    ));
+    const byId = new Map(baseTurns.map((turn) => [String(turn.id), turn]));
+    stored.filter((turn) => compatiblePatientTurn(turn, doctors, currentPatientId)).forEach((turn) => {
+        byId.set(String(turn.id), preserveTurnCreationDate(byId.get(String(turn.id)), turn));
+    });
 
-    writeStoredJson(key, compatibleStoredTurns);
-    return [...baseTurns, ...compatibleStoredTurns];
+    return [...byId.values()].map((item) => {
+        const turn = preserveTurnCreationDate(null, item);
+        const duration = availabilityDurationMinutes(turn.hora, turn.horaFin);
+        return {
+            ...turn,
+            prioridad: turn.triaje === null ? null : priorityLabel(turn.prioridad, null),
+            duracion_estimada: duration,
+            tiempoEstimado: duration === null ? "-" : `${duration} minutos`
+        };
+    });
+}
+
+export function persistPatientTurns(key, turns, patientId) {
+    const stored = readStoredJson(key, []);
+    const others = (Array.isArray(stored) ? stored : [])
+        .filter((turn) => turn && String(turn.pacienteId) !== String(patientId));
+    const storedById = new Map((Array.isArray(stored) ? stored : [])
+        .filter((turn) => turn && String(turn.pacienteId) === String(patientId))
+        .map((turn) => [String(turn.id), turn]));
+    const own = turns.filter((turn) => turn && String(turn.pacienteId) === String(patientId))
+        .map((turn) => preserveTurnCreationDate(storedById.get(String(turn.id)), turn));
+    writeStoredJson(key, [...others, ...own]);
 }
 
 export function appointmentFromTurn(turn, usuarios) {
     const doctor = doctorById(usuarios, turn.id_medico);
+    const duration = availabilityDurationMinutes(turn.hora_inicio, turn.hora_fin);
 
     return {
         id: turn.id_turno,
@@ -281,10 +264,12 @@ export function appointmentFromTurn(turn, usuarios) {
         fecha: turn.fecha,
         hora: turn.hora_inicio,
         horaFin: turn.hora_fin,
-        estado: turn.estado,
-        prioridad: turn.color_prioridad || turn.prioridad,
-        puntaje: turn.puntaje,
-        tiempoEstimado: `${turn.duracion_estimada} minutos`,
+        estado: normalizeState(turn.estado) === "en atencion" ? "En atenci\u00f3n" : turn.estado,
+        prioridad: turn.triaje === null ? null : priorityLabel(turn.prioridad, null),
+        triaje: turn.triaje,
+        fecha_hora_creacion: turnCreationDate(turn),
+        duracion_estimada: duration,
+        tiempoEstimado: duration === null ? "-" : `${duration} minutos`,
         disponibilidadId: turn.id_disponibilidad,
         idTriaje: turn.id_triaje
     };
@@ -292,13 +277,14 @@ export function appointmentFromTurn(turn, usuarios) {
 
 export function patientAppointments(turnos, usuarios, patientId) {
     return turnosList(turnos)
-        .filter((turn) => turn.id_paciente === patientId)
+        .filter((turn) => String(turn.id_paciente) === String(patientId))
         .map((turn) => appointmentFromTurn(turn, usuarios));
 }
 
 export function nextPatientTurn(turnos, usuarios, patientId) {
     return patientAppointments(turnos, usuarios, patientId)
-        .filter((turn) => turn.estado === "Reservado" || turn.estado === "Presente" || turn.estado === "En atenci\u00f3n")
+        .filter((turn) => isActivePatientAppointment(turn)
+            || (turn.estado === "Reservado" && appointmentDateTime(turn).getTime() >= Date.now()))
         .sort((a, b) => new Date(`${a.fecha}T${a.hora}:00`) - new Date(`${b.fecha}T${b.hora}:00`))[0] || null;
 }
 
@@ -310,13 +296,28 @@ export function isReservedPatientAppointment(turn) {
     return turn.estado === "Reservado" || turn.estado === "Pendiente";
 }
 
+export function isActivePatientAppointment(turn) {
+    return ["presente", "en atencion"].includes(normalizeState(turn.estado));
+}
+
 export function isHistoricalPatientAppointment(turn) {
     return turn.estado === "Completado" || turn.estado === "Cancelado" || turn.estado === "Ausente";
 }
 
-export function patientAvailableSlotsForTurn(availability, turn) {
+export function patientAvailableSlotsForTurn(availability, turn, currentTime = Date.now()) {
     return availability
-        .filter((item) => item.estado === "Disponible" && item.especialidad === turn.especialidad)
+        .filter((item) => {
+            if (!item || item.id_disponibilidad == null || item.id_disponibilidad === ""
+                || item.id_medico == null || turn.medicoId == null
+                || String(item.id_disponibilidad) === String(turn.disponibilidadId)
+                || item.estado !== "Disponible" || item.especialidad !== turn.especialidad
+                || String(item.id_medico) !== String(turn.medicoId)
+                || !/^\d{4}-\d{2}-\d{2}$/.test(item.fecha)
+                || availabilityDurationMinutes(item.hora_inicio, item.hora_fin) === null) return false;
+            const date = new Date(`${item.fecha}T00:00:00Z`);
+            return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === item.fecha
+                && availabilityDateTime(item) > currentTime;
+        })
         .sort((a, b) => new Date(`${a.fecha}T${a.hora_inicio}:00`) - new Date(`${b.fecha}T${b.hora_inicio}:00`));
 }
 
@@ -324,12 +325,12 @@ export function canCancelPatientAppointment(turn, currentTime = Date.now()) {
     const millisecondsToTurn = appointmentDateTime(turn).getTime() - currentTime;
     const twoHoursInMilliseconds = 2 * 60 * 60 * 1000;
 
-    return millisecondsToTurn >= twoHoursInMilliseconds;
+    return isReservedPatientAppointment(turn) && millisecondsToTurn >= twoHoursInMilliseconds;
 }
 
 export function cancelPatientAppointment(appointments, turnId) {
     return appointments.map((item) => {
-        if (item.id === turnId) {
+        if (item.id === turnId && isReservedPatientAppointment(item)) {
             return {
                 ...item,
                 estado: "Cancelado"
@@ -343,22 +344,22 @@ export function cancelPatientAppointment(appointments, turnId) {
 export function releasePatientAppointmentAvailability(availability, disponibilidadId) {
     return availability.map((item) => {
         if (String(item.id_disponibilidad) === String(disponibilidadId)) {
-            return {
-                ...item,
-                estado: "Disponible"
-            };
+            const released = { ...item, estado: "Disponible" };
+            delete released.id_turno;
+            return released;
         }
 
         return item;
     });
 }
 
-export function occupyPatientAppointmentAvailability(availability, disponibilidadId) {
+export function occupyPatientAppointmentAvailability(availability, disponibilidadId, turnId) {
     return availability.map((item) => {
         if (String(item.id_disponibilidad) === String(disponibilidadId)) {
             return {
                 ...item,
-                estado: "Ocupado"
+                estado: "Ocupado",
+                ...(turnId !== undefined ? { id_turno: turnId } : {})
             };
         }
 
@@ -368,16 +369,17 @@ export function occupyPatientAppointmentAvailability(availability, disponibilida
 
 export function modifyPatientAppointment(appointments, turnId, selectedSlot) {
     return appointments.map((item) => {
-        if (item.id === turnId) {
+        if (item.id === turnId && isReservedPatientAppointment(item)
+            && patientAvailableSlotsForTurn([selectedSlot], item).length === 1) {
+            const duration = availabilityDurationMinutes(selectedSlot.hora_inicio, selectedSlot.hora_fin);
             return {
                 ...item,
-                especialidad: selectedSlot.especialidad,
-                medico: selectedSlot.medico,
-                medicoId: selectedSlot.id_medico,
                 fecha: selectedSlot.fecha,
                 hora: selectedSlot.hora_inicio,
                 horaFin: selectedSlot.hora_fin,
-                disponibilidadId: selectedSlot.id_disponibilidad
+                disponibilidadId: selectedSlot.id_disponibilidad,
+                duracion_estimada: duration,
+                tiempoEstimado: `${duration} minutos`
             };
         }
 

@@ -61,7 +61,12 @@ export function mergeStoredAvailability(key, baseAvailability, doctors) {
         !baseIds.has(String(item.id_disponibilidad))
         && compatibleAvailability(item, doctors)
     ));
-    const merged = [...mergedBase, ...extraItems];
+    const merged = [...mergedBase, ...extraItems].map((item) => {
+        if (item.estado !== "Disponible") return item;
+        const released = { ...item };
+        delete released.id_turno;
+        return released;
+    });
 
     writeStoredJson(key, merged);
     return merged;
@@ -78,13 +83,11 @@ export function mergeAllStoredAvailability(baseAvailability, { conservative = fa
         if (!item || item.id_disponibilidad == null || item.id_disponibilidad === ""
             || !item.id_medico || !compatibleAvailability(item, doctors)
             || !/^\d{4}-\d{2}-\d{2}$/.test(item.fecha)
-            || !/^([01]\d|2[0-3]):[0-5]\d$/.test(item.hora_inicio)
-            || !/^([01]\d|2[0-3]):[0-5]\d$/.test(item.hora_fin)) {
+            || availabilityDurationMinutes(item.hora_inicio, item.hora_fin) === null) {
             return false;
         }
         const date = new Date(`${item.fecha}T00:00:00Z`);
-        return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === item.fecha
-            && item.hora_fin > item.hora_inicio;
+        return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === item.fecha;
     };
     const byId = new Map();
     const addItem = (item) => {
@@ -125,6 +128,15 @@ export function mergeAllStoredAvailability(baseAvailability, { conservative = fa
 
 export function availabilityDateTime(item) {
     return new Date(`${item.fecha}T${item.hora_inicio}:00`).getTime();
+}
+
+export function availabilityDurationMinutes(start, end) {
+    const validTime = /^([01]\d|2[0-3]):[0-5]\d$/;
+    if (!validTime.test(start) || !validTime.test(end)) {
+        return null;
+    }
+    const minutes = timeToMinutes(end) - timeToMinutes(start);
+    return minutes > 0 ? minutes : null;
 }
 
 export function buildAvailabilityBlocks({ doctorId, doctorName, specialty, date, start, end, origin, slotDuration = 20 }) {
