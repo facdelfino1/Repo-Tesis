@@ -37,10 +37,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         { clearErrors: clearFieldErrors, initPasswordToggles: componentInitPasswordToggles, setFieldError: applyFieldError },
         { getBootstrapModal, hideModal, showModal },
         { renderTableEmptyRow },
-        { mergeStoredDoctorTurns, turnosList },
-        { triajeByTurnId },
+        { mergeStoredDoctorTurns, turnosList, attentionStartDate, attentionDurationMinutes },
+        { triajeByTurnId, getTriage, triagePriorityForTurn, normalizeTriageSpecialty },
         { renderTriageResponses },
-        { mergeAllStoredAvailability },
+        { mergeAllStoredAvailability, availabilityDurationMinutes },
         {
             availableSlotsForReschedule: getAvailableSlotsForReschedule,
             buildRescheduleProposals,
@@ -78,7 +78,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         import(`${featureModuleBaseUrl}rescheduling/rescheduling-ui.js`),
         import(`${featureModuleBaseUrl}availability/availability-ui.js`)
     ]);
-    const priorityLabel = (priority) => sharedPriorityLabel(priority, priority || "Baja");
+    const priorityLabel = (priority) => sharedPriorityLabel(priority, null);
 
     function setText(id, value) {
         const element = document.getElementById(id);
@@ -158,35 +158,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         return "-";
-    }
-
-    function attentionStartDate(turn) {
-        const start = consultationStartValue(turn);
-
-        if (!start) {
-            return null;
-        }
-
-        const date = new Date(`${turn.fecha}T${start}:00`);
-        return Number.isNaN(date.getTime()) ? null : date;
-    }
-
-    function attentionDurationMinutes(turn, endDate = null) {
-        const startDate = attentionStartDate(turn);
-
-        if (!startDate) {
-            return null;
-        }
-
-        const finalDate = endDate
-            || (turn.fecha_cierre ? new Date(turn.fecha_cierre) : null)
-            || (turn.hora_cierre ? new Date(`${turn.fecha}T${turn.hora_cierre}:00`) : null);
-
-        if (!finalDate || Number.isNaN(finalDate.getTime())) {
-            return null;
-        }
-
-        return Math.max(0, Math.round((finalDate.getTime() - startDate.getTime()) / 60000));
     }
 
     function formatDuration(minutes) {
@@ -481,7 +452,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         if (!loggedUser || !roleMatches(loggedUser, "medico")) {
             renderUnauthorized();
-            tableBody.innerHTML = renderTableEmptyRow(9, "No hay informacion disponible para este usuario.");
+            tableBody.innerHTML = renderTableEmptyRow(8, "No hay informacion disponible para este usuario.");
 
             if (form) {
                 form.classList.add("d-none");
@@ -513,16 +484,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         let turns = mergeStoredDoctorTurns(turnosList(turnosData))
             .filter((turn) => String(turn.id_medico) === String(doctor.id_medico || doctor.id))
             .map((turn) => {
-                const triaje = triajeByTurnId(triajes, turn.id_turno);
+                const triaje = getTriage(triajes, turn, doctor.especialidad);
 
                 return {
                     ...turn,
-                    prioridad: priorityLabel(turn.prioridad || (triaje ? triaje.prioridad : "")),
-                    color_prioridad: turn.color_prioridad || (triaje ? triaje.color_prioridad : ""),
-                    puntaje_triaje: turn.puntaje_triaje ?? (triaje ? triaje.puntaje : ""),
-                    duracion_estimada: turn.duracion_estimada || (triaje ? triaje.duracion_estimada : ""),
-                    respuestas_triaje: turn.respuestas_triaje || (triaje ? triaje.respuestas : null),
-                    recomendacion_triaje: turn.recomendacion_triaje || (triaje ? triaje.recomendacion : "")
+                    especialidad: doctor.especialidad,
+                    prioridad: triagePriorityForTurn(turn, doctor.especialidad, triaje),
+                    triaje,
+                    duracion_estimada: availabilityDurationMinutes(turn.hora_inicio, turn.hora_fin),
+                    respuestas_triaje: triaje?.respuestas ?? null
                 };
             });
 
@@ -633,7 +603,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             renderAlerts();
 
             if (visibleTurns.length === 0) {
-                tableBody.innerHTML = renderTableEmptyRow(9, "No hay turnos para los filtros seleccionados.");
+                tableBody.innerHTML = renderTableEmptyRow(8, "No hay turnos para los filtros seleccionados.");
                 return;
             }
 
@@ -647,8 +617,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                         <td>${escapeHtml(patient ? fullName(patient) : "Paciente")}</td>
                         <td>${escapeHtml(patient ? patient.dni : "-")}</td>
                         <td>${escapeHtml(patient ? patient.obra_social : "-")}</td>
-                        <td><span class="badge ${priorityClass(priority)}">${escapeHtml(priority)}</span></td>
-                        <td>${escapeHtml(turn.puntaje_triaje || "-")}</td>
+                        <td><span class="badge ${priorityClass(priority)}">${escapeHtml(priority ?? "Sin prioridad")}</span></td>
                         <td>${escapeHtml(turn.duracion_estimada || "-")} minutos</td>
                         <td>${renderStateText(turn.estado, escapeHtml)}</td>
                         <td>${actionButtons(turn)}</td>
@@ -761,7 +730,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
             const patient = patientByTurn(turn);
             const priority = priorityLabel(turn.prioridad);
-            const attentionMinutes = turn.tiempo_atencion_minutos ?? attentionDurationMinutes(turn);
+            const attentionMinutes = attentionDurationMinutes(turn);
 
             detailContent.innerHTML = `
                 <dl class="row mb-4">
@@ -780,10 +749,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                     <dt class="col-sm-4 text-secondary">Horario</dt>
                     <dd class="col-sm-8">${escapeHtml(turn.hora_inicio)} a ${escapeHtml(turn.hora_fin || "-")}</dd>
                     <dt class="col-sm-4 text-secondary">Prioridad</dt>
-                    <dd class="col-sm-8"><span class="badge ${priorityClass(priority)}">${escapeHtml(priority)}</span></dd>
-                    <dt class="col-sm-4 text-secondary">Puntaje de triaje</dt>
-                    <dd class="col-sm-8">${escapeHtml(turn.puntaje_triaje || "-")}</dd>
-                    <dt class="col-sm-4 text-secondary">Duracion estimada</dt>
+                    <dd class="col-sm-8"><span class="badge ${priorityClass(priority)}">${escapeHtml(priority ?? "Sin prioridad")}</span></dd>
+                    <dt class="col-sm-4 text-secondary">Duración del bloque</dt>
                     <dd class="col-sm-8">${escapeHtml(turn.duracion_estimada || "-")} minutos</dd>
                     <dt class="col-sm-4 text-secondary">Estado</dt>
                     <dd class="col-sm-8">${renderStateText(turn.estado, escapeHtml)}</dd>
@@ -797,8 +764,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     <dd class="col-sm-8">${escapeHtml(formatDuration(attentionMinutes))}</dd>
                 </dl>
                 <h3 class="h6 fw-semibold">Respuestas del triaje</h3>
-                ${renderTriageResponses(turn.respuestas_triaje)}
-                ${turn.recomendacion_triaje ? `<p class="text-secondary mt-3 mb-0">${escapeHtml(turn.recomendacion_triaje)}</p>` : ""}
+                ${turn.triaje ? renderTriageResponses(turn.triaje.respuestas, normalizeTriageSpecialty(doctor.especialidad)) : "<p>Sin triaje asociado.</p>"}
             `;
 
             showModal(detailModal);
@@ -926,7 +892,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     prioridad: reschedulePriority({ ...turn, especialidad: turn.especialidad || doctor.especialidad,
                         ...(!Object.hasOwn(turn, "prioridad") ? { prioridad: triaje?.prioridad ?? null } : {}) }),
                     color_prioridad: turn.color_prioridad || (triaje ? triaje.color_prioridad : ""),
-                    duracion_estimada: turn.duracion_estimada || (triaje ? triaje.duracion_estimada : "")
+                    duracion_estimada: availabilityDurationMinutes(turn.hora_inicio, turn.hora_fin)
                 };
             });
         let availability = mergeAllStoredAvailability(Array.isArray(disponibilidadData) ? disponibilidadData : []);
@@ -1005,6 +971,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         function rescheduleCriteria() {
             return {
                 doctorId,
+                specialty: doctor.especialidad,
                 date: fields.date.value,
                 start: fields.start.value,
                 end: fields.end.value
@@ -1012,6 +979,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function currentRescheduleSlots() {
+            availability = mergeAllStoredAvailability(Array.isArray(disponibilidadData) ? disponibilidadData : [],
+                { conservative: true, doctors });
             return getAvailableSlotsForReschedule(availability, rescheduleCriteria());
         }
 
@@ -1136,6 +1105,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function confirmProposal(proposalId) {
+            availability = mergeAllStoredAvailability(Array.isArray(disponibilidadData) ? disponibilidadData : [],
+                { conservative: true, doctors });
             const nextState = confirmRescheduleProposal({
                 turns,
                 availability,
@@ -1145,7 +1116,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             });
 
             if (!nextState) {
-                showMessage("warning", "No se pudo confirmar: revise que turno y horario pertenezcan a la misma agenda.");
+                showMessage("warning", "No se pudo confirmar: el horario cambió, está ocupado o no corresponde a la agenda.");
                 return;
             }
 
@@ -1159,6 +1130,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         function rejectProposal(proposalId) {
             const nextState = rejectRescheduleProposal({
+                turns,
                 proposals,
                 waitlist,
                 proposalId,
@@ -1169,6 +1141,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 return;
             }
 
+            turns = nextState.turns;
             proposals = nextState.proposals;
             waitlist = nextState.waitlist;
             persistState();
@@ -1279,9 +1252,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
                 return {
                     ...turn,
-                    prioridad: turn.prioridad || (triaje ? triaje.prioridad : ""),
+                    prioridad: triagePriorityForTurn(turn, doctor.especialidad, triaje),
                     color_prioridad: turn.color_prioridad || (triaje ? triaje.color_prioridad : ""),
-                    duracion_estimada: turn.duracion_estimada || (triaje ? triaje.duracion_estimada : "")
+                    duracion_estimada: availabilityDurationMinutes(turn.hora_inicio, turn.hora_fin)
                 };
             });
         const today = todayInputValue();
@@ -1311,14 +1284,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         agendaTable.innerHTML = dayTurns.map((turn) => {
             const patient = patientById(patients, turn.id_paciente);
-            const priority = turn.prioridad || turn.color_prioridad || "Baja";
+            const priority = triagePriorityForTurn(turn, doctor.especialidad);
 
             return `
                 <tr>
                     <td class="fw-semibold">${escapeHtml(turn.hora_inicio)}</td>
                     <td>${escapeHtml(patient ? fullName(patient) : "Paciente")}</td>
                     <td>${escapeHtml(patient ? patient.dni : "-")}</td>
-                    <td><span class="badge ${priorityClass(priority)}">${escapeHtml(priority)}</span></td>
+                    <td><span class="badge ${priorityClass(priority)}">${escapeHtml(priority ?? "Sin prioridad")}</span></td>
                     <td>${renderStateText(turn.estado, escapeHtml)}</td>
                     <td>${escapeHtml(turn.duracion_estimada || "-")} minutos</td>
                     <td>

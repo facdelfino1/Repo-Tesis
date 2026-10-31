@@ -3,10 +3,12 @@ import { loadMock, readStoredJson, writeStoredJson } from "../../core/storage.js
 import { escapeHtml, normalizeState } from "../../core/helpers.js";
 import { formatDate } from "../../core/formatters.js";
 import { showAlert } from "../../components/alerts.js";
-import { priorityClass, stateText as renderStateText } from "../../components/badges.js";
+import { priorityClass, renderPriorityBadge, stateText as renderStateText } from "../../components/badges.js";
 import { getBootstrapModal, hideModal, showModal } from "../../components/modals.js";
 import { renderTableEmptyRow } from "../../components/tables.js";
-import { mergeAllStoredAvailability, mergeStoredAvailability } from "../availability/availability-service.js";
+import { availabilityDurationMinutes, mergeAllStoredAvailability, mergeStoredAvailability } from "../availability/availability-service.js";
+import { normalizeTriageSpecialty, triagePriorityForTurn } from "../triage/triage-service.js";
+import { renderTriageResponses } from "../triage/triage-ui.js";
 import {
     appointmentDateTime,
     canCancelPatientAppointment,
@@ -55,7 +57,7 @@ export function renderSecretaryAppointmentSummary(setText, totalTurns) {
 
 export function renderSecretaryAppointmentActions(turn) {
     const state = normalizeState(turn.estado);
-    const canEdit = state === "reservado" || state === "presente";
+    const canEdit = state === "reservado" || state === "presente" || state === "pendiente";
 
     return `
                 <div class="btn-group btn-group-sm" role="group" aria-label="Acciones del turno">
@@ -104,7 +106,7 @@ export function renderSecretaryAppointmentsTable({
                         <td>${escapeHtml(specialty || "-")}</td>
                         <td>${formatDate(turn.fecha)}</td>
                         <td>${escapeHtml(turn.hora_inicio)}</td>
-                        <td><span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(turn.prioridad)}</span></td>
+                        <td>${renderPriorityBadge(triagePriorityForTurn(turn, specialty))}</td>
                         <td>${renderStateText(turn.estado, escapeHtml)}</td>
                         <td>${escapeHtml(turn.origen || "Mock")}</td>
                         <td>${renderSecretaryAppointmentActions(turn)}</td>
@@ -132,8 +134,9 @@ export function renderSecretaryAppointmentDetail({
 
     const patient = patientByTurn(turn);
     const doctor = doctorByTurn(turn);
-    const triage = getTriage(triages, turn);
-    const answers = triage && triage.respuestas ? triage.respuestas : {};
+    const specialty = doctor?.especialidad || turn.especialidad;
+    const triage = getTriage(triages, turn, specialty);
+    const answers = triage?.respuestas;
     const content = document.getElementById("detalleTurnoContenido");
 
     content.innerHTML = `
@@ -155,19 +158,14 @@ export function renderSecretaryAppointmentDetail({
                     <dt class="col-sm-4 text-secondary">Estado</dt>
                     <dd class="col-sm-8">${renderStateText(turn.estado, escapeHtml)}</dd>
                     <dt class="col-sm-4 text-secondary">Prioridad</dt>
-                    <dd class="col-sm-8"><span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(turn.prioridad)}</span></dd>
-                    <dt class="col-sm-4 text-secondary">Puntaje triaje</dt>
-                    <dd class="col-sm-8">${escapeHtml(triage ? triage.puntaje : "-")}</dd>
-                    <dt class="col-sm-4 text-secondary">Duracion estimada</dt>
-                    <dd class="col-sm-8">${escapeHtml(turn.duracion_estimada || (triage ? triage.duracion_estimada : "-"))} minutos</dd>
+                    <dd class="col-sm-8">${renderPriorityBadge(triagePriorityForTurn(turn, specialty, triage))}</dd>
+                    <dt class="col-sm-4 text-secondary">Duración del bloque</dt>
+                    <dd class="col-sm-8">${availabilityDurationMinutes(turn.hora_inicio, turn.hora_fin) ?? "—"} minutos</dd>
                     <dt class="col-sm-4 text-secondary">Origen</dt>
                     <dd class="col-sm-8">${escapeHtml(turn.origen || "-")}</dd>
                     <dt class="col-sm-4 text-secondary">Respuestas triaje</dt>
                     <dd class="col-sm-8 mb-0">
-                        Fiebre: ${escapeHtml(answers.fiebre || "-")}<br>
-                        Dolor intenso: ${escapeHtml(answers.dolor_intenso || "-")}<br>
-                        Dificultad respiratoria: ${escapeHtml(answers.dificultad_respiratoria || "-")}<br>
-                        Rango de dolor: ${escapeHtml(answers.rango_dolor ?? "-")}
+                        ${triage ? renderTriageResponses(answers, normalizeTriageSpecialty(specialty)) : "Sin triaje asociado."}
                     </dd>
                 </dl>
             `;

@@ -32,6 +32,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         { fillSelect: renderSelect },
         {
             availabilityDateTime,
+            availabilityDurationMinutes,
+            mergeAllStoredAvailability,
             mergeStoredAvailability
         },
         {
@@ -40,12 +42,17 @@ document.addEventListener("DOMContentLoaded", async () => {
             mergeStoredPresenceTurns,
             mergeStoredSecretaryTurns: mergeStoredTurns,
             registerPresence,
+            patientAvailableSlotsForTurn,
             turnCreationDate,
             preserveTurnCreationDate,
             turnosList
         },
         {
-            calculateSecretaryTriage,
+            calculateTriagePriority,
+            validateTriageInput,
+            normalizeTriageSpecialty,
+            hasTriageSpecialty,
+            triagePriorityForTurn,
             getTriage,
             triajesList
         },
@@ -62,7 +69,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             renderPresenceWorkflowDetail,
             renderPresenceWorkflowTable
         },
-        { readRadioValue },
+        { readAnswers, updateTriageQuestionnaire, renderTriageErrors },
         {
             availableSlotsForReschedule: getAvailableSlotsForReschedule,
             buildRescheduleProposals,
@@ -359,7 +366,12 @@ document.addEventListener("DOMContentLoaded", async () => {
             simulatedPatients = [];
             clearStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_PATIENTS);
         }
-        let turns = mergeStoredTurns(turnosList(turnosData));
+        let turns = mergeStoredTurns(turnosList(turnosData)).map((turn) => {
+            const doctor = doctors.find((item) => String(item.id_medico || item.id) === String(turn.id_medico));
+            const specialty = doctor?.especialidad || turn.especialidad;
+            return { ...turn, especialidad: specialty, prioridad: triagePriorityForTurn(turn, specialty),
+                triaje: hasTriageSpecialty(specialty) ? turn.triaje : null };
+        });
         let triages = mergeStoredTriages(triajesList(triajeData));
         let availability = mergeStoredAvailability(
             LOCAL_STORAGE_KEYS.SECRETARY_AVAILABILITY,
@@ -393,6 +405,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             slot: document.getElementById("modificarDisponibilidad")
         };
         const message = document.getElementById("GestiónTurnosMensaje");
+        const createForm = document.getElementById("asignarTurnoForm");
+        const createConfirmButton = createForm.querySelector('[type="submit"]');
         const createModal = getBootstrapModal(document.getElementById("asignarTurnoModal"));
         const editModal = getBootstrapModal(document.getElementById("modificarTurnoModal"));
         const cancelModal = getBootstrapModal(document.getElementById("cancelarTurnoModal"));
@@ -415,14 +429,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function calculateTriage() {
-            const answers = {
-                fiebre: readRadioValue("asignarFiebre"),
-                dolor_intenso: readRadioValue("asignarDolorIntenso"),
-                dificultad_respiratoria: readRadioValue("asignarRespiratoria"),
-                rango_dolor: Number.parseInt(createFields.pain.value, 10)
-            };
-
-            return calculateSecretaryTriage(answers);
+            const doctor = selectedCreateDoctor();
+            if (!doctor || !hasTriageSpecialty(doctor.especialidad)) return null;
+            const input = readAnswers(createForm, normalizeTriageSpecialty(doctor.especialidad));
+            return validateTriageInput(input).valid ? { ...input, prioridad: calculateTriagePriority(input) } : null;
         }
 
         function timeToMinutes(timeValue) {
@@ -505,67 +515,42 @@ document.addEventListener("DOMContentLoaded", async () => {
             return doctors.find((doctor) => String(doctor.id_medico || doctor.id) === editFields.doctor.value) || null;
         }
 
-        function availableSlots({ specialty, doctorId, priority, includeOverbooking }) {
-            const slots = availability
-                .filter((item) => item.estado === "Disponible")
-                .filter((item) => specialty === "" || item.especialidad === specialty)
-                .filter((item) => doctorId === "" || String(item.id_medico) === String(doctorId))
-                .sort((a, b) => availabilityDateTime(a) - availabilityDateTime(b));
-
-            if (includeOverbooking && priority === "Alta" && specialty !== "") {
-                const referenceDoctor = doctors.find((doctor) => String(doctor.id_medico || doctor.id) === String(doctorId))
-                    || doctors.find((doctor) => doctor.especialidad === specialty);
-
-                if (referenceDoctor && slots.length === 0) {
-                    const now = new Date();
-                    const syntheticStart = `${String(now.getHours()).padStart(2, "0")}:00`;
-                    slots.push({
-                        id_disponibilidad: `sobreturno-${Date.now()}`,
-                        id_medico: referenceDoctor.id_medico || referenceDoctor.id,
-                        medico: doctorFullName(referenceDoctor),
-                        especialidad: referenceDoctor.especialidad,
-                        fecha: now.toISOString().slice(0, 10),
-                        hora_inicio: syntheticStart,
-                        hora_fin: addMinutes(syntheticStart, 40),
-                        estado: "Disponible",
-                        origen: "Sobreturno simulado",
-                        esSobreturno: true
-                    });
-                }
-            }
-
-            return priority === "Alta" ? slots : slots.sort((a, b) => availabilityDateTime(a) - availabilityDateTime(b));
+        function availableSlots({ specialty, doctorId, excludeId }) {
+            availability = mergeAllStoredAvailability(Array.isArray(disponibilidadData) ? disponibilidadData : [],
+                { conservative: true, doctors });
+            return patientAvailableSlotsForTurn(availability, {
+                medicoId: doctorId, especialidad: specialty, disponibilidadId: excludeId
+            });
         }
 
         function refreshCreateSlots() {
-            const triaje = calculateTriage();
             const doctor = selectedCreateDoctor();
-            const specialty = doctor ? doctor.especialidad : createFields.specialty.value;
-            const slots = availableSlots({
-                specialty,
-                doctorId: doctor ? String(doctor.id_medico || doctor.id) : "",
-                priority: triaje.priority,
-                includeOverbooking: true
-            });
-            const help = document.getElementById("asignarDisponibilidadAyuda");
-
+            const patientReady = createFields.dni.value.trim() && createFields.name.value.trim() && createFields.surname.value.trim();
+            const ready = patientReady && doctor && (!hasTriageSpecialty(doctor.especialidad) || calculateTriage());
+            const slots = ready ? availableSlots({ specialty: doctor.especialidad, doctorId: doctor.id_medico || doctor.id }) : [];
             renderSlotOptions(createFields.slot, slots, "No hay horarios disponibles para el criterio seleccionado.");
-            help.textContent = triaje.priority === "Alta"
-                ? "Prioridad alta: se priorizan los horarios mas proximos y puede aparecer un sobreturno simulado."
-                : "Horarios disponibles segun disponibilidad cargada.";
+            createConfirmButton.disabled = true;
+            document.getElementById("asignarDisponibilidadAyuda").textContent = ready && slots.length === 0
+                ? "No hay horarios compatibles. Se requiere revisión de agenda; no se ha reservado un turno."
+                : "Complete paciente, médico y el cuestionario correspondiente para consultar horarios.";
         }
 
         function refreshTriageResult() {
-            const triaje = calculateTriage();
+            const doctor = selectedCreateDoctor();
+            const patientReady = createFields.dni.value.trim() && createFields.name.value.trim() && createFields.surname.value.trim();
+            const specialty = doctor && patientReady ? normalizeTriageSpecialty(doctor.especialidad) : "";
+            updateTriageQuestionnaire(createForm, specialty);
+            const triage = specialty ? calculateTriage() : null;
             const resultBox = document.getElementById("asignarTriajeResultado");
-            const badge = document.getElementById("asignarTriajePrioridad");
-
-            document.getElementById("asignarRangoDolorValor").textContent = createFields.pain.value;
-            resultBox.className = `triage-result triage-result-${triaje.priority === "Alta" ? "danger" : triaje.priority === "Media" ? "warning" : "success"} rounded-3 p-3 h-100`;
-            badge.textContent = triaje.priority;
-            badge.className = `badge ${priorityClass(triaje.priority)}`;
-            setText("asignarTriajePuntaje", triaje.score);
-            setText("asignarTriajeDuracion", triaje.duration);
+            resultBox.classList.toggle("d-none", !triage);
+            const errors = hasTriageSpecialty(specialty)
+                ? validateTriageInput(readAnswers(createForm, specialty)).errors : {};
+            renderTriageErrors(document.getElementById("asignarTriajeError"), errors);
+            if (triage) {
+                const badge = document.getElementById("asignarTriajePrioridad");
+                badge.textContent = triage.prioridad;
+                badge.className = "badge " + priorityClass(triage.prioridad);
+            }
             refreshCreateSlots();
         }
 
@@ -594,31 +579,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function occupyAvailability(slot, turnId) {
-            if (slot.esSobreturno) {
-                const maxId = availability.reduce((maxValue, item) => Math.max(maxValue, Number(item.id_disponibilidad) || 0), 0);
-                const createdSlot = {
-                    ...slot,
-                    id_disponibilidad: maxId + 1,
-                    estado: "Ocupado",
-                    id_turno: turnId
-                };
-
-                availability = [...availability, createdSlot];
-                return createdSlot;
-            }
-
-            availability = availability.map((item) => {
-                if (String(item.id_disponibilidad) === String(slot.id_disponibilidad)) {
-                    return {
-                        ...item,
-                        estado: "Ocupado",
-                        id_turno: turnId
-                    };
-                }
-
-                return item;
-            });
-
+            availability = availability.map((item) => String(item.id_disponibilidad) === String(slot.id_disponibilidad)
+                ? { ...item, estado: "Ocupado", id_turno: turnId } : item);
             return slot;
         }
 
@@ -681,7 +643,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         function openEditModal(turnId) {
             const turn = turns.find((item) => String(item.id_turno) === String(turnId));
 
-            if (!turn || !["reservado", "presente"].includes(normalizeState(turn.estado))) {
+            if (!turn || !["reservado", "presente", "pendiente"].includes(normalizeState(turn.estado))) {
                 return;
             }
 
@@ -690,7 +652,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             selectedTurnId = turn.id_turno;
             document.getElementById("modificarPacienteResumen").textContent = patient ? `${fullName(patient)} - DNI ${patient.dni}` : "-";
             const priorityBadge = document.getElementById("modificarPrioridadResumen");
-            priorityBadge.textContent = turn.prioridad;
+            priorityBadge.textContent = turn.prioridad ?? "Sin prioridad";
             priorityBadge.className = `badge ${priorityClass(turn.prioridad)}`;
             editFields.specialty.value = doctor ? doctor.especialidad : "";
             fillDoctorOptions(editFields.doctor, editFields.specialty.value);
@@ -700,22 +662,19 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function refreshEditSlots() {
-            const doctor = selectedEditDoctor();
-            const specialty = doctor ? doctor.especialidad : editFields.specialty.value;
-            const slots = availableSlots({
-                specialty,
-                doctorId: doctor ? String(doctor.id_medico || doctor.id) : "",
-                priority: "Baja",
-                includeOverbooking: false
-            });
-
+            const turn = turns.find((item) => String(item.id_turno) === String(selectedTurnId));
+            const doctor = turn && doctorByTurn(turn);
+            const slots = turn && doctor ? availableSlots({
+                specialty: turn.especialidad || doctor.especialidad, doctorId: turn.id_medico,
+                excludeId: turn.id_disponibilidad
+            }) : [];
             renderSlotOptions(editFields.slot, slots, "No hay horarios disponibles para modificar el turno.");
         }
 
         function openCancelModal(turnId) {
             const turn = turns.find((item) => String(item.id_turno) === String(turnId));
 
-            if (!turn || !["reservado", "presente"].includes(normalizeState(turn.estado))) {
+            if (!turn || !["reservado", "presente", "pendiente"].includes(normalizeState(turn.estado))) {
                 return;
             }
 
@@ -725,59 +684,48 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         function createAppointment(event) {
             event.preventDefault();
-
             const doctor = selectedCreateDoctor();
-            const selectedSlotOption = createFields.slot.selectedOptions[0];
-            const slot = selectedSlotOption && selectedSlotOption.dataset.slot
-                ? JSON.parse(selectedSlotOption.dataset.slot)
-                : null;
-
-            if (!doctor || !slot || createFields.dni.value.trim() === "" || createFields.name.value.trim() === "" || createFields.surname.value.trim() === "") {
-                showMessage("danger", "Complete paciente, medico y horario antes de confirmar.");
+            const option = createFields.slot.selectedOptions[0];
+            const displayed = option?.dataset.slot ? JSON.parse(option.dataset.slot) : null;
+            if (!doctor || !displayed || !createFields.dni.value.trim() || !createFields.name.value.trim() || !createFields.surname.value.trim()) {
+                showMessage("danger", "Complete paciente, médico y horario antes de confirmar.");
                 return;
             }
-
-            const patient = currentPatientFromCreateForm();
             const triageResult = calculateTriage();
-            const nextTurnId = turns.reduce((maxValue, turn) => Math.max(maxValue, Number(turn.id_turno) || 0), 1000) + 1;
-            const nextTriageId = triages.reduce((maxValue, item) => Math.max(maxValue, Number(item.id_triaje) || 0), 500) + 1;
-            const occupiedSlot = occupyAvailability(slot, nextTurnId);
+            if (hasTriageSpecialty(doctor.especialidad) && !triageResult) {
+                refreshTriageResult();
+                showMessage("danger", "Complete las respuestas válidas del triaje.");
+                return;
+            }
+            const slot = availableSlots({ specialty: doctor.especialidad, doctorId: doctor.id_medico || doctor.id })
+                .find((item) => String(item.id_disponibilidad) === String(displayed.id_disponibilidad)
+                    && ["id_medico", "especialidad", "fecha", "hora_inicio", "hora_fin"]
+                        .every((field) => String(item[field]) === String(displayed[field])));
+            if (!slot) {
+                refreshCreateSlots();
+                showMessage("warning", "El horario cambió o ya no está disponible. Seleccione otro horario.");
+                return;
+            }
+            const patient = currentPatientFromCreateForm();
+            const nextTurnId = turns.reduce((max, turn) => Math.max(max, Number(turn.id_turno) || 0), 1000) + 1;
+            const nextTriageId = triageResult ? triages.reduce((max, item) => Math.max(max, Number(item.id_triaje) || 0), 500) + 1 : null;
             const creationDate = new Date().toISOString();
+            occupyAvailability(slot, nextTurnId);
             const newTurn = {
-                id_turno: nextTurnId,
-                id_paciente: patient.id_paciente,
-                id_medico: doctor.id_medico || doctor.id,
-                id_disponibilidad: occupiedSlot.id_disponibilidad,
-                id_triaje: nextTriageId,
-                fecha: occupiedSlot.fecha,
-                hora_inicio: occupiedSlot.hora_inicio,
-                hora_fin: addMinutes(occupiedSlot.hora_inicio, triageResult.duration),
-                estado: "Reservado",
-                prioridad: triageResult.priority,
-                color_prioridad: triageResult.color,
-                duracion_estimada: triageResult.duration,
-                fecha_hora_creacion: creationDate,
-                fecha_solicitud: creationDate,
-                origen: "Secretaria"
+                id_turno: nextTurnId, id_paciente: patient.id_paciente, id_medico: doctor.id_medico || doctor.id,
+                especialidad: doctor.especialidad, id_disponibilidad: slot.id_disponibilidad, id_triaje: nextTriageId,
+                fecha: slot.fecha, hora_inicio: slot.hora_inicio, hora_fin: slot.hora_fin,
+                estado: "Reservado", prioridad: triageResult?.prioridad ?? null, triaje: triageResult,
+                duracion_estimada: availabilityDurationMinutes(slot.hora_inicio, slot.hora_fin),
+                fecha_hora_creacion: creationDate, fecha_solicitud: creationDate, origen: "Secretaria"
             };
-            const newTriage = {
-                id_triaje: nextTriageId,
-                id_turno: nextTurnId,
-                id_paciente: patient.id_paciente,
-                puntaje: triageResult.score,
-                prioridad: triageResult.priority,
-                color_prioridad: triageResult.color,
-                duracion_estimada: triageResult.duration,
-                respuestas: triageResult.answers,
-                recomendacion: "Triaje registrado por secretaria segun respuestas informadas por el paciente.",
-                fecha: new Date().toISOString().slice(0, 10)
-            };
-
             turns = [...turns, newTurn];
-            triages = [...triages, newTriage];
+            if (triageResult) triages = [...triages, {
+                id_triaje: nextTriageId, id_turno: nextTurnId, id_paciente: patient.id_paciente,
+                ...triageResult, fecha: creationDate.slice(0, 10)
+            }];
             persistState();
             event.target.reset();
-            createFields.pain.value = "0";
             fillDoctorOptions(createFields.doctor);
             refreshTriageResult();
             renderTable();
@@ -787,35 +735,33 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         function saveEditedAppointment(event) {
             event.preventDefault();
-
             const turn = turns.find((item) => String(item.id_turno) === String(selectedTurnId));
-            const doctor = selectedEditDoctor();
-            const selectedSlotOption = editFields.slot.selectedOptions[0];
-            const slot = selectedSlotOption && selectedSlotOption.dataset.slot
-                ? JSON.parse(selectedSlotOption.dataset.slot)
-                : null;
-
-            if (!turn || !doctor || !slot) {
-                showMessage("danger", "Seleccione medico y horario disponible para modificar.");
+            const doctor = turn && doctorByTurn(turn);
+            const option = editFields.slot.selectedOptions[0];
+            const displayed = option?.dataset.slot ? JSON.parse(option.dataset.slot) : null;
+            if (!turn || !doctor || !displayed || !["reservado", "presente", "pendiente"].includes(normalizeState(turn.estado))
+                || (turn.especialidad && turn.especialidad !== doctor.especialidad)) {
+                showMessage("danger", "El turno no permite modificar su horario.");
                 return;
             }
-
+            const slot = availableSlots({ specialty: turn.especialidad || doctor.especialidad,
+                doctorId: turn.id_medico, excludeId: turn.id_disponibilidad })
+                .find((item) => String(item.id_disponibilidad) === String(displayed.id_disponibilidad)
+                    && ["id_medico", "especialidad", "fecha", "hora_inicio", "hora_fin"]
+                        .every((field) => String(item[field]) === String(displayed[field])));
+            const oldSlot = availability.find((item) => String(item.id_disponibilidad) === String(turn.id_disponibilidad));
+            if (!slot || (oldSlot?.id_turno != null && String(oldSlot.id_turno) !== String(turn.id_turno))) {
+                refreshEditSlots();
+                showMessage("warning", "El horario ya no está disponible o tiene una asociación incompatible.");
+                return;
+            }
             releaseAvailability(turn.id_disponibilidad);
             occupyAvailability(slot, turn.id_turno);
-            turns = turns.map((item) => {
-                if (String(item.id_turno) === String(turn.id_turno)) {
-                    return {
-                        ...item,
-                        id_medico: doctor.id_medico || doctor.id,
-                        id_disponibilidad: slot.id_disponibilidad,
-                        fecha: slot.fecha,
-                        hora_inicio: slot.hora_inicio,
-                        hora_fin: addMinutes(slot.hora_inicio, item.duracion_estimada || 20)
-                    };
-                }
-
-                return item;
-            });
+            turns = turns.map((item) => item === turn ? {
+                ...item, id_disponibilidad: slot.id_disponibilidad, fecha: slot.fecha,
+                hora_inicio: slot.hora_inicio, hora_fin: slot.hora_fin,
+                duracion_estimada: availabilityDurationMinutes(slot.hora_inicio, slot.hora_fin)
+            } : item);
             persistState();
             renderTable();
             hideModal(editModal);
@@ -887,11 +833,13 @@ document.addEventListener("DOMContentLoaded", async () => {
             field.addEventListener("input", renderTable);
             field.addEventListener("change", renderTable);
         });
-        createFields.dni.addEventListener("input", fillPatientFromDni);
+        createFields.dni.addEventListener("input", () => { fillPatientFromDni(); refreshTriageResult(); });
+        [createFields.name, createFields.surname].forEach((field) => field.addEventListener("input", refreshTriageResult));
+        createFields.slot.addEventListener("change", () => { createConfirmButton.disabled = !createFields.slot.value; });
         createFields.specialty.addEventListener("change", () => {
             createFields.doctor.value = "";
             fillDoctorOptions(createFields.doctor, createFields.specialty.value);
-            refreshCreateSlots();
+            refreshTriageResult();
         });
         createFields.doctor.addEventListener("change", () => {
             const doctor = selectedCreateDoctor();
@@ -902,9 +850,9 @@ document.addEventListener("DOMContentLoaded", async () => {
                 createFields.doctor.value = String(doctor.id_medico || doctor.id);
             }
 
-            refreshCreateSlots();
+            refreshTriageResult();
         });
-        document.querySelectorAll('input[name="asignarFiebre"], input[name="asignarDolorIntenso"], input[name="asignarRespiratoria"], #asignarRangoDolor').forEach((field) => {
+        createForm.querySelectorAll("[data-triage-specialty] input, [data-triage-specialty] select").forEach((field) => {
             field.addEventListener("input", refreshTriageResult);
             field.addEventListener("change", refreshTriageResult);
         });
@@ -1739,6 +1687,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function currentRescheduleSlots() {
+            availability = mergeAllStoredAvailability(Array.isArray(disponibilidadData) ? disponibilidadData : [],
+                { conservative: true, doctors });
             return getAvailableSlotsForReschedule(availability, rescheduleCriteria());
         }
 
@@ -1855,6 +1805,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function confirmProposal(proposalId) {
+            availability = mergeAllStoredAvailability(Array.isArray(disponibilidadData) ? disponibilidadData : [],
+                { conservative: true, doctors });
             const nextState = confirmRescheduleProposal({
                 turns,
                 availability,
@@ -1863,7 +1815,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             });
 
             if (!nextState) {
-                showMessage("warning", "No se pudo confirmar: revise que turno y horario pertenezcan a la misma agenda.");
+                showMessage("warning", "No se pudo confirmar: el horario cambió, está ocupado o no corresponde a la agenda.");
                 return;
             }
 
@@ -1877,6 +1829,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         function rejectProposal(proposalId) {
             const nextState = rejectRescheduleProposal({
+                turns,
                 proposals,
                 waitlist,
                 proposalId,
@@ -1887,6 +1840,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 return;
             }
 
+            turns = nextState.turns;
             proposals = nextState.proposals;
             waitlist = nextState.waitlist;
             persistState();

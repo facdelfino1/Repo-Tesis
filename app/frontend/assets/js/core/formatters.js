@@ -51,7 +51,8 @@ export function minutesToTime(totalMinutes) {
     return `${hours}:${minutes}`;
 }
 
-export function priorityLabel(priority, fallback = PRIORITY_LABELS.LOW) {
+export function priorityLabel(priority, fallback = null) {
+    if (priority == null) return null;
     if (priority === "Rojo" || priority === PRIORITY_LABELS.HIGH) {
         return PRIORITY_LABELS.HIGH;
     }
@@ -78,5 +79,5 @@ export function priorityRank(priority) {
         return 1;
     }
 
-    return 2;
+    return label === PRIORITY_LABELS.LOW ? 2 : Infinity;
 }

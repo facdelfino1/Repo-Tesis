@@ -91,6 +91,7 @@
                         <select class="form-select" id="filtroEstadoTurno">
                             <option value="">Todos</option>
                             <option>Reservado</option>
+                            <option>Pendiente</option>
                             <option>Presente</option>
                             <option>En atencion</option>
                             <option>Completado</option>
@@ -184,47 +185,79 @@
 
                         <div class="row g-3">
                             <div class="col-12 col-lg-7">
-                                <p class="fw-semibold mb-2">Cuestionario de triaje informado por el paciente</p>
-                                <div class="row g-3">
-                                    <div class="col-12 col-md-4">
-                                        <label class="form-label d-block">Fiebre</label>
-                                        <div class="btn-group" role="group">
-                                            <input class="btn-check" type="radio" name="asignarFiebre" id="asignarFiebreNo" value="no" checked>
-                                            <label class="btn btn-outline-secondary" for="asignarFiebreNo">No</label>
-                                            <input class="btn-check" type="radio" name="asignarFiebre" id="asignarFiebreSi" value="si">
-                                            <label class="btn btn-outline-secondary" for="asignarFiebreSi">Si</label>
-                                        </div>
+                                <p class="small">Priorización preliminar ambulatoria basada en síntomas autoinformados. No constituye diagnóstico ni reemplaza una evaluación médica.</p>
+                                <div id="asignarTriajeError" class="alert alert-danger d-none" role="alert"></div>
+                            <div data-triage-specialty="common" class="d-none">
+                                <fieldset class="mb-3">
+                                    <legend class="form-label">¿Tiene fiebre?</legend>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="fiebre" id="asignarFiebresi" value="si">
+                                        <label class="form-check-label" for="asignarFiebresi">Sí</label>
                                     </div>
-                                    <div class="col-12 col-md-4">
-                                        <label class="form-label d-block">Dolor intenso</label>
-                                        <div class="btn-group" role="group">
-                                            <input class="btn-check" type="radio" name="asignarDolorIntenso" id="asignarDolorIntensoNo" value="no" checked>
-                                            <label class="btn btn-outline-secondary" for="asignarDolorIntensoNo">No</label>
-                                            <input class="btn-check" type="radio" name="asignarDolorIntenso" id="asignarDolorIntensoSi" value="si">
-                                            <label class="btn btn-outline-secondary" for="asignarDolorIntensoSi">Si</label>
-                                        </div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="fiebre" id="asignarFiebreno" value="no">
+                                        <label class="form-check-label" for="asignarFiebreno">No</label>
                                     </div>
-                                    <div class="col-12 col-md-4">
-                                        <label class="form-label d-block">Dificultad respiratoria</label>
-                                        <div class="btn-group" role="group">
-                                            <input class="btn-check" type="radio" name="asignarRespiratoria" id="asignarRespiratoriaNo" value="no" checked>
-                                            <label class="btn btn-outline-secondary" for="asignarRespiratoriaNo">No</label>
-                                            <input class="btn-check" type="radio" name="asignarRespiratoria" id="asignarRespiratoriaSi" value="si">
-                                            <label class="btn btn-outline-secondary" for="asignarRespiratoriaSi">Si</label>
-                                        </div>
+                                </fieldset>
+                                <fieldset class="mb-3">
+                                    <legend class="form-label">¿Presenta dificultad para respirar?</legend>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="dificultadRespirar" id="asignarDificultadRespirarsi" value="si">
+                                        <label class="form-check-label" for="asignarDificultadRespirarsi">Sí</label>
                                     </div>
-                                    <div class="col-12">
-                                        <label for="asignarRangoDolor" class="form-label">Dolor percibido: <strong id="asignarRangoDolorValor">0</strong></label>
-                                        <input type="range" class="form-range" min="0" max="10" value="0" id="asignarRangoDolor">
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="dificultadRespirar" id="asignarDificultadRespirarno" value="no">
+                                        <label class="form-check-label" for="asignarDificultadRespirarno">No</label>
                                     </div>
-                                </div>
+                                </fieldset>
+                            </div>
+                            <div data-triage-specialty="clinica_medica" class="d-none">
+                                <label for="asignarRangoDolor" class="form-label">Dolor de 0 a 10</label>
+                                <input type="number" class="form-control" id="asignarRangoDolor" name="rangoDolor" min="0" max="10" step="1">
+                            </div>
+                            <div data-triage-specialty="pediatria" class="d-none">
+                                <label for="asignarFechaNacimiento" class="form-label">Fecha de nacimiento</label>
+                                <input type="date" class="form-control mb-3" id="asignarFechaNacimiento" name="fechaNacimiento">
+                                <label for="asignarDuracionFiebreHoras" class="form-label">Duración de la fiebre en horas</label>
+                                <input type="number" class="form-control mb-3" id="asignarDuracionFiebreHoras" name="duracionFiebreHoras" min="0" step="any" disabled>
+                                <fieldset class="mb-3">
+                                    <legend class="form-label">¿Está muy agitado?</legend>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="muyAgitado" id="asignarMuyAgitadosi" value="si">
+                                        <label class="form-check-label" for="asignarMuyAgitadosi">Sí</label>
+                                    </div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="muyAgitado" id="asignarMuyAgitadono" value="no">
+                                        <label class="form-check-label" for="asignarMuyAgitadono">No</label>
+                                    </div>
+                                </fieldset>
+                                <label for="asignarEstadoGeneral" class="form-label">Estado general</label>
+                                <select class="form-select mb-3" id="asignarEstadoGeneral" name="estadoGeneral">
+                                    <option value="">Seleccione</option>
+                                    <option value="alerta_normal">Alerta / normal</option>
+                                    <option value="decaido_responde_normalmente">Decaído pero responde normalmente</option>
+                                    <option value="letargico_muy_somnoliento">Letárgico o muy somnoliento</option>
+                                    <option value="pobre_respuesta_estimulos">Pobre respuesta a estímulos</option>
+                                    <option value="dificultad_despertar">Dificultad para despertar</option>
+                                </select>
+                                <fieldset class="mb-3">
+                                    <legend class="form-label">¿Presenta vómitos repetidos?</legend>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="vomitosRepetidos" id="asignarVomitosRepetidossi" value="si">
+                                        <label class="form-check-label" for="asignarVomitosRepetidossi">Sí</label>
+                                    </div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="vomitosRepetidos" id="asignarVomitosRepetidosno" value="no">
+                                        <label class="form-check-label" for="asignarVomitosRepetidosno">No</label>
+                                    </div>
+                                </fieldset>
+                            </div>
+                            <p id="asignarSinTriajeEspecifico" data-no-triage class="text-secondary d-none">Esta especialidad continúa con la gestión del turno sin un triaje específico.</p>
                             </div>
                             <div class="col-12 col-lg-5">
-                                <div class="triage-result triage-result-success rounded-3 p-3 h-100" id="asignarTriajeResultado">
-                                    <p class="text-secondary small mb-1">Resultado del triaje</p>
-                                    <p class="h5 fw-semibold mb-2"><span class="badge text-bg-success" id="asignarTriajePrioridad">Baja</span></p>
-                                    <p class="small mb-1">Puntaje: <strong id="asignarTriajePuntaje">2</strong></p>
-                                    <p class="small mb-0">Duracion estimada: <strong id="asignarTriajeDuracion">20</strong> minutos</p>
+                                <div class="triage-result rounded-3 p-3 d-none" id="asignarTriajeResultado">
+                                    <p class="text-secondary small mb-1">Prioridad preliminar</p>
+                                    <span class="badge" id="asignarTriajePrioridad">—</span>
                                 </div>
                             </div>
                             <div class="col-12">
@@ -261,11 +294,11 @@
                         <div class="row g-3">
                             <div class="col-12 col-md-6">
                                 <label for="modificarEspecialidad" class="form-label">Especialidad</label>
-                                <select class="form-select" id="modificarEspecialidad"></select>
+                                <select class="form-select" id="modificarEspecialidad" disabled></select>
                             </div>
                             <div class="col-12 col-md-6">
                                 <label for="modificarMedico" class="form-label">Medico</label>
-                                <select class="form-select" id="modificarMedico"></select>
+                                <select class="form-select" id="modificarMedico" disabled></select>
                             </div>
                             <div class="col-12">
                                 <label for="modificarDisponibilidad" class="form-label">Nuevo horario disponible</label>

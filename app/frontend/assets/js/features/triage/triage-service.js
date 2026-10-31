@@ -1,3 +1,20 @@
+import { priorityLabel } from "../../core/formatters.js";
+
+export function normalizeTriageSpecialty(value) {
+    return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .trim().toLowerCase().replace(/\s+/g, "_");
+}
+
+export function hasTriageSpecialty(value) {
+    return ["clinica_medica", "pediatria"].includes(normalizeTriageSpecialty(value));
+}
+
+export function triagePriorityForTurn(turn, specialty = turn.especialidad, legacyTriage = null) {
+    if (!hasTriageSpecialty(specialty) || turn.triaje === null) return null;
+    return priorityLabel(Object.hasOwn(turn, "prioridad") ? turn.prioridad
+        : turn.triaje?.prioridad ?? legacyTriage?.prioridad, null);
+}
+
 // Priorizacion preliminar ambulatoria de sintomas autoinformados.
 // No constituye diagnostico ni reemplaza una evaluacion medica.
 // Contrato: { especialidad: "clinica_medica" | "pediatria", respuestas: {...} }.
@@ -244,7 +261,10 @@ export function triajeByTurnId(triajes, idTurno) {
     return triajes.find((triaje) => String(triaje.id_turno) === String(idTurno)) || null;
 }
 
-export function getTriage(triages, turn) {
+export function getTriage(triages, turn, specialty = turn.especialidad) {
+    if ((specialty && !hasTriageSpecialty(specialty)) || turn.triaje === null) return null;
+    if (turn.triaje?.respuestas) return turn.triaje;
     return triages.find((item) => String(item.id_triaje) === String(turn.id_triaje)
-        || String(item.id_turno) === String(turn.id_turno)) || null;
+        || String(item.id_turno) === String(turn.id_turno))
+        || (turn.respuestas_triaje ? { respuestas: turn.respuestas_triaje, prioridad: turn.prioridad } : null);
 }

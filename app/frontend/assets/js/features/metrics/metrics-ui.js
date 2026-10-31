@@ -222,7 +222,7 @@ export function initAdminMetrics(config) {
             users,
             { doctorById, priorityLabel, triajeByTurnId }
         );
-        const states = ["Reservado", "Presente", "En atención", "Completado", "Cancelado", "Ausente"];
+        const states = ["Reservado", "Pendiente", "Presente", "En atención", "Completado", "Cancelado", "Ausente"];
 
         function renderMetrics() {
             const visibleTurns = filterTurnsByMetrics(turns, {
@@ -248,7 +248,7 @@ export function initAdminMetrics(config) {
             });
 
             renderMetricCards(summary, setText);
-            renderPriorityDistribution(priorityContainer, priorityDistribution, visibleTurns.length);
+            renderPriorityDistribution(priorityContainer, priorityDistribution, priorityDistribution.reduce((total, item) => total + item.count, 0));
             renderStateDistribution(stateTable, stateDistribution);
             renderDoctorMetrics(doctorTable, doctorMetrics, { doctors, fullName });
         }

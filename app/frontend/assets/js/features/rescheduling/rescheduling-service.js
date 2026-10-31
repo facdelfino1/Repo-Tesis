@@ -1,6 +1,7 @@
 import { priorityLabel } from "../../core/formatters.js";
 import { normalizeState } from "../../core/helpers.js";
-import { turnCreationDate } from "../appointments/appointments-service.js";
+import { turnCreationDate, patientAvailableSlotsForTurn } from "../appointments/appointments-service.js";
+import { availabilityDurationMinutes } from "../availability/availability-service.js";
 
 function timeToMinutes(timeValue) {
     const [hours, minutes] = String(timeValue).split(":").map(Number);
@@ -111,7 +112,7 @@ export function isAffectedTurn(turn, options) {
 
     return String(turn.id_medico) === String(doctorId)
         && turn.fecha === date
-        && (state === "reservado" || state === "presente")
+        && (state === "reservado" || state === "presente" || state === "pendiente")
         && blockOverlaps(turn.hora_inicio, turn.hora_fin || turn.hora_inicio, timeToMinutes(start), timeToMinutes(end));
 }
 
@@ -138,10 +139,7 @@ export function availableSlotsForReschedule(availability, options) {
         specialty = ""
     } = options;
 
-    return availability
-        .filter((slot) => slot.estado === "Disponible")
-        .filter((slot) => String(slot.id_medico) === String(doctorId))
-        .filter((slot) => specialty === "" || slot.especialidad === specialty)
+    return patientAvailableSlotsForTurn(availability, { medicoId: doctorId, especialidad: specialty })
         .filter((slot) => !blockContainsSlot(slot, options))
         .sort((a, b) => slotDateTime(a) - slotDateTime(b));
 }
@@ -169,6 +167,11 @@ export function buildRescheduleProposals(options) {
     ordered.forEach((turn, index) => {
         const patient = patientByTurn(turn);
         const slot = slots[index] || null;
+        if (slot && patientAvailableSlotsForTurn([slot], {
+            medicoId: turn.id_medico, especialidad: turn.especialidad, disponibilidadId: turn.id_disponibilidad
+        }).length !== 1) {
+            throw new Error("La propuesta requiere un horario futuro, disponible y valido de la misma agenda.");
+        }
         const priority = reschedulePriority(turn);
         const context = { id_medico: turn.id_medico, especialidad: turn.especialidad,
             fecha_hora_creacion: turnCreationDate(turn), fecha: turn.fecha, hora_inicio: turn.hora_inicio };
@@ -250,13 +253,20 @@ export function confirmRescheduleProposal(options) {
         return null;
     }
 
-    const slot = proposal.slot;
     const original = turns.find((turn) => String(turn.id_turno) === String(proposal.turnId));
-    if (!original || !slot || String(slot.id_medico) !== String(original.id_medico)
+    const slot = availability.find((item) => String(item.id_disponibilidad) === String(proposal.slot?.id_disponibilidad));
+    if (!original || !slot || !proposal.slot || String(slot.id_medico) !== String(original.id_medico)
         || specialtyKey(slot.especialidad) !== specialtyKey(original.especialidad)
-        || (doctorId !== null && String(doctorId) !== String(original.id_medico))) {
+        || (doctorId !== null && String(doctorId) !== String(original.id_medico))
+        || !["reservado", "presente", "pendiente"].includes(normalizeState(original.estado))
+        || ["id_medico", "especialidad", "fecha", "hora_inicio", "hora_fin"].some((field) => String(slot[field]) !== String(proposal.slot[field]))
+        || patientAvailableSlotsForTurn([slot], { medicoId: original.id_medico, especialidad: original.especialidad,
+            disponibilidadId: original.id_disponibilidad }).length !== 1
+        || String(proposal.oldAvailabilityId) !== String(original.id_disponibilidad)) {
         return null;
     }
+    const oldSlot = availability.find((item) => String(item.id_disponibilidad) === String(original.id_disponibilidad));
+    if (oldSlot?.id_turno != null && String(oldSlot.id_turno) !== String(original.id_turno)) return null;
     const nextTurns = turns.map((turn) => {
         if (String(turn.id_turno) !== String(proposal.turnId)) {
             return turn;
@@ -264,11 +274,11 @@ export function confirmRescheduleProposal(options) {
 
         return {
             ...turn,
-            id_medico: doctorId === null ? slot.id_medico : doctorId,
             id_disponibilidad: slot.id_disponibilidad,
             fecha: slot.fecha,
             hora_inicio: slot.hora_inicio,
             hora_fin: slot.hora_fin,
+            duracion_estimada: availabilityDurationMinutes(slot.hora_inicio, slot.hora_fin),
             estado: "Reservado",
             motivo_reprogramacion: proposal.reason,
             reprogramado: true
@@ -291,6 +301,7 @@ export function confirmRescheduleProposal(options) {
 
 export function rejectRescheduleProposal(options) {
     const {
+        turns,
         proposals,
         waitlist,
         proposalId,
@@ -301,6 +312,9 @@ export function rejectRescheduleProposal(options) {
     if (!proposal || proposal.status !== "Pendiente de confirmacion") {
         return null;
     }
+    const original = turns.find((turn) => String(turn.id_turno) === String(proposal.turnId));
+    if (!original || !["reservado", "presente", "pendiente"].includes(normalizeState(original.estado))) return null;
+    const nextTurns = turns.map((turn) => turn === original ? { ...turn, estado: "Pendiente" } : turn);
 
     const nextProposals = proposals.map((item) => (
         item.id === proposalId
@@ -308,24 +322,25 @@ export function rejectRescheduleProposal(options) {
             : item
     ));
     const nextWaitlist = [
-        ...waitlist,
+        ...waitlist.filter((item) => String(item.turnId) !== String(original.id_turno)),
         {
             id: `${waitlistIdPrefix}${proposal.turnId}`,
             turnId: proposal.turnId,
-            id_medico: proposal.id_medico,
-            especialidad: proposal.especialidad,
-            fecha_hora_creacion: turnCreationDate(proposal),
-            fecha: proposal.fecha,
-            hora_inicio: proposal.hora_inicio,
+            id_medico: original.id_medico,
+            especialidad: original.especialidad,
+            fecha_hora_creacion: turnCreationDate(original) ?? turnCreationDate(proposal),
+            fecha: original.fecha,
+            hora_inicio: original.hora_inicio,
             patientName: proposal.patientName,
             dni: proposal.dni,
-            priority: reschedulePriority(proposal),
+            priority: reschedulePriority(original),
             reason: "Paciente rechazo la propuesta",
             status: "En espera prioritaria"
         }
     ];
 
     return {
+        turns: nextTurns,
         proposals: nextProposals,
         waitlist: nextWaitlist
     };

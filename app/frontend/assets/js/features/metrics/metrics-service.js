@@ -1,3 +1,6 @@
+import { triagePriorityForTurn } from "../triage/triage-service.js";
+import { attentionDurationMinutes } from "../appointments/appointments-service.js";
+
 export function buildTurnDateTime(turn, timeField) {
     const timeValue = turn[timeField];
 
@@ -20,7 +23,8 @@ export function calculateTimeDifferenceMinutes(startValue, endValue) {
         return null;
     }
 
-    return Math.max(0, Math.round((endDate.getTime() - startDate.getTime()) / 60000));
+    const elapsed = endDate.getTime() - startDate.getTime();
+    return elapsed >= 0 ? Math.round(elapsed / 60000) : null;
 }
 
 export function calculateAverageMinutes(values) {
@@ -60,18 +64,13 @@ export function enrichTurnsForMetrics(turns, triages, users, helpers) {
 
         return {
             ...turn,
-            prioridad: priorityLabel(turn.prioridad || (triage ? triage.prioridad : "")),
-            color_prioridad: turn.color_prioridad || (triage ? triage.color_prioridad : ""),
-            puntaje_triaje: turn.puntaje_triaje ?? (triage ? triage.puntaje : ""),
+            prioridad: triagePriorityForTurn(turn, doctor?.especialidad || turn.especialidad, triage),
             especialidad: turn.especialidad || (doctor ? doctor.especialidad : ""),
             espera_minutos: calculateTimeDifferenceMinutes(
                 turn.fecha_hora_arribo || turn.fecha_arribo || turn.hora_arribo && buildTurnDateTime(turn, "hora_arribo"),
-                turn.fecha_hora_inicio || turn.fecha_inicio_atencion || turn.hora_inicio_atencion && buildTurnDateTime(turn, "hora_inicio_atencion")
+                turn.fecha_hora_inicio || turn.fecha_inicio_atencion
             ),
-            atencion_minutos: calculateTimeDifferenceMinutes(
-                turn.fecha_hora_inicio || turn.fecha_inicio_atencion || turn.hora_inicio_atencion && buildTurnDateTime(turn, "hora_inicio_atencion"),
-                turn.fecha_hora_cierre || turn.fecha_cierre || turn.hora_cierre && buildTurnDateTime(turn, "hora_cierre")
-            )
+            atencion_minutos: attentionDurationMinutes(turn)
         };
     });
 }
@@ -92,7 +91,7 @@ export function filterTurnsByMetrics(turns, filters, helpers) {
 }
 
 export function calculatePriorityDistribution(turns, priorityLabel) {
-    const counts = countBy(turns, (turn) => priorityLabel(turn.prioridad));
+    const counts = countBy(turns.filter((turn) => priorityLabel(turn.prioridad, null) !== null), (turn) => priorityLabel(turn.prioridad, null));
 
     return [
         { label: "Baja", count: counts.Baja || 0, color: "#198754" },
@@ -117,7 +116,7 @@ export function calculateDoctorMetrics(turns, doctors, helpers) {
 
     return doctors.map((doctor) => {
         const doctorTurns = turns.filter((turn) => String(turn.id_medico) === String(doctor.id_medico));
-        const priorityCounts = countBy(doctorTurns, (turn) => priorityLabel(turn.prioridad));
+        const priorityCounts = countBy(doctorTurns.filter((turn) => priorityLabel(turn.prioridad, null) !== null), (turn) => priorityLabel(turn.prioridad, null));
 
         return {
             doctor,
@@ -133,7 +132,7 @@ export function calculateDoctorMetrics(turns, doctors, helpers) {
 
 export function calculateMetricsSummary(turns, helpers) {
     const { normalizeState, priorityLabel } = helpers;
-    const priorityCounts = countBy(turns, (turn) => priorityLabel(turn.prioridad));
+    const priorityCounts = countBy(turns.filter((turn) => priorityLabel(turn.prioridad, null) !== null), (turn) => priorityLabel(turn.prioridad, null));
     const absentCount = turns.filter((turn) => normalizeState(turn.estado) === "ausente").length;
 
     return {
@@ -156,7 +155,7 @@ export function calculateAdminDashboardMetrics(users, turns, triages, helpers) {
 
         return {
             ...turn,
-            prioridad: priorityLabel(turn.prioridad || (triage ? triage.prioridad : "")),
+            prioridad: triagePriorityForTurn(turn, turn.especialidad || users.find((user) => String(user.id_medico) === String(turn.id_medico))?.especialidad, triage),
             color_prioridad: turn.color_prioridad || (triage ? triage.color_prioridad : "")
         };
     });

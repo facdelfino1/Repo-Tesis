@@ -10,6 +10,7 @@ import { getBootstrapModal, showModal } from "../../components/modals.js";
 import { renderTableEmptyRow } from "../../components/tables.js";
 import {
     buildAvailabilityBlocks,
+    availabilityDurationMinutes,
     hasOverlap,
     mergeAllStoredAvailability,
     mergeStoredAvailability
@@ -409,9 +410,9 @@ export async function initSecretaryAvailability(config) {
         let isValid = true;
         clearErrors();
 
-        if (fields.specialty.value === "" && !selectedDoctor()) {
-            setFieldError("specialty", "Seleccione una especialidad o un medico.");
-            setFieldError("doctor", "Seleccione una especialidad o un medico.");
+        const doctor = selectedDoctor();
+        if (!doctor || fields.specialty.value !== doctor.especialidad) {
+            setFieldError("doctor", "Seleccione un médico de la especialidad indicada.");
             isValid = false;
         }
 
@@ -443,6 +444,19 @@ export async function initSecretaryAvailability(config) {
             isValid = false;
         }
 
+        const duration = availabilityDurationMinutes(fields.start.value, fields.end.value);
+        if (duration === null || duration < baseSlotDuration) {
+            setFieldError("end", "Ingrese un intervalo válido que permita al menos un bloque.");
+            isValid = false;
+        }
+        if (doctor && isValid) {
+            availability = mergeAllStoredAvailability(Array.isArray(disponibilidadMock) ? disponibilidadMock : []);
+            const own = availability.filter((item) => String(item.id_medico) === String(doctor.id));
+            if (hasOverlap(own, fields.date.value, fields.start.value, fields.end.value)) {
+                setFieldError("start", "El rango se superpone con disponibilidad existente del médico.");
+                isValid = false;
+            }
+        }
         return isValid;
     }
 
@@ -468,9 +482,9 @@ export async function initSecretaryAvailability(config) {
         const doctor = selectedDoctor();
 
         generatedBlocks = buildAvailabilityBlocks({
-            doctorId: doctor ? doctor.id : null,
-            doctorName: doctor ? doctorFullName(doctor) : "Sin medico asignado",
-            specialty: doctor ? doctor.especialidad : fields.specialty.value,
+            doctorId: doctor.id,
+            doctorName: doctorFullName(doctor),
+            specialty: doctor.especialidad,
             date: fields.date.value,
             start: fields.start.value,
             end: fields.end.value,
@@ -529,6 +543,15 @@ export async function initSecretaryAvailability(config) {
             return;
         }
 
+        if (!validateForm()) return;
+        const doctor = selectedDoctor();
+        if (generatedBlocks.some((block) => String(block.id_medico) !== String(doctor.id)
+            || block.especialidad !== doctor.especialidad || block.fecha !== fields.date.value)
+            || generatedBlocks[0].hora_inicio !== fields.start.value
+            || timeToMinutes(generatedBlocks[generatedBlocks.length - 1].hora_fin) > timeToMinutes(fields.end.value)) {
+            showMessage("danger", "Los datos cambiaron. Genere nuevamente los bloques antes de guardar.");
+            return;
+        }
         const maxId = availability.reduce((maxValue, item) => Math.max(maxValue, Number(item.id_disponibilidad) || 0), 0);
         const blocksToSave = generatedBlocks.map((block, index) => ({
             id_disponibilidad: maxId + index + 1,

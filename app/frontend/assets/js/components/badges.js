@@ -9,7 +9,10 @@ export function priorityClass(priority, variant = "text") {
         return variant === "background" ? "bg-warning" : "text-bg-warning";
     }
 
-    return variant === "background" ? "bg-success" : "text-bg-success";
+    if (normalizedPriority === "baja" || normalizedPriority === "verde") {
+        return variant === "background" ? "bg-success" : "text-bg-success";
+    }
+    return variant === "background" ? "bg-secondary" : "text-bg-secondary";
 }
 
 export function borderPriorityClass(priorityColor) {
@@ -35,7 +38,7 @@ export function stateText(state, escapeHtml = null) {
 export function renderPriorityBadge(priority, options = {}) {
     const variant = options.variant || "text";
     const className = options.className || "badge";
-    return `<span class="${className} ${priorityClass(priority, variant)}">${priority}</span>`;
+    return `<span class="${className} ${priorityClass(priority, variant)}">${priority ?? "Sin prioridad"}</span>`;
 }
 
 export function renderStateText(state, escapeHtml = null) {

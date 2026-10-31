@@ -1,6 +1,7 @@
+import { triagePriorityForTurn } from "../triage/triage-service.js";
 import { escapeHtml, normalizeState } from "../../core/helpers.js";
-import { formatDate, priorityLabel, todayInputValue } from "../../core/formatters.js";
-import { priorityClass, stateText as renderStateText } from "../../components/badges.js";
+import { formatDate, todayInputValue } from "../../core/formatters.js";
+import { renderPriorityBadge, stateText as renderStateText } from "../../components/badges.js";
 import { fillSelect as renderSelect } from "../../components/selects.js";
 import { renderTableEmptyRow } from "../../components/tables.js";
 import {
@@ -70,7 +71,7 @@ export function renderPresenceWorkflowTable({
                         <td>${escapeHtml(doctor ? doctorFullName(doctor) : "-")}</td>
                         <td>${escapeHtml(specialty || "-")}</td>
                         <td>${escapeHtml(turn.hora_inicio)}</td>
-                        <td><span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(priorityLabel(turn.prioridad))}</span></td>
+                        <td>${renderPriorityBadge(triagePriorityForTurn(turn, doctor?.especialidad || turn.especialidad))}</td>
                         <td>${renderStateText(turn.estado, escapeHtml)}</td>
                         <td>${escapeHtml(arrivalTime(turn))}</td>
                         <td>${renderPresenceWorkflowActions(turn)}</td>
@@ -104,7 +105,7 @@ export function renderPresenceWorkflowDetail({
                     <dt class="col-sm-4 text-secondary">Hora</dt>
                     <dd class="col-sm-8">${escapeHtml(turn.hora_inicio)} a ${escapeHtml(turn.hora_fin || "-")}</dd>
                     <dt class="col-sm-4 text-secondary">Prioridad</dt>
-                    <dd class="col-sm-8"><span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(priorityLabel(turn.prioridad))}</span></dd>
+                    <dd class="col-sm-8">${renderPriorityBadge(triagePriorityForTurn(turn, doctor?.especialidad || turn.especialidad))}</dd>
                     <dt class="col-sm-4 text-secondary">Estado</dt>
                     <dd class="col-sm-8">${renderStateText(turn.estado, escapeHtml)}</dd>
                     <dt class="col-sm-4 text-secondary">Hora de llegada</dt>
@@ -213,7 +214,7 @@ export function renderConsultationWorkflowTable({
                         <td>${escapeHtml(doctor ? doctorFullName(doctor) : "-")}</td>
                         <td>${escapeHtml(specialty || "-")}</td>
                         <td>${escapeHtml(turn.hora_inicio)}</td>
-                        <td><span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(priorityLabel(turn.prioridad))}</span></td>
+                        <td>${renderPriorityBadge(triagePriorityForTurn(turn, doctor?.especialidad || turn.especialidad))}</td>
                         <td>${renderStateText(turn.estado, escapeHtml)}</td>
                         <td>${escapeHtml(consultationStartValue(turn))}</td>
                         <td>${escapeHtml(consultationEndValue(turn))}</td>
@@ -231,10 +232,9 @@ export function renderConsultationWorkflowDetail({
     fullName,
     doctorFullName
 }) {
-    const duration = turn.tiempo_atencion_minutos ?? attentionDurationMinutes(turn);
-    const triageSummary = turn.id_triaje
-        ? `Triaje asociado #${turn.id_triaje}. Prioridad ${turn.prioridad || "-"}, duracion estimada ${turn.duracion_estimada || "-"} minutos.`
-        : `Prioridad ${turn.prioridad || "-"}, duracion estimada ${turn.duracion_estimada || "-"} minutos.`;
+    const duration = attentionDurationMinutes(turn);
+    const triageSummary = triagePriorityForTurn(turn, doctor?.especialidad || turn.especialidad) === null
+        ? "Sin triaje asociado." : "Prioridad: " + triagePriorityForTurn(turn, doctor?.especialidad || turn.especialidad);
 
     content.innerHTML = `
                 <dl class="row mb-0">
@@ -251,7 +251,7 @@ export function renderConsultationWorkflowDetail({
                     <dt class="col-sm-4 text-secondary">Hora</dt>
                     <dd class="col-sm-8">${escapeHtml(turn.hora_inicio)} a ${escapeHtml(turn.hora_fin || "-")}</dd>
                     <dt class="col-sm-4 text-secondary">Prioridad</dt>
-                    <dd class="col-sm-8"><span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(priorityLabel(turn.prioridad))}</span></dd>
+                    <dd class="col-sm-8">${renderPriorityBadge(triagePriorityForTurn(turn, doctor?.especialidad || turn.especialidad))}</dd>
                     <dt class="col-sm-4 text-secondary">Estado</dt>
                     <dd class="col-sm-8">${renderStateText(turn.estado, escapeHtml)}</dd>
                     <dt class="col-sm-4 text-secondary">Hora de inicio</dt>

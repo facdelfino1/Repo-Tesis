@@ -3,6 +3,7 @@ import { clearStoredJson, readStoredJson, writeStoredJson } from "../../core/sto
 import { normalizeState } from "../../core/helpers.js";
 import { priorityLabel } from "../../core/formatters.js";
 import { availabilityDateTime, availabilityDurationMinutes } from "../availability/availability-service.js";
+import { triagePriorityForTurn } from "../triage/triage-service.js";
 
 function fullName(person) {
     return `${person.nombre} ${person.apellido}`;
@@ -64,7 +65,7 @@ export function turnosList(turnos) {
 }
 
 export function isCompatibleTurn(turn) {
-    const validStates = ["reservado", "presente", "en atencion", "completado", "cancelado", "ausente"];
+    const validStates = ["reservado", "pendiente", "presente", "en atencion", "completado", "cancelado", "ausente"];
 
     return turn
         && turn.id_turno !== undefined
@@ -265,7 +266,7 @@ export function appointmentFromTurn(turn, usuarios) {
         hora: turn.hora_inicio,
         horaFin: turn.hora_fin,
         estado: normalizeState(turn.estado) === "en atencion" ? "En atenci\u00f3n" : turn.estado,
-        prioridad: turn.triaje === null ? null : priorityLabel(turn.prioridad, null),
+        prioridad: triagePriorityForTurn(turn, doctor?.especialidad || turn.especialidad),
         triaje: turn.triaje,
         fecha_hora_creacion: turnCreationDate(turn),
         duracion_estimada: duration,
@@ -403,21 +404,21 @@ export function arrivalTime(turn) {
 }
 
 export function consultationStartValue(turn) {
-    return turn.hora_inicio_atencion || turn.hora_inicio_consulta || turn.hora_inicio || "-";
+    return turn.hora_inicio_atencion || turn.hora_inicio_consulta || "-";
 }
 
 export function consultationEndValue(turn) {
     return turn.hora_cierre || turn.hora_fin_atencion || "-";
 }
 
+function effectiveAttentionDate(value) {
+    if (!(value instanceof Date) && (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value))) return null;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
 export function attentionStartDate(turn) {
-    const start = consultationStartValue(turn);
-
-    if (start === "-") {
-        return null;
-    }
-
-    return new Date(`${turn.fecha}T${start}:00`);
+    return effectiveAttentionDate(turn.fecha_hora_inicio || turn.fecha_inicio_atencion);
 }
 
 export function attentionDurationMinutes(turn, endDate = null) {
@@ -427,15 +428,14 @@ export function attentionDurationMinutes(turn, endDate = null) {
         return null;
     }
 
-    const finalDate = endDate
-        || (turn.fecha_cierre ? new Date(turn.fecha_cierre) : null)
-        || (turn.hora_cierre ? new Date(`${turn.fecha}T${turn.hora_cierre}:00`) : null);
+    const finalDate = effectiveAttentionDate(endDate || turn.fecha_hora_cierre || turn.fecha_cierre);
 
     if (!finalDate || Number.isNaN(finalDate.getTime())) {
         return null;
     }
 
-    return Math.max(0, Math.round((finalDate.getTime() - startDate.getTime()) / 60000));
+    const elapsed = finalDate.getTime() - startDate.getTime();
+    return elapsed >= 0 ? Math.round(elapsed / 60000) : null;
 }
 
 export function registerPresence(turns, selectedTurnId, now = new Date()) {
