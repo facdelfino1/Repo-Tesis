@@ -11,6 +11,7 @@ import { renderTableEmptyRow } from "../../components/tables.js";
 import {
     buildAvailabilityBlocks,
     availabilityDurationMinutes,
+    persistAvailabilityChanges,
     hasOverlap,
     mergeAllStoredAvailability,
     mergeStoredAvailability
@@ -196,10 +197,8 @@ export async function initDoctorAvailability(config) {
         `).join("");
     }
 
-    function persistAvailability() {
-        writeStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_AVAILABILITY, availability);
-        writeStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_AVAILABILITY, availability);
-        writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, availability);
+    function persistAvailability(changedSlots) {
+        persistAvailabilityChanges(changedSlots);
     }
 
     function generateBlocks() {
@@ -238,7 +237,7 @@ export async function initDoctorAvailability(config) {
         }));
 
         availability = [...availability, ...blocksToSave];
-        persistAvailability();
+        persistAvailability(blocksToSave);
         generatedBlocks = [];
         form.reset();
         renderPreview();
@@ -445,7 +444,8 @@ export async function initSecretaryAvailability(config) {
         }
 
         const duration = availabilityDurationMinutes(fields.start.value, fields.end.value);
-        if (duration === null || duration < baseSlotDuration) {
+        if (fields.start.value !== "" && fields.end.value !== ""
+            && (duration === null || duration < baseSlotDuration)) {
             setFieldError("end", "Ingrese un intervalo válido que permita al menos un bloque.");
             isValid = false;
         }
@@ -530,9 +530,8 @@ export async function initSecretaryAvailability(config) {
         }).join("");
     }
 
-    function persistAvailability() {
-        writeStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_AVAILABILITY, availability);
-        writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, availability);
+    function persistAvailability(changedSlots) {
+        persistAvailabilityChanges(changedSlots);
     }
 
     function saveAvailability(event) {
@@ -560,7 +559,7 @@ export async function initSecretaryAvailability(config) {
         }));
 
         availability = [...availability, ...blocksToSave];
-        persistAvailability();
+        persistAvailability(blocksToSave);
         generatedBlocks = [];
         fields.date.value = "";
         fields.start.value = "";
@@ -586,6 +585,7 @@ export async function initSecretaryAvailability(config) {
     renderAvailabilityTable();
 
     fields.specialty.addEventListener("change", () => {
+        clearErrors();
         fields.doctor.value = "";
         renderDoctors(fields.specialty.value);
         generatedBlocks = [];
@@ -594,6 +594,7 @@ export async function initSecretaryAvailability(config) {
     });
 
     fields.doctor.addEventListener("change", () => {
+        clearErrors();
         const doctor = selectedDoctor();
 
         if (doctor) {
@@ -609,6 +610,7 @@ export async function initSecretaryAvailability(config) {
 
     [fields.date, fields.start, fields.end].forEach((field) => {
         field.addEventListener("input", () => {
+            clearErrors();
             generatedBlocks = [];
             renderPreview();
         });

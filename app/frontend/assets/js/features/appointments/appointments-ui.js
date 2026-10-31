@@ -6,7 +6,7 @@ import { showAlert } from "../../components/alerts.js";
 import { priorityClass, renderPriorityBadge, stateText as renderStateText } from "../../components/badges.js";
 import { getBootstrapModal, hideModal, showModal } from "../../components/modals.js";
 import { renderTableEmptyRow } from "../../components/tables.js";
-import { availabilityDurationMinutes, mergeAllStoredAvailability, mergeStoredAvailability } from "../availability/availability-service.js";
+import { availabilityDurationMinutes, mergeAllStoredAvailability, mergeStoredAvailability, persistAvailabilityChanges } from "../availability/availability-service.js";
 import { normalizeTriageSpecialty, triagePriorityForTurn } from "../triage/triage-service.js";
 import { renderTriageResponses } from "../triage/triage-ui.js";
 import {
@@ -216,7 +216,7 @@ export async function initPatientAppointments(config) {
         return patientAppointments({ turnos: mergeStoredTurns(turnosMock.turnos) }, usuarios, currentPatientId);
     }
 
-    function persistState(updatedTurn) {
+    function persistState(updatedTurn, changedAvailabilityIds) {
         const stored = readStoredJson(LOCAL_STORAGE_KEYS.PATIENT_TURNS, []);
         const localAppointments = (Array.isArray(stored) ? stored : []).filter((turn) => turn
             && String(turn.pacienteId) === String(currentPatientId) && String(turn.id) !== String(updatedTurn.id));
@@ -224,7 +224,7 @@ export async function initPatientAppointments(config) {
         localAppointments.push({ ...updatedTurn, origenInterfaz: true });
 
         persistPatientTurns(LOCAL_STORAGE_KEYS.PATIENT_TURNS, localAppointments, currentPatientId);
-        writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, availability);
+        persistAvailabilityChanges(availability.filter((slot) => changedAvailabilityIds.some((id) => String(id) === String(slot.id_disponibilidad))));
     }
 
     function showMessage(type, text) {
@@ -335,13 +335,13 @@ export async function initPatientAppointments(config) {
 
         const currentSlot = availability.find((item) => String(item.id_disponibilidad) === String(turn.disponibilidadId));
         if (currentSlot?.id_turno != null && String(currentSlot.id_turno) !== String(turn.id)) {
-            showMessage("warning", "El bloque del turno tiene una asociacion incompatible. No se pudo cancelar.");
+            showMessage("warning", "No fue posible verificar el horario para cancelar. Actualice sus turnos e intente nuevamente.");
             return;
         }
 
         appointments = cancelPatientAppointment(appointments, turn.id);
         availability = releasePatientAppointmentAvailability(availability, turn.disponibilidadId);
-        persistState(appointments.find((item) => item.id === turn.id));
+        persistState(appointments.find((item) => item.id === turn.id), [turn.disponibilidadId]);
         renderAppointments();
         hideModal(cancelModal);
         showMessage("success", "Turno cancelado correctamente. El horario quedo disponible para otros pacientes.");
@@ -423,7 +423,7 @@ export async function initPatientAppointments(config) {
 
         const currentSlot = availability.find((item) => String(item.id_disponibilidad) === String(turn.disponibilidadId));
         if (currentSlot?.id_turno != null && String(currentSlot.id_turno) !== String(turn.id)) {
-            showMessage("warning", "El bloque anterior tiene una asociacion incompatible. No se pudo modificar.");
+            showMessage("warning", "No fue posible verificar el horario anterior. Actualice sus turnos e intente nuevamente.");
             return;
         }
         const updatedAppointments = modifyPatientAppointment(appointments, turn.id, selectedSlot);
@@ -434,7 +434,7 @@ export async function initPatientAppointments(config) {
         availability = releasePatientAppointmentAvailability(availability, turn.disponibilidadId);
         availability = occupyPatientAppointmentAvailability(availability, selectedSlot.id_disponibilidad, turn.id);
         appointments = updatedAppointments;
-        persistState(appointments.find((item) => item.id === turn.id));
+        persistState(appointments.find((item) => item.id === turn.id), [turn.disponibilidadId, selectedSlot.id_disponibilidad]);
         renderAppointments();
         hideModal(modifyModal);
         showMessage("success", "Turno modificado correctamente. Se libero el horario anterior y se ocupo el nuevo horario seleccionado.");

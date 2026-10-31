@@ -37,10 +37,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         { clearErrors: clearFieldErrors, initPasswordToggles: componentInitPasswordToggles, setFieldError: applyFieldError },
         { getBootstrapModal, hideModal, showModal },
         { renderTableEmptyRow },
-        { mergeStoredDoctorTurns, turnosList, attentionStartDate, attentionDurationMinutes },
+        { mergeStoredDoctorTurns, turnosList, attentionStartDate, attentionDurationMinutes, persistTurnUpdate, consultationStartValue, consultationEndValue },
         { triajeByTurnId, getTriage, triagePriorityForTurn, normalizeTriageSpecialty },
         { renderTriageResponses },
-        { mergeAllStoredAvailability, availabilityDurationMinutes },
+        { mergeAllStoredAvailability, availabilityDurationMinutes, persistAvailabilityChanges },
         {
             availableSlotsForReschedule: getAvailableSlotsForReschedule,
             buildRescheduleProposals,
@@ -137,14 +137,6 @@ document.addEventListener("DOMContentLoaded", async () => {
                 matricula: doctor.matricula,
                 rol: "medico"
             }));
-    }
-
-    function consultationStartValue(turn) {
-        return turn.hora_inicio_atencion || turn.hora_inicio_consulta || "";
-    }
-
-    function consultationEndValue(turn) {
-        return turn.hora_cierre || turn.hora_fin_atencion || "";
     }
 
     function arrivalValue(turn) {
@@ -509,7 +501,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function persistTurns() {
-            writeStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_TURNS, turns);
+            const updated = turns.find((turn) => String(turn.id_turno) === String(selectedAction?.turnId));
+            if (updated) persistTurnUpdate(LOCAL_STORAGE_KEYS.DOCTOR_TURNS, updated);
         }
 
         function doctorId() {
@@ -905,7 +898,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                 orderRescheduleTurns([...proposals, ...waitlist]);
             } catch (error) {
                 proposals = []; waitlist = [];
-                showAlert(message, "warning", error.message);
+                console.warn("No se pudo recuperar el proceso de reprogramacion.", error);
+                showAlert(message, "warning", "No se pudo recuperar la reprogramación guardada. Revise los datos y vuelva a buscar los turnos afectados.");
             }
         }
 
@@ -992,11 +986,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             return slot ? `${formatDate(slot.fecha)} ${slot.hora_inicio} - ${slot.hora_fin}` : "Lista de espera";
         }
 
-        function persistState() {
-            writeStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_TURNS, turns);
-            writeStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_AVAILABILITY, availability);
-            writeStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_AVAILABILITY, availability);
-            writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, availability);
+        function persistState(updatedTurn = null, changedAvailabilityIds = []) {
+            if (updatedTurn) persistTurnUpdate(LOCAL_STORAGE_KEYS.DOCTOR_TURNS, updatedTurn);
+            persistAvailabilityChanges(availability.filter((slot) => changedAvailabilityIds.some((id) => String(id) === String(slot.id_disponibilidad))));
             writeStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_RESCHEDULE, {
                 id_medico: doctorId,
                 proposals,
@@ -1045,7 +1037,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             } catch (error) {
                 affectedTurns = [];
                 renderAffectedState();
-                showMessage("warning", error.message);
+                console.warn("No se pudo verificar la reprogramacion.", error);
+                showMessage("warning", "No fue posible verificar los turnos y horarios para reprogramar. Actualice la información y vuelva a buscar los turnos afectados.");
                 return;
             }
             proposals = [];
@@ -1088,7 +1081,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                     notificationStatus: "Pendiente de respuesta"
                 });
             } catch (error) {
-                showMessage("warning", error.message);
+                console.warn("No se pudo verificar la reprogramacion.", error);
+                showMessage("warning", "No fue posible verificar los turnos y horarios para reprogramar. Actualice la información y vuelva a buscar los turnos afectados.");
                 return;
             }
 
@@ -1123,7 +1117,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             turns = nextState.turns;
             availability = nextState.availability;
             proposals = nextState.proposals;
-            persistState();
+            const proposal = proposals.find((item) => item.id === proposalId);
+            persistState(turns.find((turn) => String(turn.id_turno) === String(proposal.turnId)),
+                [proposal.oldAvailabilityId, proposal.slot.id_disponibilidad]);
             renderAll();
             showMessage("success", "Cambio confirmado y turno actualizado correctamente.");
         }
@@ -1144,7 +1140,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             turns = nextState.turns;
             proposals = nextState.proposals;
             waitlist = nextState.waitlist;
-            persistState();
+            const proposal = proposals.find((item) => item.id === proposalId);
+            persistState(turns.find((turn) => String(turn.id_turno) === String(proposal.turnId)));
             renderAll();
             showMessage("warning", "El paciente fue agregado a lista de espera prioritaria.");
         }
@@ -1154,11 +1151,13 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         Object.values(fields).forEach((field) => {
             field.addEventListener("input", () => {
+                clearErrors();
                 affectedTurns = [];
                 executeButton.disabled = true;
                 renderAffectedState();
             });
             field.addEventListener("change", () => {
+                clearErrors();
                 affectedTurns = [];
                 executeButton.disabled = true;
                 renderAffectedState();

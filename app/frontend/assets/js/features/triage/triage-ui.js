@@ -1,5 +1,6 @@
 import { escapeHtml } from "../../core/helpers.js";
 import { priorityClass } from "../../components/badges.js";
+import { validateTriageInput } from "./triage-service.js";
 
 export function getRadioValue(form, name) {
     const checkedOption = form.querySelector(`input[name="${name}"]:checked`);
@@ -33,8 +34,34 @@ export function updateTriageQuestionnaire(form, especialidad) {
     form.querySelector("#sinTriajeEspecifico, [data-no-triage]")?.classList.toggle("d-none", supported || !especialidad);
 }
 
+// La validación clínica sigue siendo estricta; durante edición solo presentamos
+// errores de respuestas ingresadas, no de preguntas todavía pendientes.
+export function triageFormErrors(form, especialidad, { submitted = false } = {}) {
+    const input = readAnswers(form, especialidad);
+    const errors = validateTriageInput(input).errors;
+    const controls = { dolor: "rangoDolor", fechaNacimiento: "fechaNacimiento",
+        duracionFiebreHoras: "duracionFiebreHoras", estadoGeneral: "estadoGeneral" };
+    let incomplete = false;
+    const visible = {};
+    Object.entries(errors).forEach(([field, message]) => {
+        const control = controls[field] && form.elements.namedItem(controls[field]);
+        const missing = control ? control.value.trim() === "" && !control.validity?.badInput
+            : input.respuestas[field] === undefined;
+        if (missing) incomplete = true;
+        else visible[field] = message;
+    });
+    return submitted && incomplete
+        ? { incomplete: "Complete todas las preguntas del cuestionario.", ...visible } : visible;
+}
+
 export function renderTriageErrors(element, errors) {
-    element.textContent = Object.values(errors).join(" ");
+    const messages = { fiebre: "Indique Sí o No en todas las preguntas.",
+        dificultadRespirar: "Indique Sí o No en todas las preguntas.", muyAgitado: "Indique Sí o No en todas las preguntas.",
+        vomitosRepetidos: "Indique Sí o No en todas las preguntas.", dolor: "Indique un valor entero de dolor entre 0 y 10.",
+        fechaNacimiento: "Ingrese una fecha de nacimiento válida, no futura.",
+        duracionFiebreHoras: "Indique la duración de la fiebre en horas, mayor o igual a cero.",
+        estadoGeneral: "Seleccione el estado general del paciente." };
+    element.textContent = [...new Set(Object.entries(errors).map(([field, message]) => messages[field] || message))].join(" ");
     element.classList.toggle("d-none", Object.keys(errors).length === 0);
 }
 

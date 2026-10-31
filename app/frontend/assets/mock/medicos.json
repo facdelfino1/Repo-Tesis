@@ -23,6 +23,18 @@
             "telefono": "3515553344",
             "matricula": "MP-67890",
             "especialidad": "Cardiología"
+        },
+        {
+            "id": 3,
+            "id_usuario": 203,
+            "id_medico": 3,
+            "nombre": "Elena",
+            "apellido": "Ruiz",
+            "dni": "31555123",
+            "email": "pediatra@demo.com",
+            "telefono": "3515556677",
+            "matricula": "MP-24680",
+            "especialidad": "Pediatría"
         }
     ]
 }

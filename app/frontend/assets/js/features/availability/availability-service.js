@@ -2,6 +2,21 @@ import { LOCAL_STORAGE_KEYS } from "../../core/constants.js";
 import { clearStoredJson, readStoredJson, writeStoredJson } from "../../core/storage.js";
 import { minutesToTime, timeToMinutes } from "../../core/formatters.js";
 
+// Escribir solo bloques que cambiaron, conservando el resto de cada copia temporal.
+export function persistAvailabilityChanges(changedSlots) {
+    if (changedSlots.length === 0) return;
+    for (const key of [LOCAL_STORAGE_KEYS.SECRETARY_AVAILABILITY, LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, LOCAL_STORAGE_KEYS.DOCTOR_AVAILABILITY]) {
+        const stored = readStoredJson(key, []);
+        const byId = new Map((Array.isArray(stored) ? stored : []).map((item) => [String(item.id_disponibilidad), item]));
+        changedSlots.forEach((slot) => {
+            const updated = { ...slot };
+            if (updated.estado === "Disponible") delete updated.id_turno;
+            byId.set(String(updated.id_disponibilidad), updated);
+        });
+        writeStoredJson(key, [...byId.values()]);
+    }
+}
+
 export function doctorMatchesAvailability(item, doctors) {
     if (!item) {
         return false;
@@ -77,8 +92,7 @@ export function mergeAllStoredAvailability(baseAvailability, { conservative = fa
     const storedSecretary = readStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_AVAILABILITY, null);
     const storedPatient = readStoredJson(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, null);
     const storedDoctor = readStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_AVAILABILITY, null);
-    // El modo conservador es de lectura y solo se activa en la solicitud del paciente.
-    // Sin versiones compartidas no podemos distinguir una liberacion de una copia antigua.
+    // Toda copia operativa ocupada sigue bloqueando el horario. El JSON es la semilla inicial.
     const validPatientSlot = (item) => {
         if (!item || item.id_disponibilidad == null || item.id_disponibilidad === ""
             || !item.id_medico || !compatibleAvailability(item, doctors)
@@ -107,7 +121,19 @@ export function mergeAllStoredAvailability(baseAvailability, { conservative = fa
         byId.set(id, item);
     };
     base.forEach((item) => {
-        if (conservative) addItem(item);
+        if (conservative) {
+            // Una liberación reflejada en las tres copias no debe ser deshecha por el JSON inicial.
+            const releasedEverywhere = [storedSecretary, storedPatient, storedDoctor].every((rows) => {
+                const copy = Array.isArray(rows) && rows.find((row) => String(row?.id_disponibilidad) === String(item.id_disponibilidad));
+                return copy && validPatientSlot(copy) && copy.estado === "Disponible" && copy.id_turno == null
+                    && ["id_medico", "especialidad", "fecha", "hora_inicio", "hora_fin"].every((field) => String(copy[field]) === String(item[field]));
+            });
+            if (releasedEverywhere) {
+                const released = { ...item, estado: "Disponible" };
+                delete released.id_turno;
+                addItem(released);
+            } else addItem(item);
+        }
         else byId.set(String(item.id_disponibilidad), item);
     });
 

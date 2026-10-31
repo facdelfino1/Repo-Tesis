@@ -13,6 +13,41 @@ function doctorById(usuarios, idMedico) {
     return (usuarios.usuarios || []).find((user) => user.id_medico === idMedico) || null;
 }
 
+function operationalFields(turn) {
+    const names = ["fecha_hora_arribo", "fecha_arribo", "hora_llegada", "hora_arribo", "fecha_hora_inicio",
+        "fecha_inicio_atencion", "hora_inicio_atencion", "fecha_hora_cierre", "fecha_cierre", "hora_cierre",
+        "tiempo_atencion_minutos", "fecha_cancelacion", "reprogramado", "motivo_reprogramacion"];
+    return Object.fromEntries(names.filter((name) => turn[name] !== undefined).map((name) => [name, turn[name]]));
+}
+
+// Compatibilidad de la demo: reflejar solo el turno modificado en las copias que ya existen.
+// No resuelve escrituras concurrentes ni agrega versionado; será reemplazado por la API.
+export function persistTurnUpdate(key, turn) {
+    const defined = Object.fromEntries(Object.entries(turn).filter(([, value]) => value !== undefined));
+    for (const roleKey of [LOCAL_STORAGE_KEYS.SECRETARY_TURNS, LOCAL_STORAGE_KEYS.DOCTOR_TURNS]) {
+        const stored = readStoredJson(roleKey, []);
+        const rows = Array.isArray(stored) ? stored : [];
+        const existing = rows.find((item) => String(item?.id_turno) === String(turn.id_turno));
+        if (!existing && roleKey !== key) continue;
+        const updated = preserveTurnCreationDate(existing, { ...existing, ...defined });
+        writeStoredJson(roleKey, existing ? rows.map((item) => item === existing ? updated : item) : [...rows, updated]);
+    }
+    const patients = readStoredJson(LOCAL_STORAGE_KEYS.PATIENT_TURNS, []);
+    if (!Array.isArray(patients) || !patients.some((item) => String(item?.id) === String(turn.id_turno))) return;
+    writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_TURNS, patients.map((item) => {
+        if (String(item?.id) !== String(turn.id_turno)) return item;
+        const mapped = { ...operationalFields(turn), id: turn.id_turno, pacienteId: turn.id_paciente,
+            medicoId: turn.id_medico, especialidad: turn.especialidad, fecha: turn.fecha,
+            hora: turn.hora_inicio, horaFin: turn.hora_fin, estado: turn.estado, prioridad: turn.prioridad,
+            triaje: turn.triaje, disponibilidadId: turn.id_disponibilidad, idTriaje: turn.id_triaje,
+            fecha_hora_creacion: turnCreationDate(turn),
+            duracion_estimada: availabilityDurationMinutes(turn.hora_inicio, turn.hora_fin) };
+        mapped.tiempoEstimado = mapped.duracion_estimada === null ? "-" : `${mapped.duracion_estimada} minutos`;
+        const fields = Object.fromEntries(Object.entries(mapped).filter(([, value]) => value !== undefined));
+        return preserveTurnCreationDate(item, { ...item, ...fields });
+    }));
+}
+
 export function turnCreationDate(turn) {
     return [turn?.fecha_hora_creacion, turn?.fecha_solicitud, turn?.fechaSolicitud]
         .find((value) => typeof value === "string" && value.trim() !== "") ?? null;
@@ -37,9 +72,11 @@ function storedPatientTurnToAppointmentTurn(turn, options = {}) {
     const normalizedPriority = turn.triaje === null ? null : priorityLabel(turn.prioridad, null);
 
     const appointmentTurn = {
+        ...operationalFields(turn),
         id_turno: turn.id,
         id_paciente: turn.pacienteId,
         id_medico: turn.medicoId,
+        especialidad: turn.especialidad,
         id_disponibilidad: turn.disponibilidadId,
         id_triaje: turn.idTriaje,
         fecha: turn.fecha,
@@ -133,6 +170,7 @@ export function mergeStoredDoctorTurns(baseTurns) {
 
 export function mergeStoredSecretaryTurns(baseTurns) {
     const storedSecretaryTurns = readStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_TURNS, null);
+    const storedDoctorTurns = readStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_TURNS, []);
     const storedPatientTurns = readStoredJson(LOCAL_STORAGE_KEYS.PATIENT_TURNS, []);
     const base = Array.isArray(baseTurns) ? baseTurns : [];
     const stored = Array.isArray(storedSecretaryTurns) ? storedSecretaryTurns : [];
@@ -144,7 +182,7 @@ export function mergeStoredSecretaryTurns(baseTurns) {
     const byId = new Map();
     base.forEach((turn) => byId.set(String(turn.id_turno), preserveTurnCreationDate(byId.get(String(turn.id_turno)), turn)));
 
-    [...stored, ...convertedPatientTurns].filter(isCompatibleTurn).forEach((turn) => {
+    [...stored, ...(Array.isArray(storedDoctorTurns) ? storedDoctorTurns : []), ...convertedPatientTurns].filter(isCompatibleTurn).forEach((turn) => {
         byId.set(String(turn.id_turno), preserveTurnCreationDate(byId.get(String(turn.id_turno)), turn));
     });
 
@@ -167,6 +205,7 @@ export function compatibleClosureTurn(turn) {
 
 function mergeStoredOperationalTurns(baseTurns, isCompatible) {
     const storedSecretaryTurns = readStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_TURNS, null);
+    const storedDoctorTurns = readStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_TURNS, []);
     const storedPatientTurns = readStoredJson(LOCAL_STORAGE_KEYS.PATIENT_TURNS, []);
     const base = Array.isArray(baseTurns) ? baseTurns : [];
     const stored = Array.isArray(storedSecretaryTurns) ? storedSecretaryTurns : [];
@@ -178,7 +217,7 @@ function mergeStoredOperationalTurns(baseTurns, isCompatible) {
     const byId = new Map();
     base.forEach((turn) => byId.set(String(turn.id_turno), preserveTurnCreationDate(byId.get(String(turn.id_turno)), turn)));
 
-    [...stored, ...convertedPatientTurns].filter(isCompatible).forEach((turn) => {
+    [...stored, ...(Array.isArray(storedDoctorTurns) ? storedDoctorTurns : []), ...convertedPatientTurns].filter(isCompatible).forEach((turn) => {
         byId.set(String(turn.id_turno), preserveTurnCreationDate(byId.get(String(turn.id_turno)), turn));
     });
 
@@ -250,6 +289,8 @@ export function persistPatientTurns(key, turns, patientId) {
     const own = turns.filter((turn) => turn && String(turn.pacienteId) === String(patientId))
         .map((turn) => preserveTurnCreationDate(storedById.get(String(turn.id)), turn));
     writeStoredJson(key, [...others, ...own]);
+    own.filter((turn) => JSON.stringify(turn) !== JSON.stringify(storedById.get(String(turn.id))))
+        .forEach((turn) => persistTurnUpdate(key, storedPatientTurnToAppointmentTurn(turn)));
 }
 
 export function appointmentFromTurn(turn, usuarios) {
@@ -257,6 +298,7 @@ export function appointmentFromTurn(turn, usuarios) {
     const duration = availabilityDurationMinutes(turn.hora_inicio, turn.hora_fin);
 
     return {
+        ...operationalFields(turn),
         id: turn.id_turno,
         pacienteId: turn.id_paciente,
         especialidad: doctor ? doctor.especialidad : turn.especialidad,
@@ -393,8 +435,8 @@ export function arrivalTime(turn) {
         return turn.hora_llegada;
     }
 
-    if (turn.fecha_arribo) {
-        return new Date(turn.fecha_arribo).toLocaleTimeString("es-AR", {
+    if (turn.fecha_hora_arribo || turn.fecha_arribo) {
+        return new Date(turn.fecha_hora_arribo || turn.fecha_arribo).toLocaleTimeString("es-AR", {
             hour: "2-digit",
             minute: "2-digit"
         });
@@ -404,11 +446,15 @@ export function arrivalTime(turn) {
 }
 
 export function consultationStartValue(turn) {
-    return turn.hora_inicio_atencion || turn.hora_inicio_consulta || "-";
+    const date = attentionStartDate(turn);
+    return turn.hora_inicio_atencion || turn.hora_inicio_consulta
+        || (date ? date.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) : "-");
 }
 
 export function consultationEndValue(turn) {
-    return turn.hora_cierre || turn.hora_fin_atencion || "-";
+    const date = effectiveAttentionDate(turn.fecha_hora_cierre || turn.fecha_cierre);
+    return turn.hora_cierre || turn.hora_fin_atencion
+        || (date ? date.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) : "-");
 }
 
 function effectiveAttentionDate(value) {

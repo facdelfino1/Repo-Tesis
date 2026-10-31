@@ -77,7 +77,7 @@ export function renderDoctorProposals({
 
     let ordered;
     try { ordered = orderRescheduleTurns(proposals); }
-    catch (error) { proposalTable.innerHTML = renderTableEmptyRow(5, error.message); return; }
+    catch (error) { console.warn("No se pudo verificar la lista de propuestas.", error); proposalTable.innerHTML = renderTableEmptyRow(5, "No fue posible verificar esta lista de reprogramación. Actualice la información y vuelva a buscar los turnos afectados."); return; }
     proposalTable.innerHTML = ordered.map((proposal) => `
                 <tr>
                     <td class="fw-semibold">${escapeHtml(proposal.patientName)}</td>
@@ -128,7 +128,7 @@ export function renderDoctorWaitlist({
 }) {
     let sortedWaitlist;
     try { sortedWaitlist = orderRescheduleTurns(waitlist); }
-    catch (error) { waitlistTable.innerHTML = renderTableEmptyRow(5, error.message); return; }
+    catch (error) { console.warn("No se pudo verificar la lista de espera.", error); waitlistTable.innerHTML = renderTableEmptyRow(5, "No fue posible verificar esta lista de reprogramación. Actualice la información y vuelva a buscar los turnos afectados."); return; }
 
     if (sortedWaitlist.length === 0) {
         waitlistTable.innerHTML = '<tr><td colspan="5" class="text-secondary">No hay pacientes en espera.</td></tr>';
@@ -206,7 +206,7 @@ export function renderSecretaryProposals({
 
     let ordered;
     try { ordered = orderRescheduleTurns(proposals); }
-    catch (error) { proposalTable.innerHTML = renderTableEmptyRow(5, error.message); return; }
+    catch (error) { console.warn("No se pudo verificar la lista de propuestas.", error); proposalTable.innerHTML = renderTableEmptyRow(5, "No fue posible verificar esta lista de reprogramación. Actualice la información y vuelva a buscar los turnos afectados."); return; }
     proposalTable.innerHTML = ordered.map((proposal) => `
                 <tr>
                     <td class="fw-semibold">${escapeHtml(proposal.patientName)}</td>
@@ -270,7 +270,7 @@ export function renderSecretaryWaitlist({
 }) {
     let sortedWaitlist;
     try { sortedWaitlist = orderRescheduleTurns(waitlist); }
-    catch (error) { waitlistTable.innerHTML = renderTableEmptyRow(5, error.message); return; }
+    catch (error) { console.warn("No se pudo verificar la lista de espera.", error); waitlistTable.innerHTML = renderTableEmptyRow(5, "No fue posible verificar esta lista de reprogramación. Actualice la información y vuelva a buscar los turnos afectados."); return; }
 
     if (sortedWaitlist.length === 0) {
         waitlistTable.innerHTML = renderTableEmptyRow(5, "No hay pacientes en espera.");

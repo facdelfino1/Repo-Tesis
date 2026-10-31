@@ -23,7 +23,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         { LOCAL_STORAGE_KEYS, MOCK_PATHS },
         { clearStoredJson, loadMock, readStoredJson, writeStoredJson },
         { escapeHtml, normalizeState, normalizeText },
-        { currentTimeValue, formatDate, formatToday, priorityLabel, timeToMinutes },
+        { currentTimeValue, formatDate, formatToday, priorityLabel, timeToMinutes, todayInputValue },
         { isStrongPassword, isValidEmail },
         { hideAlert, renderEmptyState, showAlert },
         { priorityClass, stateText: renderStateText },
@@ -34,6 +34,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             availabilityDateTime,
             availabilityDurationMinutes,
             mergeAllStoredAvailability,
+            persistAvailabilityChanges,
             mergeStoredAvailability
         },
         {
@@ -45,6 +46,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             patientAvailableSlotsForTurn,
             turnCreationDate,
             preserveTurnCreationDate,
+            persistTurnUpdate,
             turnosList
         },
         {
@@ -69,7 +71,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             renderPresenceWorkflowDetail,
             renderPresenceWorkflowTable
         },
-        { readAnswers, updateTriageQuestionnaire, renderTriageErrors },
+        { readAnswers, updateTriageQuestionnaire, renderTriageErrors, triageFormErrors },
         {
             availableSlotsForReschedule: getAvailableSlotsForReschedule,
             buildRescheduleProposals,
@@ -200,24 +202,14 @@ document.addEventListener("DOMContentLoaded", async () => {
                 .sort((a, b) => a.hora.localeCompare(b.hora));
         }
 
-        return disponibilidad
-            .filter((item) => item.estado === "Disponible")
-            .slice(0, 2)
-            .map((item, index) => ({
-                hora: item.hora_inicio,
-                paciente: index === 0 ? "Turno sin asignar" : "Demanda espontanea",
-                medico: item.medico,
-                especialidad: item.especialidad,
-                prioridad: index === 0 ? "Baja" : "Media",
-                estado: "Reservado"
-            }));
+        return [];
     }
 
     function renderMetrics(agenda) {
         const metrics = {
             turnosDia: agenda.length,
             presentes: agenda.filter((turno) => turno.estado === "Presente").length,
-            pendientes: agenda.filter((turno) => turno.estado === "Reservado").length,
+            pendientes: agenda.filter((turno) => turno.estado === "Pendiente").length,
             atencion: agenda.filter((turno) => turno.estado === "En atencion" || turno.estado === "En atención").length,
             completados: agenda.filter((turno) => turno.estado === "Completado").length,
             cancelados: agenda.filter((turno) => turno.estado === "Cancelado").length
@@ -245,7 +237,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 <td>${turno.paciente}</td>
                 <td>${turno.medico}</td>
                 <td>${turno.especialidad}</td>
-                <td><span class="badge ${priorityClass(turno.prioridad)}">${turno.prioridad}</span></td>
+                <td><span class="badge ${priorityClass(turno.prioridad)}">${turno.prioridad ?? "Sin prioridad"}</span></td>
                 <td>${renderStateText(turno.estado, escapeHtml)}</td>
             </tr>
         `).join("");
@@ -332,13 +324,15 @@ document.addEventListener("DOMContentLoaded", async () => {
             loadMock(MOCK_PATHS.AVAILABILITY, fallbackData.disponibilidad)
         ]);
         const secretaria = currentSecretary(usuarios);
-        const agenda = buildAgenda(turnos, Array.isArray(disponibilidad) ? disponibilidad : [], usuarios);
+        const effectiveTurns = { turnos: mergeStoredTurns(turnosList(turnos)).filter((turn) => turn.fecha === todayInputValue()) };
+        const effectiveAvailability = mergeAllStoredAvailability(Array.isArray(disponibilidad) ? disponibilidad : []);
+        const agenda = buildAgenda(effectiveTurns, effectiveAvailability, usuarios);
 
         setText("secretariaNombreNavbar", fullName(secretaria));
         setText("secretariaFechaActual", formatToday());
         renderMetrics(agenda);
         renderAgenda(agenda);
-        renderAlerts(turnos, Array.isArray(disponibilidad) ? disponibilidad : [], usuarios);
+        renderAlerts(effectiveTurns, effectiveAvailability, usuarios);
     }
 
     async function initSecretaryAppointments() {
@@ -465,12 +459,11 @@ document.addEventListener("DOMContentLoaded", async () => {
             return [...byId.values()];
         }
 
-        function persistState() {
-            writeStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_TURNS, turns);
+        function persistState(updatedTurn, changedAvailabilityIds) {
+            persistTurnUpdate(LOCAL_STORAGE_KEYS.SECRETARY_TURNS, updatedTurn);
             writeStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_TRIAGES, triages);
             writeStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_PATIENTS, simulatedPatients);
-            writeStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_AVAILABILITY, availability);
-            writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, availability);
+            persistAvailabilityChanges(availability.filter((slot) => changedAvailabilityIds.some((id) => String(id) === String(slot.id_disponibilidad))));
         }
 
         function showMessage(type, text) {
@@ -528,14 +521,17 @@ document.addEventListener("DOMContentLoaded", async () => {
             const patientReady = createFields.dni.value.trim() && createFields.name.value.trim() && createFields.surname.value.trim();
             const ready = patientReady && doctor && (!hasTriageSpecialty(doctor.especialidad) || calculateTriage());
             const slots = ready ? availableSlots({ specialty: doctor.especialidad, doctorId: doctor.id_medico || doctor.id }) : [];
-            renderSlotOptions(createFields.slot, slots, "No hay horarios disponibles para el criterio seleccionado.");
+            renderSlotOptions(createFields.slot, slots, ready
+                ? "No hay horarios disponibles para el criterio seleccionado."
+                : "Complete los datos y el cuestionario para consultar horarios.");
             createConfirmButton.disabled = true;
             document.getElementById("asignarDisponibilidadAyuda").textContent = ready && slots.length === 0
                 ? "No hay horarios compatibles. Se requiere revisión de agenda; no se ha reservado un turno."
+                : ready ? "Seleccione uno de los horarios disponibles."
                 : "Complete paciente, médico y el cuestionario correspondiente para consultar horarios.";
         }
 
-        function refreshTriageResult() {
+        function refreshTriageResult({ submitted = false } = {}) {
             const doctor = selectedCreateDoctor();
             const patientReady = createFields.dni.value.trim() && createFields.name.value.trim() && createFields.surname.value.trim();
             const specialty = doctor && patientReady ? normalizeTriageSpecialty(doctor.especialidad) : "";
@@ -544,7 +540,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             const resultBox = document.getElementById("asignarTriajeResultado");
             resultBox.classList.toggle("d-none", !triage);
             const errors = hasTriageSpecialty(specialty)
-                ? validateTriageInput(readAnswers(createForm, specialty)).errors : {};
+                ? triageFormErrors(createForm, specialty, { submitted }) : {};
             renderTriageErrors(document.getElementById("asignarTriajeError"), errors);
             if (triage) {
                 const badge = document.getElementById("asignarTriajePrioridad");
@@ -685,6 +681,17 @@ document.addEventListener("DOMContentLoaded", async () => {
         function createAppointment(event) {
             event.preventDefault();
             const doctor = selectedCreateDoctor();
+            if (doctor && hasTriageSpecialty(doctor.especialidad)) {
+                renderTriageErrors(document.getElementById("asignarTriajeError"),
+                    triageFormErrors(createForm, normalizeTriageSpecialty(doctor.especialidad), { submitted: true }));
+            }
+            const missingRequired = [...createForm.querySelectorAll("[required]")]
+                .filter((field) => !field.disabled && !field.value.trim());
+            if (missingRequired.length) {
+                const labels = missingRequired.map((field) => field.labels?.[0]?.textContent.trim() || "campo obligatorio");
+                showMessage("danger", "Complete los campos obligatorios: " + [...new Set(labels)].join(", ") + ".");
+                return;
+            }
             const option = createFields.slot.selectedOptions[0];
             const displayed = option?.dataset.slot ? JSON.parse(option.dataset.slot) : null;
             if (!doctor || !displayed || !createFields.dni.value.trim() || !createFields.name.value.trim() || !createFields.surname.value.trim()) {
@@ -693,7 +700,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
             const triageResult = calculateTriage();
             if (hasTriageSpecialty(doctor.especialidad) && !triageResult) {
-                refreshTriageResult();
+                refreshTriageResult({ submitted: true });
                 showMessage("danger", "Complete las respuestas válidas del triaje.");
                 return;
             }
@@ -724,7 +731,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 id_triaje: nextTriageId, id_turno: nextTurnId, id_paciente: patient.id_paciente,
                 ...triageResult, fecha: creationDate.slice(0, 10)
             }];
-            persistState();
+            persistState(newTurn, [slot.id_disponibilidad]);
             event.target.reset();
             fillDoctorOptions(createFields.doctor);
             refreshTriageResult();
@@ -752,7 +759,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             const oldSlot = availability.find((item) => String(item.id_disponibilidad) === String(turn.id_disponibilidad));
             if (!slot || (oldSlot?.id_turno != null && String(oldSlot.id_turno) !== String(turn.id_turno))) {
                 refreshEditSlots();
-                showMessage("warning", "El horario ya no está disponible o tiene una asociación incompatible.");
+                showMessage("warning", "No fue posible verificar la disponibilidad del horario. Actualice la información e intente nuevamente.");
                 return;
             }
             releaseAvailability(turn.id_disponibilidad);
@@ -762,7 +769,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 hora_inicio: slot.hora_inicio, hora_fin: slot.hora_fin,
                 duracion_estimada: availabilityDurationMinutes(slot.hora_inicio, slot.hora_fin)
             } : item);
-            persistState();
+            persistState(turns.find((item) => item.id_turno === turn.id_turno), [turn.id_disponibilidad, slot.id_disponibilidad]);
             renderTable();
             hideModal(editModal);
             showMessage("success", "Turno modificado correctamente.");
@@ -787,7 +794,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 return item;
             });
             releaseAvailability(turn.id_disponibilidad);
-            persistState();
+            persistState(turns.find((item) => item.id_turno === turn.id_turno), [turn.id_disponibilidad]);
             renderTable();
             hideModal(cancelModal);
             showMessage("success", "Turno cancelado correctamente. El horario quedo disponible para otros pacientes.");
@@ -892,7 +899,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         document.getElementById("asignarTurnoForm").addEventListener("submit", createAppointment);
         document.getElementById("modificarTurnoForm").addEventListener("submit", saveEditedAppointment);
         document.getElementById("confirmarCancelarTurnoBtn").addEventListener("click", cancelSelectedTurn);
-        persistState();
     }
 
     async function initSecretaryProfile() {
@@ -1130,7 +1136,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function persistTurns() {
-            writeStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_TURNS, turns);
+            const updated = turns.find((turn) => String(turn.id_turno) === String(selectedTurnId));
+            if (updated) persistTurnUpdate(LOCAL_STORAGE_KEYS.SECRETARY_TURNS, updated);
         }
 
         function showMessage(type, text) {
@@ -1290,7 +1297,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function persistTurns() {
-            writeStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_TURNS, turns);
+            const updated = turns.find((turn) => String(turn.id_turno) === String(selectedTurnId));
+            if (updated) persistTurnUpdate(LOCAL_STORAGE_KEYS.SECRETARY_TURNS, updated);
         }
 
         function showMessage(type, text) {
@@ -1443,7 +1451,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             orderRescheduleTurns([...proposals, ...waitlist]);
         } catch (error) {
             proposals = []; waitlist = [];
-            showAlert(message, "warning", error.message);
+            console.warn("No se pudo recuperar el proceso de reprogramacion.", error);
+            showAlert(message, "warning", "No se pudo recuperar la reprogramación guardada. Revise los datos y vuelva a buscar los turnos afectados.");
         }
 
         const fields = {
@@ -1512,37 +1521,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         function mergeStoredMassTurns(baseTurns) {
-            const storedSecretaryTurns = readStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_TURNS, null);
-            const storedPatientTurns = readStoredJson(LOCAL_STORAGE_KEYS.PATIENT_TURNS, []);
-            const base = Array.isArray(baseTurns) ? baseTurns : [];
-            const stored = Array.isArray(storedSecretaryTurns) ? storedSecretaryTurns : [];
-            const convertedPatientTurns = Array.isArray(storedPatientTurns)
-                ? storedPatientTurns.map((turn) => ({
-                    id_turno: turn.id,
-                    id_paciente: turn.pacienteId,
-                    id_medico: turn.medicoId,
-                    id_disponibilidad: turn.disponibilidadId,
-                    id_triaje: turn.idTriaje,
-                    fecha: turn.fecha,
-                    hora_inicio: turn.hora,
-                    hora_fin: turn.horaFin || addMinutes(turn.hora, 20),
-                    estado: turn.estado,
-                    especialidad: turn.especialidad,
-                    prioridad: turn.prioridad,
-                    duracion_estimada: Number.parseInt(turn.tiempoEstimado, 10) || 20,
-                    fecha_hora_creacion: turnCreationDate(turn),
-                    fecha_solicitud: turnCreationDate(turn),
-                    origen: turn.origen || "Paciente"
-                }))
-                : [];
-            const byId = new Map();
-            base.forEach((turn) => byId.set(String(turn.id_turno), preserveTurnCreationDate(byId.get(String(turn.id_turno)), turn)));
-
-            [...stored, ...convertedPatientTurns].filter(compatibleMassTurn).forEach((turn) => {
-                byId.set(String(turn.id_turno), preserveTurnCreationDate(byId.get(String(turn.id_turno)), turn));
-            });
-
-            return [...byId.values()].map((turn) => {
+            return mergeStoredTurns(baseTurns).map((turn) => {
                 const doctor = doctors.find((item) => String(item.id_medico || item.id) === String(turn.id_medico));
                 const specialty = turn.especialidad || doctor?.especialidad;
                 return { ...preserveTurnCreationDate(null, turn), especialidad: specialty,
@@ -1550,10 +1529,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             });
         }
 
-        function persistState() {
-            writeStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_TURNS, turns);
-            writeStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_AVAILABILITY, availability);
-            writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, availability);
+        function persistState(updatedTurn = null, changedAvailabilityIds = []) {
+            if (updatedTurn) persistTurnUpdate(LOCAL_STORAGE_KEYS.SECRETARY_TURNS, updatedTurn);
+            persistAvailabilityChanges(availability.filter((slot) => changedAvailabilityIds.some((id) => String(id) === String(slot.id_disponibilidad))));
             writeStoredJson(LOCAL_STORAGE_KEYS.MASS_RESCHEDULE, {
                 proposals,
                 waitlist
@@ -1749,7 +1727,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             } catch (error) {
                 affectedTurns = [];
                 renderAll();
-                showMessage("warning", error.message);
+                console.warn("No se pudo verificar la reprogramacion.", error);
+                showMessage("warning", "No fue posible verificar los turnos y horarios para reprogramar. Actualice la información y vuelva a buscar los turnos afectados.");
                 return;
             }
             proposals = [];
@@ -1792,7 +1771,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                     notificationStatus: "Enviada - Pendiente de respuesta"
                 });
             } catch (error) {
-                showMessage("warning", error.message);
+                console.warn("No se pudo verificar la reprogramacion.", error);
+                showMessage("warning", "No fue posible verificar los turnos y horarios para reprogramar. Actualice la información y vuelva a buscar los turnos afectados.");
                 return;
             }
 
@@ -1822,7 +1802,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             turns = nextState.turns;
             availability = nextState.availability;
             proposals = nextState.proposals;
-            persistState();
+            const proposal = proposals.find((item) => item.id === proposalId);
+            persistState(turns.find((turn) => String(turn.id_turno) === String(proposal.turnId)),
+                [proposal.oldAvailabilityId, proposal.slot.id_disponibilidad]);
             renderAll();
             showMessage("success", "Cambio confirmado y turno actualizado correctamente.");
         }
@@ -1843,7 +1825,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             turns = nextState.turns;
             proposals = nextState.proposals;
             waitlist = nextState.waitlist;
-            persistState();
+            const proposal = proposals.find((item) => item.id === proposalId);
+            persistState(turns.find((turn) => String(turn.id_turno) === String(proposal.turnId)));
             renderAll();
             showMessage("warning", "El paciente fue agregado a lista de espera prioritaria.");
         }
@@ -1865,6 +1848,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                 return;
             }
 
+            clearErrors();
+
             fields.doctor.value = "";
             fillDoctors(fields.specialty.value);
             affectedTurns = [];
@@ -1875,6 +1860,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (loggedDoctor) {
                 return;
             }
+
+            clearErrors();
 
             const doctor = selectedDoctor();
 
@@ -1890,11 +1877,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
         [fields.date, fields.start, fields.end, fields.reason].forEach((field) => {
             field.addEventListener("input", () => {
+                clearErrors();
                 affectedTurns = [];
                 executeButton.disabled = true;
                 renderAffectedState();
             });
             field.addEventListener("change", () => {
+                clearErrors();
                 affectedTurns = [];
                 executeButton.disabled = true;
                 renderAffectedState();

@@ -29,6 +29,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         {
             availabilityDateTime,
             availabilityDurationMinutes,
+            persistAvailabilityChanges,
             mergeAllStoredAvailability,
         },
         {
@@ -46,6 +47,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             readAnswers,
             updateTriageQuestionnaire,
             renderTriageErrors,
+            triageFormErrors,
             renderResult
         },
         { initPatientAppointments }
@@ -347,7 +349,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 const validation = validateTriageInput(input);
                 if (!validation.valid) {
                     clearAvailabilityStep();
-                    renderTriageErrors(triajeError, validation.errors);
+                    renderTriageErrors(triajeError, triageFormErrors(form, specialty, { submitted: true }));
                     return;
                 }
             }
@@ -442,7 +444,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             try {
                 persistPatientTurns(LOCAL_STORAGE_KEYS.PATIENT_TURNS,
                     [...storedTurns.filter((turn) => turn && String(turn.pacienteId) === String(patientId)), patientTurn], patientId);
-                writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_AVAILABILITY, updatedAvailability);
+                persistAvailabilityChanges(updatedAvailability.filter((item) => String(item.id_disponibilidad) === String(slot.id_disponibilidad)));
             } catch (error) {
                 // Recuperacion local minima; la atomicidad real corresponde al backend.
                 try { writeStoredJson(LOCAL_STORAGE_KEYS.PATIENT_TURNS, previousTurns); } catch (_) { /* El almacenamiento puede seguir inaccesible. */ }
