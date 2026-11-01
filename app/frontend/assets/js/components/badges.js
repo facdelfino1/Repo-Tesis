@@ -15,20 +15,6 @@ export function priorityClass(priority, variant = "text") {
     return variant === "background" ? "bg-secondary" : "text-bg-secondary";
 }
 
-export function borderPriorityClass(priorityColor) {
-    const normalizedPriority = String(priorityColor || "").toLowerCase();
-
-    if (normalizedPriority === "rojo") {
-        return "triage-result-danger";
-    }
-
-    if (normalizedPriority === "amarillo") {
-        return "triage-result-warning";
-    }
-
-    return "triage-result-success";
-}
-
 export function stateText(state, escapeHtml = null) {
     const value = state || "-";
     const safeValue = typeof escapeHtml === "function" ? escapeHtml(value) : value;

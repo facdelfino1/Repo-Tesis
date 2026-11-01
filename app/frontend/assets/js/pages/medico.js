@@ -37,7 +37,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         { clearErrors: clearFieldErrors, initPasswordToggles: componentInitPasswordToggles, setFieldError: applyFieldError },
         { getBootstrapModal, hideModal, showModal },
         { renderTableEmptyRow },
-        { mergeStoredDoctorTurns, turnosList, attentionStartDate, attentionDurationMinutes, persistTurnUpdate, consultationStartValue, consultationEndValue },
+        { appointmentPatients, mergeStoredDoctorTurns, turnosList, attentionStartDate, attentionDurationMinutes, persistTurnUpdate, consultationStartValue, consultationEndValue },
         { triajeByTurnId, getTriage, triagePriorityForTurn, normalizeTriageSpecialty },
         { renderTriageResponses },
         { mergeAllStoredAvailability, availabilityDurationMinutes, persistAvailabilityChanges },
@@ -101,7 +101,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     function patientsFromUsers(usuarios) {
-        return (usuarios.usuarios || []).filter((user) => roleMatches(user, "paciente"));
+        return appointmentPatients(usuarios);
     }
 
     function doctorsFromData(usuarios, medicosData) {

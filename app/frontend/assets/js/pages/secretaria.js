@@ -38,6 +38,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             mergeStoredAvailability
         },
         {
+            appointmentPatients,
             finishConsultation,
             mergeStoredClosureTurns,
             mergeStoredPresenceTurns,
@@ -170,7 +171,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     function patientsFromUsers(usuarios) {
-        return (usuarios.usuarios || []).filter((user) => roleMatches(user, "paciente"));
+        return appointmentPatients(usuarios);
     }
 
     function doctorById(usuarios, idMedico) {
@@ -353,7 +354,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const doctors = Array.isArray(medicosData.medicos) && medicosData.medicos.length > 0
             ? medicosData.medicos
             : doctorsFromUsers(usuarios);
-        const basePatients = patientsFromUsers(usuarios);
+        const basePatients = (usuarios.usuarios || []).filter((user) => roleMatches(user, "paciente"));
         let simulatedPatients = readStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_PATIENTS, []);
 
         if (!Array.isArray(simulatedPatients)) {
@@ -400,6 +401,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         };
         const message = document.getElementById("GestiónTurnosMensaje");
         const createForm = document.getElementById("asignarTurnoForm");
+        const createMessage = document.getElementById("asignarTurnoMensaje");
+        let createRequiredFeedback = false;
         const createConfirmButton = createForm.querySelector('[type="submit"]');
         const createModal = getBootstrapModal(document.getElementById("asignarTurnoModal"));
         const editModal = getBootstrapModal(document.getElementById("modificarTurnoModal"));
@@ -427,21 +430,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (!doctor || !hasTriageSpecialty(doctor.especialidad)) return null;
             const input = readAnswers(createForm, normalizeTriageSpecialty(doctor.especialidad));
             return validateTriageInput(input).valid ? { ...input, prioridad: calculateTriagePriority(input) } : null;
-        }
-
-        function timeToMinutes(timeValue) {
-            const [hours, minutes] = String(timeValue).split(":").map(Number);
-            return (hours * 60) + minutes;
-        }
-
-        function minutesToTime(totalMinutes) {
-            const hours = Math.floor(totalMinutes / 60).toString().padStart(2, "0");
-            const minutes = (totalMinutes % 60).toString().padStart(2, "0");
-            return `${hours}:${minutes}`;
-        }
-
-        function addMinutes(timeValue, minutes) {
-            return minutesToTime(timeToMinutes(timeValue) + minutes);
         }
 
         function mergeStoredTriages(baseTriages) {
@@ -678,6 +666,21 @@ document.addEventListener("DOMContentLoaded", async () => {
             showModal(cancelModal);
         }
 
+        function updateRequiredFeedback() {
+            const missing = [...createForm.querySelectorAll("[required]")]
+                .filter((field) => !field.disabled && !field.value.trim());
+            if (missing.length) {
+                const labels = missing.map((field) => field.labels?.[0]?.textContent.trim() || "campo obligatorio");
+                showAlert(createMessage, "danger", "Complete los campos obligatorios: " + [...new Set(labels)].join(", ") + ".", {
+                    scrollIntoView: !createRequiredFeedback
+                });
+            } else if (createRequiredFeedback) {
+                hideAlert(createMessage);
+            }
+            createRequiredFeedback = missing.length > 0;
+            return createRequiredFeedback;
+        }
+
         function createAppointment(event) {
             event.preventDefault();
             const doctor = selectedCreateDoctor();
@@ -685,23 +688,17 @@ document.addEventListener("DOMContentLoaded", async () => {
                 renderTriageErrors(document.getElementById("asignarTriajeError"),
                     triageFormErrors(createForm, normalizeTriageSpecialty(doctor.especialidad), { submitted: true }));
             }
-            const missingRequired = [...createForm.querySelectorAll("[required]")]
-                .filter((field) => !field.disabled && !field.value.trim());
-            if (missingRequired.length) {
-                const labels = missingRequired.map((field) => field.labels?.[0]?.textContent.trim() || "campo obligatorio");
-                showMessage("danger", "Complete los campos obligatorios: " + [...new Set(labels)].join(", ") + ".");
-                return;
-            }
+            if (updateRequiredFeedback()) return;
             const option = createFields.slot.selectedOptions[0];
             const displayed = option?.dataset.slot ? JSON.parse(option.dataset.slot) : null;
             if (!doctor || !displayed || !createFields.dni.value.trim() || !createFields.name.value.trim() || !createFields.surname.value.trim()) {
-                showMessage("danger", "Complete paciente, médico y horario antes de confirmar.");
+                showAlert(createMessage, "danger", "Complete paciente, médico y horario antes de confirmar.");
                 return;
             }
             const triageResult = calculateTriage();
             if (hasTriageSpecialty(doctor.especialidad) && !triageResult) {
                 refreshTriageResult({ submitted: true });
-                showMessage("danger", "Complete las respuestas válidas del triaje.");
+                showAlert(createMessage, "danger", "Complete las respuestas válidas del triaje.");
                 return;
             }
             const slot = availableSlots({ specialty: doctor.especialidad, doctorId: doctor.id_medico || doctor.id })
@@ -710,7 +707,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                         .every((field) => String(item[field]) === String(displayed[field])));
             if (!slot) {
                 refreshCreateSlots();
-                showMessage("warning", "El horario cambió o ya no está disponible. Seleccione otro horario.");
+                showAlert(createMessage, "warning", "El horario cambió o ya no está disponible. Seleccione otro horario.");
                 return;
             }
             const patient = currentPatientFromCreateForm();
@@ -841,6 +838,12 @@ document.addEventListener("DOMContentLoaded", async () => {
             field.addEventListener("change", renderTable);
         });
         createFields.dni.addEventListener("input", () => { fillPatientFromDni(); refreshTriageResult(); });
+        createForm.addEventListener("input", () => {
+            if (createRequiredFeedback) updateRequiredFeedback();
+        });
+        createForm.addEventListener("change", () => {
+            if (createRequiredFeedback) updateRequiredFeedback();
+        });
         [createFields.name, createFields.surname].forEach((field) => field.addEventListener("input", refreshTriageResult));
         createFields.slot.addEventListener("change", () => { createConfirmButton.disabled = !createFields.slot.value; });
         createFields.specialty.addEventListener("change", () => {
@@ -1489,35 +1492,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         function doctorByTurn(turn) {
             return doctors.find((doctor) => String(doctor.id_medico || doctor.id) === String(turn.id_medico)) || null;
-        }
-
-        function priorityColor(priority) {
-            if (priority === "Alta") {
-                return "Rojo";
-            }
-
-            if (priority === "Media") {
-                return "Amarillo";
-            }
-
-            return "Verde";
-        }
-
-        function addMinutes(timeValue, minutes) {
-            const total = timeToMinutes(timeValue) + minutes;
-            const hours = Math.floor(total / 60).toString().padStart(2, "0");
-            const mins = (total % 60).toString().padStart(2, "0");
-            return `${hours}:${mins}`;
-        }
-
-        function compatibleMassTurn(turn) {
-            return turn
-                && turn.id_turno !== undefined
-                && turn.id_paciente !== undefined
-                && turn.id_medico !== undefined
-                && turn.fecha
-                && turn.hora_inicio
-                && turn.estado;
         }
 
         function mergeStoredMassTurns(baseTurns) {

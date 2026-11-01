@@ -65,11 +65,6 @@ export function renderTriageErrors(element, errors) {
     element.classList.toggle("d-none", Object.keys(errors).length === 0);
 }
 
-export function readRadioValue(name) {
-    const selected = document.querySelector(`input[name="${name}"]:checked`);
-    return selected ? selected.value : "";
-}
-
 export function renderResult(prioridad, { resultBox, resultColor }) {
     resultBox.classList.remove("d-none", "triage-result-success", "triage-result-warning", "triage-result-danger");
     resultBox.classList.add("triage-result-" + (prioridad === "Alta" ? "danger" : prioridad === "Media" ? "warning" : "success"));

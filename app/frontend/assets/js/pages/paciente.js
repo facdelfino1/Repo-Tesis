@@ -144,11 +144,19 @@ document.addEventListener("DOMContentLoaded", async () => {
         const paciente = currentPatient(usuarios);
         const turnos = { turnos: mergeStoredTurns(turnosData.turnos) };
         const proximoTurno = nextPatientTurn(turnos, usuarios, paciente.id_paciente);
+        const pendingRequests = patientAppointments(turnos, usuarios, paciente.id_paciente)
+            .filter((turn) => turn.estado === "Pendiente");
+        const pendingNotice = document.getElementById("solicitudesPendientesAviso");
+        if (pendingNotice) {
+            pendingNotice.classList.toggle("d-none", pendingRequests.length === 0);
+            setText("solicitudesPendientesResumen", `${pendingRequests.length} solicitud(es) pendiente(s) de nueva asignación o reprogramación. La fecha y hora anteriores no constituyen una reserva confirmada.`);
+        }
         const nombreCompleto = fullName(paciente);
 
         setText("pacienteNavbar", nombreCompleto);
         setText("pacienteNombre", paciente.nombre);
-        setText("heroProximoTurno", proximoTurno ? `${formatDate(proximoTurno.fecha)} - ${proximoTurno.hora}` : "Sin turnos reservados");
+        setText("heroProximoTurno", proximoTurno ? `${formatDate(proximoTurno.fecha)} - ${proximoTurno.hora}`
+            : pendingRequests.length ? "Solicitud pendiente de nueva asignación" : "Sin turnos reservados");
 
         setText("turnoEspecialidad", proximoTurno ? proximoTurno.especialidad : "-");
         setText("turnoMedico", proximoTurno ? proximoTurno.medico : "-");
@@ -157,7 +165,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         setText("turnoEstado", proximoTurno ? proximoTurno.estado : "-");
 
         const priority = proximoTurno?.prioridad ?? null;
-        setText("triajePrioridad", priority || "Sin triaje espec\u00edfico");
+        setText("triajePrioridad", proximoTurno ? (priority || "Sin triaje espec\u00edfico") : "Sin turno asignado");
 
         const priorityBadge = document.getElementById("triajePrioridad");
 
@@ -379,7 +387,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
             if (typeof lastRequest.fecha_hora_creacion !== "string"
                 || !Number.isFinite(Date.parse(lastRequest.fecha_hora_creacion))) {
-                disponibilidadError.textContent = "La solicitud no tiene una fecha de creacion valida. No se puede confirmar.";
+                disponibilidadError.textContent = "No fue posible verificar la solicitud. Vuelva a enviarla antes de reservar un horario.";
                 disponibilidadError.classList.remove("d-none");
                 return;
             }
@@ -719,9 +727,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         const priorityBadge = document.getElementById("turnoReservadoPrioridad");
-        const appointmentType = appointment.esSobreturno
-            ? "Sobreturno sugerido por prioridad alta"
-            : appointment.tipo;
+        const appointmentType = appointment.esSobreturno ? "Consulta" : appointment.tipo;
 
         detail.classList.remove("d-none");
         setText("turnoReservadoEspecialidad", appointment.especialidad);

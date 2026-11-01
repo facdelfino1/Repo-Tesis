@@ -93,7 +93,7 @@
                             <option>Reservado</option>
                             <option>Pendiente</option>
                             <option>Presente</option>
-                            <option>En atencion</option>
+                            <option value="En atencion">En atención</option>
                             <option>Completado</option>
                             <option>Cancelado</option>
                             <option value="Ausente">Ausente (histórico)</option>
@@ -254,10 +254,11 @@
                             </div>
                             <p id="asignarSinTriajeEspecifico" data-no-triage class="text-secondary d-none">Esta especialidad continúa con la gestión del turno sin un triaje específico.</p>
                             </div>
-                            <div class="col-12 col-lg-5">
-                                <div class="triage-result rounded-3 p-3 d-none" id="asignarTriajeResultado">
-                                    <p class="text-secondary small mb-1">Prioridad preliminar</p>
+                            <div class="col-12 col-lg-5 d-flex align-items-center">
+                                <div class="border bg-light rounded-3 p-3 w-100 d-none" id="asignarTriajeResultado">
+                                    <p class="fw-semibold mb-2">Prioridad preliminar del turno</p>
                                     <span class="badge" id="asignarTriajePrioridad">—</span>
+                                    <p class="text-secondary small mt-2 mb-0">Prioridad obtenida a partir del cuestionario de triaje.</p>
                                 </div>
                             </div>
                             <div class="col-12">
@@ -266,6 +267,7 @@
                                 <div class="form-text" id="asignarDisponibilidadAyuda">Seleccione especialidad o medico para consultar horarios.</div>
                             </div>
                         </div>
+                        <div id="asignarTurnoMensaje" class="alert d-none" role="alert"></div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>

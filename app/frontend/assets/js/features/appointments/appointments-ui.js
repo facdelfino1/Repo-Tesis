@@ -263,14 +263,21 @@ export async function initPatientAppointments(config) {
                             <strong class="fw-semibold align-self-start">${turn.estado}</strong>
                         </div>
                         <dl class="row small mb-3">
+                            ${turn.estado === "Pendiente" ? `
+                            <dt class="col-5 text-secondary">Horario</dt>
+                            <dd class="col-7 fw-medium">Pendiente de nueva asignación</dd>
+                            ` : `
                             <dt class="col-5 text-secondary">Fecha</dt>
                             <dd class="col-7 fw-medium">${formatDate(turn.fecha)}</dd>
                             <dt class="col-5 text-secondary">Hora</dt>
                             <dd class="col-7 fw-medium">${turn.hora}</dd>
+                            `}
                             <dt class="col-5 text-secondary">Prioridad</dt>
                             <dd class="col-7">${priorityBadge(turn.prioridad)}</dd>
+                            ${turn.estado === "Pendiente" ? "" : `
                             <dt class="col-5 text-secondary">Tiempo estimado</dt>
                             <dd class="col-7 fw-medium mb-0">${turn.tiempoEstimado}</dd>
+                            `}
                         </dl>
                         <div class="d-grid d-sm-flex gap-2 justify-content-sm-end">
                             <button type="button" class="btn btn-outline-primary btn-sm" data-action="modify" data-turn-id="${turn.id}" ${isReservedPatientAppointment(turn) ? "" : "disabled"}>

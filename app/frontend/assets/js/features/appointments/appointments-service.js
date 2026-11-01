@@ -5,6 +5,19 @@ import { priorityLabel } from "../../core/formatters.js";
 import { availabilityDateTime, availabilityDurationMinutes } from "../availability/availability-service.js";
 import { triagePriorityForTurn } from "../triage/triage-service.js";
 
+// Lectura temporal de pacientes de la demo; la API reemplazará ambas fuentes.
+export function appointmentPatients(usuarios) {
+    const base = (usuarios.usuarios || []).filter((user) => String(user.rol || "").toLowerCase() === "paciente");
+    const stored = readStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_PATIENTS, []);
+    const byId = new Map();
+    [...base, ...(Array.isArray(stored) ? stored : [])].forEach((patient) => {
+        if (patient?.id_paciente != null && !byId.has(String(patient.id_paciente))) {
+            byId.set(String(patient.id_paciente), patient);
+        }
+    });
+    return [...byId.values()];
+}
+
 function fullName(person) {
     return `${person.nombre} ${person.apellido}`;
 }
