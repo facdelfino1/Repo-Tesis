@@ -24,6 +24,7 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     telefono = models.CharField(max_length=30)
     rol = models.CharField(max_length=20, choices=Rol.choices)
     is_active = models.BooleanField(default=True)
+    intentos_fallidos = models.PositiveSmallIntegerField(default=0, editable=False)
     is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(default=timezone.now, editable=False)
 
@@ -35,7 +36,12 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
         constraints = [
             models.UniqueConstraint(Lower("email"), name="usuario_email_ci_unique"),
             models.CheckConstraint(condition=models.Q(rol__in=["PACIENTE", "SECRETARIA", "MEDICO", "ADMINISTRADOR"]), name="usuario_rol_valido"),
+            models.CheckConstraint(condition=models.Q(intentos_fallidos__gte=0, intentos_fallidos__lte=5), name="usuario_intentos_fallidos_rango"),
         ]
+
+    @property
+    def bloqueado_por_intentos(self):
+        return self.intentos_fallidos >= 5
 
     def clean(self):
         super().clean()

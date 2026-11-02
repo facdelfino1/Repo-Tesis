@@ -5,6 +5,9 @@ from django.core.validators import validate_email
 class UsuarioManager(BaseUserManager):
     use_in_migrations = True
 
+    def get_by_natural_key(self, email):
+        return self.get(email__iexact=email.strip())
+
     def create_user(self, email, password=None, **extra_fields):
         if not email:
             raise ValueError("El email es obligatorio.")

@@ -1,2 +1,3 @@
-# Domain endpoints are intentionally deferred to Block 2.
-urlpatterns = []
+from django.urls import include, path
+
+urlpatterns = [path("api/", include("dominio.urls"))]

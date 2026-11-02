@@ -1,8 +1,9 @@
-# Backend - Bloque 1
+# Backend - Bloques 1 y 2
 
 Proyecto Django 5.2 LTS y DRF con PostgreSQL como unico motor. Una app
 `dominio` contiene el modelo relacional; `config` contiene infraestructura.
-Las URLs estan vacias: autenticacion API y endpoints pertenecen al Bloque 2.
+El Bloque 1 define el esquema. El Bloque 2 agrega autenticación por sesión,
+identidad y administración de cuentas internas; no conecta el frontend.
 
 ## Auditoria inicial
 
@@ -113,7 +114,7 @@ como nuevas identidades.
   permite importar una fecha historica real en una migracion futura.
 - duracion_turno es positiva e independiente del triaje. La coincidencia de
   medico/fecha/hora/duracion con disponibilidad sera validada por el servicio
-  transaccional del Bloque 2, junto con concurrencia y revalidacion del bloque.
+  transaccional de un bloque posterior, junto con concurrencia y revalidacion del bloque.
 - Triaje usa JSONField (jsonb en PostgreSQL) para respuestas estructuradas de
   distintos cuestionarios. clean() exige objeto; no define reglas clinicas ni
   un esquema de sintomas que aun corresponda implementar en otro bloque.
@@ -139,7 +140,7 @@ tablas dentro de CHECK. Estados de disponibilidad y reservas deben sincronizarse
 mediante servicios transaccionales futuros. Las validaciones de clean requieren
 full_clean o invocacion explicita por serializers/services.
 
-## Bloque 2
+## Alcance originalmente previsto para Bloque 2 (referencia del Bloque 1)
 
 Autenticacion API, validacion de password en endpoints, permisos por rol,
 administracion de cuentas sobre Usuario unico, manejo de sesion/token,
@@ -150,10 +151,10 @@ flujos ni migrar JSON sin una estrategia de seed acordada.
 La politica completa de complejidad del prototipo debe acordarse y aplicarse
 con validadores de password cuando se expongan altas/cambios. La base configura
 los validadores estandar de Django; create_user no ejecuta validate_password.
-No hay integracion frontend, endpoints Admin, metricas definitivas, reglas
+Al cierre del Bloque 1 no habia integracion frontend, endpoints Admin, metricas definitivas, reglas
 clinicas, modelos Reprogramacion/ListaEspera/Notificacion ni seeds.
 
-## Verificacion de entrega - 2026-11-02
+## Verificacion historica del Bloque 1 - 2026-11-02
 
 Punto de partida: rama `feature/triage-final`, HEAD `a090fbc`, arbol limpio.
 Se utilizaron Django 5.2.18, DRF 3.16.1, psycopg 3.3.6 y python-dotenv 1.2.4,
@@ -200,3 +201,252 @@ Unico archivo existente modificado: `.gitignore`. Archivos nuevos:
 Antes de cerrar la verificacion de BD: configurar una conexion PostgreSQL real,
 repetir makemigrations --check, aplicar migrate y ejecutar los 18 tests.
 No hubo commit ni push y el frontend permanece congelado.
+
+## Bloque 2 implementado: identidad y autorización
+
+### Decisiones y límites
+
+- Sesiones de Django + SessionAuthentication de DRF. Sin JWT, tokens propios,
+  paquetes nuevos ni tablas nuevas. La ampliación agrega el contador en 0002. Se reutiliza
+  django_session, cuya migración debe estar aplicada.
+- Email normalizado y búsqueda sin distinguir mayúsculas. La restricción
+  usuario_email_ci_unique sigue siendo la garantía final en PostgreSQL.
+- Todas las contraseñas se escriben con create_user/set_password. Altas y cambio
+  propio ejecutan los validadores estándar de Django ya configurados.
+- Una cuenta activa debe tener exactamente el perfil de su rol. Administrador
+  no tiene perfil. Login rechaza perfiles faltantes/cruzados/múltiples; las
+  operaciones autenticadas vuelven a comprobar esta condición.
+- Rol de dominio y permisos técnicos son distintos: ADMINISTRADOR no necesita
+  is_staff/is_superuser para administrar estas cuentas. Esos flags tampoco
+  otorgan acceso a un rol diferente.
+- Usuario/perfil se guardan en una transacción. El administrador solo gestiona
+  MEDICO/SECRETARIA, no crea pacientes ni otros administradores. Al editar no
+  puede cambiar rol/DNI, asignar privilegios ni cambiar contraseñas ajenas.
+  Activar/desactivar usa PATCH is_active; no existe DELETE de cuentas.
+- No se implementan consultas ni operaciones de turnos, agenda, triaje,
+  disponibilidad, reprogramación, registro público
+  o edición del perfil propio en este bloque.
+
+### Endpoints
+
+Todas las rutas tienen prefijo `/api/` y barra final. Respuestas JSON.
+
+| Método/ruta | Acceso y contrato |
+| --- | --- |
+| GET auth/csrf/ | Público. Entrega csrfToken y cookie CSRF para iniciar el flujo. |
+| POST auth/login/ | Público con CSRF. Body: email, password. Devuelve usuario y csrfToken renovado; establece sesión. |
+| POST auth/logout/ | Sesión + CSRF. Invalida la sesión actual; 204. |
+| GET auth/me/ | Cuenta activa/perfil válido. Solo identidad propia y perfil necesario. |
+| POST auth/password/ | Cuenta activa + CSRF. password_actual, password_nueva, password_confirmacion. |
+| POST auth/password-reset/ | Público + CSRF. email; respuesta genérica, envío solo a cuentas elegibles. |
+| POST auth/password-reset/confirm/ | Público + CSRF. uid, token, password_nueva, password_confirmacion. |
+| GET/POST admin/usuarios/ | Solo ADMINISTRADOR. Lista paginada / alta interna. |
+| GET/PUT/PATCH admin/usuarios/{id}/ | Solo ADMINISTRADOR, únicamente Médico/Secretaría. |
+| GET admin/especialidades/ | Solo ADMINISTRADOR. Catálogo existente para seleccionar especialidad al crear/editar médicos; no permite escribir. |
+
+Ejemplo de alta de médico (usar una contraseña privada que cumpla validadores):
+
+```json
+{
+  "email": "profesional@example.com",
+  "password": "<contraseña privada>",
+  "nombre": "Nombre",
+  "apellido": "Apellido",
+  "dni": "12345678",
+  "telefono": "3515551234",
+  "rol": "MEDICO",
+  "matricula": "MP-12345",
+  "especialidad": 1
+}
+```
+
+El ID de especialidad debe existir en PostgreSQL; no se crea un seed implícito.
+Para SECRETARIA enviar legajo en lugar de matricula/especialidad. is_active es
+opcional al crear (true por defecto). PATCH admite campos parciales; PUT exige
+los campos generales requeridos. El rol es inmutable en ambos casos.
+
+La respuesta de identidad contiene exclusivamente id, email, nombre, apellido,
+dni, telefono, rol, is_active y perfil. perfil es null para ADMINISTRADOR; para
+Paciente contiene id/obra_social, para Médico id/matricula/especialidad
+(id/nombre), para Secretaría id/legajo. Nunca devuelve password, hash, grupos
+o flags técnicos. No usar las credenciales ni los IDs del frontend como seed.
+
+### Sesión y CSRF
+
+1. GET auth/csrf/ conservando cookies.
+2. POST auth/login/ con email/password y encabezado X-CSRFToken.
+3. Conservar la cookie sessionid HttpOnly. Login rota el token CSRF: usar el
+   nuevo csrfToken de la respuesta (o la cookie csrftoken actualizada).
+4. Enviar X-CSRFToken y cookies en cada POST/PUT/PATCH/DELETE posterior.
+
+Login tiene csrf_protect explícito: SessionAuthentication por sí sola no
+protege el login anónimo. Credenciales incorrectas, inactividad o perfil
+inconsistente devuelven el mismo 401. En endpoints protegidos, una petición
+anónima devuelve 403 con SessionAuthentication; un rol insuficiente también
+devuelve 403. Datos inválidos devuelven 400; usuarios fuera del alcance
+administrativo devuelven 404; métodos no habilitados devuelven 405.
+
+CuentaBackend deriva de ModelBackend y rechaza is_active=False al autenticar y al recuperar una sesión
+en peticiones posteriores. Los permisos de API también comprueban actividad.
+El cambio de contraseña verifica la actual y la confirmación, aplica la
+política y usa update_session_auth_hash: conserva/rota la sesión actual y las
+otras sesiones dejan de ser válidas en su próxima petición.
+
+Login tiene un throttle complementario de 10 solicitudes/minuto por IP con el
+cache estándar de Django. Es independiente del contador persistente de cinco
+contraseñas incorrectas por cuenta descrito abajo; no es protección distribuida definitiva.
+NUM_PROXIES=0 evita confiar en X-Forwarded-For enviado directamente por un
+cliente; revisar esa configuración junto con el proxy real al desplegar.
+
+Cookies Secure por defecto con DEBUG=false; en HTTP local usar DEBUG=true.
+Para producción se requiere HTTPS. SameSite=Lax y sesión HttpOnly. La
+integración futura se plantea bajo el mismo origen; no se habilitó CORS ni
+se debilitó CSRF para el servidor estático del frontend. Orígenes confiables
+adicionales se configuran explícitamente en DJANGO_CSRF_TRUSTED_ORIGINS.
+
+### Administración inicial y pruebas
+
+Crear el administrador inicial mediante `manage.py createsuperuser` (email,
+contraseña y datos requeridos). No hay credenciales por defecto ni tabla
+Administrador. Los usuarios no administradores creados directamente por
+scripts requieren su perfil correspondiente antes de poder iniciar sesión.
+Las escrituras ORM externas siguen siendo responsables de validar el rol y
+perfil: no se agregaron triggers ni constraints entre tablas.
+
+```powershell
+& ./.venv/Scripts/python.exe manage.py check
+& ./.venv/Scripts/python.exe manage.py makemigrations --check --dry-run
+$env:POSTGRES_TEST_DB = 'test_tesis_identity_' + [guid]::NewGuid().ToString('N').Substring(0,12)
+& ./.venv/Scripts/python.exe manage.py test dominio --noinput
+```
+
+Ejecutar desde app/backend. Django crea y destruye una BD PostgreSQL aislada;
+la cuenta de pruebas debe tener permiso CREATEDB. Nunca configurar
+POSTGRES_TEST_DB con el nombre de desarrollo/producción. Los tests usan
+APIClient con CSRF habilitado, sesiones reales y hashing PBKDF2 de Django.
+No hacen peticiones de escritura a la base de desarrollo ni al frontend.
+
+Pendientes de despliegue: HTTPS/proxy, cache compartido, entrega de email,
+verificación de email inicial y auditoría según requisitos posteriores.
+Los permisos por rol no sustituyen futuras restricciones por objeto/agenda:
+esas reglas se implementarán al exponer operaciones de los siguientes bloques.
+
+### Verificación inicial del Bloque 2 — 2026-11-02 (antes de recuperación)
+
+- `manage.py check`: sin incidencias.
+- `manage.py makemigrations --check --dry-run`: No changes detected.
+- `manage.py test dominio --noinput`: 45 tests aprobados (18 del Bloque 1 y
+  27 de API/identidad), sobre una BD PostgreSQL temporal con nombre único.
+  Django creó y eliminó esa base; no se migró ni escribió en la de desarrollo.
+- `pip check`, parseo AST e imports ejecutados por la suite: correctos.
+- Sin cambios en frontend, models.py, migración 0001 ni requirements.txt.
+- Sin migraciones nuevas, commit o push.
+
+## Ampliación B2: cinco fallos y recuperación
+
+`Usuario.intentos_fallidos` es persistente, comienza en cero y tiene constraint
+PostgreSQL 0–5. `bloqueado_por_intentos` se calcula al llegar a cinco: no es una
+columna ni modifica is_active. No hay fecha ni desbloqueo automático por tiempo.
+
+AUTHENTICATION_BACKENDS contiene únicamente CuentaBackend. No dejar ModelBackend
+como fallback: permitiría saltarse el bloqueo. Como cambia el nombre de backend
+guardado en sesiones anteriores a esta ampliación, se requiere volver a iniciar
+sesión una vez desplegada. El administrador inicial también está sujeto a la
+política; necesita un email real/configurado para recuperación en producción.
+
+Cada contraseña incorrecta evaluada de una cuenta existente/no bloqueada suma
+uno. El quinto fallo bloquea; una contraseña correcta posterior no autentica ni
+reinicia nada. Un login exitoso antes del quinto reinicia a cero. Contraseña
+correcta de cuenta inactiva/perfil inválido no es login exitoso. Se preservan
+respuestas 401 genéricas; no se publican contador ni estado de bloqueo.
+Entrada incompleta, fallo CSRF o throttle 429 no cuentan como contraseña errónea.
+
+authenticate usa transaction.atomic/select_for_update sobre la fila Usuario;
+LoginView mantiene la transacción hasta login/last_login. Los fallos se guardan
+retornando normalmente, sin una excepción que deshaga su incremento. La garantía
+por cuenta funciona entre procesos/IPs usando PostgreSQL. No depende del cache.
+La administración guarda únicamente campos editados; una copia anterior ya no
+puede sobrescribir contador, password o last_login. La API no permite editar el
+contador ni desbloquear cuentas manualmente.
+
+El bloqueo afecta nuevas autenticaciones por contraseña. Las sesiones abiertas
+con CuentaBackend pueden seguir operando hasta cierre, vencimiento o reset. Sin
+embargo, el endpoint de cambio de contraseña propia rechaza cuentas bloqueadas:
+el desbloqueo exige recuperación por email. Antes del bloqueo, ese cambio sigue
+conservando su sesión y no reinicia el contador de fallos.
+
+### Recuperación por API
+
+1. Obtener CSRF y enviar POST `/api/auth/password-reset/` con email.
+2. Siempre se responde 200 con el mismo mensaje para emails sintácticamente
+   válidos: existentes, inexistentes, inactivos o bloqueados. No se expone token.
+3. PasswordResetForm envía solo a cuentas activas con contraseña utilizable.
+   No cambia intentos, contraseña ni activación. Un perfil inconsistente sigue
+   requiriendo corrección administrativa: reset no lo repara.
+4. El correo contiene uid/token y URL del endpoint de confirmación. El origen
+   sale de PASSWORD_RESET_BASE_URL, no del Host de la petición.
+5. POST `/api/auth/password-reset/confirm/` con uid, token, password_nueva y
+   password_confirmacion. Mantener CSRF también para este endpoint público.
+
+Este bloque entrega la API, no una pantalla nueva del frontend. El enlace del
+email identifica el endpoint y sus parámetros: para completar el flujo se usa
+POST desde el cliente/APIClient/Postman. Abrirlo como GET no cambia contraseña.
+La pantalla de recuperación y su conexión con esta API quedan para integración
+del frontend; no se añadió una interfaz de recuperación en este bloque.
+
+Se usa default_token_generator de Django, sin almacenar ni implementar tokens
+propios, y SetPasswordForm para política/confirmación/hashing. La confirmación
+vuelve a cargar/bloquear la fila y verifica el token dentro de la transacción;
+guarda password e intentos_fallidos=0 conjuntamente. Dos confirmaciones del mismo
+token no pueden consumirlo simultáneamente. No se inicia sesión automáticamente
+ni se conserva una sesión previa mediante update_session_auth_hash: todas las
+sesiones anteriores dejan de autenticar al siguiente acceso por cambio del hash.
+
+PASSWORD_RESET_TIMEOUT es 3600 segundos. Un token vencido no desbloquea y puede
+reemplazarse solicitando otro correo; reenviar tampoco reinicia intentos. Puede
+haber varios enlaces aún válidos; el primer reset exitoso invalida los demás al
+cambiar la contraseña. Token inválido/vencido/usuario inactivo se rechaza con un
+mismo error 400. Un reset nunca reactiva is_active=False.
+
+Solicitud y confirmación comparten un throttle complementario de 10 peticiones
+por minuto/IP, separado del scope de login. SMTP fallido se registra mediante
+el comportamiento nativo de Django y conserva respuesta genérica. La entrega
+SMTP síncrona puede producir diferencias de tiempo: las respuestas uniformes
+no eliminan totalmente ese canal de enumeración. Para producción debe evaluarse
+envío asíncrono y cache compartido; no se agregaron colas ni librerías externas.
+
+### Email y despliegue
+
+- DEBUG=true: backend de consola por defecto; no prueba entrega ni control real
+  del buzón. Solo se utiliza para desarrollo.
+- Tests: locmem, inspección del correo y tokens sin envío real.
+- DEBUG=false: SMTP por defecto. Configurar EMAIL_BACKEND, EMAIL_HOST/PORT,
+  EMAIL_HOST_USER/PASSWORD, EMAIL_USE_TLS o EMAIL_USE_SSL, DEFAULT_FROM_EMAIL y
+  PASSWORD_RESET_BASE_URL (origen público HTTPS). No habilitar TLS y SSL a la vez.
+- EMAIL_TIMEOUT=10 segundos limita esperas de transporte; no es un timeout de
+  bloqueo. No dejar el backend de consola en producción. Las credenciales se
+  configuran en entorno/.env privado, nunca en Git.
+- Aplicar únicamente `manage.py migrate` para incorporar 0002. Agrega el contador
+  inicial cero a usuarios existentes y su constraint; no modifica 0001 ni perfiles.
+
+La suite incluye los 45 tests previos y pruebas adicionales de bloqueo, reset,
+caducidad/reenvío, CSRF, correo, campos protegidos y carreras reales PostgreSQL
+con TransactionTestCase y conexiones independientes. No utilizar SQLite para
+afirmar la garantía de select_for_update.
+
+### Verificación de la ampliación — 2026-11-02
+
+- 70 tests PostgreSQL aprobados: 45 previos y 25 nuevos, incluidos cuatro de
+  concurrencia real. Duración de ejecución: aproximadamente 386 segundos.
+- El teardown inicial devolvió error porque Supavisor retenía seis conexiones
+  ociosas. Se completó luego la eliminación de la base temporal mediante el
+  helper de Django apuntado explícitamente a ella, sin terminar sesiones ni
+  ejecutar SQL manual. El fallo fue posterior al OK de los 70 tests.
+- En conexiones mediante pooler, la limpieza puede requerir reintento cuando
+  libere sus conexiones; alternativamente usar --keepdb sobre una base de test
+  dedicada o una conexión PostgreSQL directa para pruebas. Nunca usar la base
+  de desarrollo como base de test.
+- 0002 fue aplicada a la base configurada exclusivamente mediante
+  `manage.py migrate dominio 0002 --noinput`, después de revisar --plan.
+- manage.py check, makemigrations --check, migrate --check y pip check correctos.
+- Frontend, 0001_initial y requirements.txt intactos. Sin commit ni push.
