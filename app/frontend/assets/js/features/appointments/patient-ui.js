@@ -157,7 +157,7 @@ async function renderPatientDashboard() {
     text('turnoFecha', next ? formatDate(next.fecha) : '—'); text('turnoHora', next ? next.hora.slice(0, 5) : '—');
     text('turnoEstado', next ? state(next) : '—'); text('triajePrioridad', next ? priority(next) : 'Sin turno asignado');
     document.getElementById('triajePrioridad').className = `badge ${priorityClass(next?.prioridad)}`;
-    text('esperaEstimada', 'No informada'); text('duracionEstimada', next ? `${next.duracion_turno} min` : '—');
+    text('esperaEstimada', 'Sin datos disponibles'); text('duracionEstimada', next ? `${next.duracion_turno} min` : '—');
     document.getElementById('solicitudesPendientesAviso').classList.toggle('d-none', !pending.length);
     text('solicitudesPendientesResumen', `${pending.length} solicitud(es) pendiente(s) de nueva asignación. No tienen horario vigente.`);
     document.getElementById('historialTurnos').innerHTML = turns.filter(turn => !activeStates.has(turn.estado)).map(turn =>

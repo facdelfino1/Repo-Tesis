@@ -5,12 +5,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const user = await session.requireRole('PACIENTE');
     if (!user) return;
     document.querySelectorAll('[id$="Navbar"]').forEach(node => { node.textContent = `${user.nombre} ${user.apellido}`; });
-    // Remove only superseded patient copies; other roles retain their demo data.
-    try { localStorage.removeItem('turnosPacienteMock'); } catch {}
-    try {
-        sessionStorage.removeItem('solicitudTurnoPaciente');
-        sessionStorage.removeItem('turnoReservadoPaciente');
-    } catch {}
     try {
         if (document.querySelector('form[data-form$="-profile"]')) {
             const { initAccountProfile } = await import(new URL('../features/auth/auth-ui.js', pageScriptUrl));

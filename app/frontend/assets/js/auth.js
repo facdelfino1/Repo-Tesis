@@ -68,5 +68,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
     const register=document.querySelector('[data-form="patient-register"]');
-    if(register)register.addEventListener('submit',event=>{event.preventDefault();alert(register,'El registro de pacientes todavía no está habilitado. Comuníquese con Secretaría.','info');});
+    if (register) {
+        alert(register, 'El registro público de pacientes no está habilitado. Comuníquese con Secretaría.', 'info');
+        register.querySelectorAll('input, select, button').forEach(control => { control.disabled = true; });
+        register.addEventListener('submit', event => event.preventDefault());
+    }
 });

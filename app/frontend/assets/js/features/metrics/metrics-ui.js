@@ -1,264 +1,72 @@
-import { legacyUser } from '../../core/session.js';
-import { LOCAL_STORAGE_KEYS, MOCK_PATHS } from "../../core/constants.js";
-import { loadMock, readStoredJson } from "../../core/storage.js";
-import { escapeHtml, normalizeState } from "../../core/helpers.js";
-import { formatToday, priorityLabel, todayInputValue } from "../../core/formatters.js";
-import { renderStateText } from "../../components/badges.js";
-import { fillSelect } from "../../components/selects.js";
-import { renderTableEmptyRow } from "../../components/tables.js";
-import {
-    calculateAdminDashboardMetrics,
-    calculateDoctorMetrics,
-    calculateMetricsSummary,
-    calculatePriorityDistribution,
-    calculateStateDistribution,
-    enrichTurnsForMetrics,
-    filterTurnsByMetrics
-} from "./metrics-service.js";
+import { listAll, errorMessage } from '../../core/api.js';
+import { pageMessage } from '../../core/session.js';
+import { escapeHtml as esc } from '../../core/helpers.js';
+import { formatToday, todayInputValue } from '../../core/formatters.js';
+import { getAdminSpecialties } from '../users/users-service.js';
+import { getAdminMetrics, observedMinutes } from './metrics-service.js';
 
-function formatAverageLabel(minutes) {
-    return Number.isFinite(minutes) ? `${minutes} min` : "No disponible";
+const node = id => document.getElementById(id);
+const text = (id, value) => { if (node(id)) node(id).textContent = value; };
+const states = { RESERVADO: 'Reservado', PENDIENTE: 'Pendiente', PRESENTE: 'Presente', EN_ATENCION: 'En atención', COMPLETADO: 'Completado', CANCELADO: 'Cancelado', AUSENTE: 'Ausente (histórico)' };
+const priorities = { ALTA: 'Alta', MEDIA: 'Media', BAJA: 'Baja' };
+const clearNumbers = () => document.querySelectorAll('[id^="metricas"], [id^="adminMetric"]').forEach(element => { if (['P', 'STRONG'].includes(element.tagName)) element.textContent = '—'; });
+
+export async function initAdminDashboardMetrics() {
+    text('adminFechaActual', formatToday()); clearNumbers();
+    const today = todayInputValue();
+    try {
+        const data = await getAdminMetrics({ desde: today, hasta: today });
+        const user = data.usuarios, summary = data.resumen;
+        for (const [id, value] of Object.entries({ adminMetricUsuarios: user.total, adminMetricPacientes: user.pacientes,
+            adminMetricMedicos: user.medicos_activos, adminMetricSecretarias: user.secretarias_activas,
+            adminMetricTurnosDia: summary.reservas_activas, adminMetricPresentes: data.estados.PRESENTE,
+            adminMetricAtencion: data.estados.EN_ATENCION, adminMetricReprogramaciones: summary.propuestas_en_espera })) text(id, value);
+    } catch (error) { pageMessage(errorMessage(error), 'danger'); }
 }
 
-export function renderMetricCards(summary, setText) {
-    setText("metricasTotalTurnos", summary.totalTurns);
-    setText("metricasCompletados", summary.completed);
-    setText("metricasCancelados", summary.canceled);
-    setText("metricasAusentes", summary.absent);
-    setText("metricasEsperaPromedio", formatAverageLabel(summary.averageWaitMinutes));
-    setText("metricasAtencionPromedio", formatAverageLabel(summary.averageAttentionMinutes));
-    setText("metricasPrioridadFrecuente", summary.mostFrequentPriority);
-    setText("metricasTasaAusentismo", `${summary.absenteeismRate}%`);
+function distribution(data) {
+    const slices = Object.entries(data.prioridades).map(([label, count]) => ({ label: priorities[label], count, color: { ALTA: '#dc3545', MEDIA: '#ffc107', BAJA: '#198754' }[label] }));
+    slices.push({ label: 'Sin triaje específico', count: data.sin_triaje, color: '#6c757d' });
+    let percent = 0;
+    const stops = slices.map(slice => { const start = percent; percent += data.resumen.total ? slice.count * 100 / data.resumen.total : 0; return `${slice.color} ${start}% ${percent}%`; });
+    node('metricasPrioridadDistribucion').innerHTML = data.resumen.total ? `<div class="metric-donut-layout"><div class="metric-donut" style="background:conic-gradient(${stops.join(',')})"><div class="metric-donut-center"><strong>${data.resumen.total} registros</strong></div></div><div class="metric-donut-legend">${slices.map(slice => `<div class="metric-donut-legend-item"><span class="metric-donut-dot" style="background-color:${slice.color}"></span><span>${slice.label}: ${slice.count}</span></div>`).join('')}</div></div>` : '<p class="text-secondary">Sin datos disponibles.</p>';
 }
 
-export function renderPriorityDistribution(priorityContainer, distribution, total) {
-    let accumulatedPercent = 0;
-    const gradientStops = total === 0
-        ? "#e9ecef 0 100%"
-        : distribution.map((slice) => {
-            const slicePercent = (slice.count / total) * 100;
-            const start = accumulatedPercent;
-            const end = accumulatedPercent + slicePercent;
-            accumulatedPercent = end;
-
-            return `${slice.color} ${start}% ${end}%`;
-        }).join(", ");
-
-    priorityContainer.innerHTML = `
-        <div class="metric-donut-layout">
-            <div class="metric-donut" style="background: conic-gradient(${gradientStops});" aria-label="Distribucion por prioridad">
-                <div class="metric-donut-center">
-                    <span class="text-secondary small">Total</span>
-                    <strong>${total} turnos</strong>
-                </div>
-            </div>
-            <div class="metric-donut-legend">
-                ${distribution.map((slice) => {
-                    const percent = total === 0 ? 0 : Math.round((slice.count / total) * 100);
-
-                    return `
-                        <div class="metric-donut-legend-item">
-                            <span class="metric-donut-dot" style="background-color: ${slice.color};"></span>
-                            <span class="fw-semibold">${escapeHtml(slice.label)}</span>
-                            <span class="text-secondary ms-auto">${slice.count} (${percent}%)</span>
-                        </div>
-                    `;
-                }).join("")}
-            </div>
-        </div>
-    `;
-}
-
-export function renderStateDistribution(stateTable, stateDistribution) {
-    stateTable.innerHTML = stateDistribution.map((state) => `
-        <tr>
-            <td>${renderStateText(state.label, escapeHtml)}</td>
-            <td class="fw-semibold">${state.count}</td>
-        </tr>
-    `).join("");
-}
-
-export function renderDoctorMetrics(doctorTable, doctorMetrics, helpers) {
-    const { doctors, fullName } = helpers;
-
-    if (doctors.length === 0) {
-        doctorTable.innerHTML = renderTableEmptyRow(8, "No hay medicos registrados.");
-        return;
+export async function initAdminMetrics() {
+    clearNumbers();
+    const form = node('adminMetricasFiltros'), filters = { desde: node('metricasFechaDesde'), hasta: node('metricasFechaHasta'), medico: node('metricasMedico'), especialidad: node('metricasEspecialidad'), estado: node('metricasEstado') };
+    const [specialties, doctors] = await Promise.all([getAdminSpecialties(), listAll('medicos/?incluir_inactivos=true')]);
+    filters.especialidad.replaceChildren(new Option('Todas', ''), ...specialties.map(s => new Option(s.nombre, s.id)));
+    filters.estado.replaceChildren(new Option('Todos', ''), ...Object.entries(states).map(([value, label]) => new Option(label, value)));
+    function doctorOptions() {
+        const selected = filters.medico.value, rows = doctors.filter(d => !filters.especialidad.value || String(d.especialidad.id) === filters.especialidad.value);
+        filters.medico.replaceChildren(new Option('Todos', ''), ...rows.map(d => new Option(`${d.nombre} ${d.apellido}`, d.id)));
+        filters.medico.value = rows.some(d => String(d.id) === selected) ? selected : '';
     }
-
-    doctorTable.innerHTML = doctorMetrics.map((metric) => `
-        <tr>
-            <td class="fw-semibold">${escapeHtml(fullName(metric.doctor))}</td>
-            <td>${escapeHtml(metric.doctor.especialidad || "-")}</td>
-            <td>${metric.total}</td>
-            <td>${metric.completed}</td>
-            <td>${metric.canceled}</td>
-            <td>${metric.absent}</td>
-            <td>${formatAverageLabel(metric.averageAttentionMinutes)}</td>
-            <td>Alta ${metric.priorityCounts.Alta || 0} | Media ${metric.priorityCounts.Media || 0} | Baja ${metric.priorityCounts.Baja || 0}</td>
-        </tr>
-    `).join("");
-}
-
-export function bindMetricsFilters(fields, metricsForm, renderMetrics) {
-    Object.values(fields).forEach((field) => {
-        field.addEventListener("input", renderMetrics);
-        field.addEventListener("change", renderMetrics);
-    });
-
-    metricsForm.addEventListener("reset", () => {
-        setTimeout(renderMetrics, 0);
-    });
-}
-
-export function initAdminDashboardMetrics(config) {
-    const {
-        fallbackData,
-        fullName,
-        mergeStoredTurns,
-        mergeStoredUsers,
-        roleMatches,
-        setText,
-        triajeByTurnId,
-        turnosList
-    } = config;
-    const dashboardMetric = document.getElementById("adminMetricUsuarios");
-
-    if (!dashboardMetric) {
-        return;
+    doctorOptions(); let version = 0;
+    async function refresh() {
+        const current = ++version; clearNumbers();
+        node('metricasPrioridadDistribucion').textContent = 'Consultando indicadores...';
+        for (const id of ['metricasEstadoTabla', 'metricasMedicosTabla']) node(id).innerHTML = '<tr><td colspan="8">Consultando indicadores...</td></tr>';
+        try {
+            const data = await getAdminMetrics(Object.fromEntries(Object.entries(filters).map(([key, field]) => [key, field.value])));
+            if (current !== version) return;
+            const s = data.resumen;
+            for (const [id, value] of Object.entries({ metricasTotalTurnos: s.total, metricasCompletados: s.completados,
+                metricasCancelados: s.cancelados, metricasAusentes: s.ausentes, metricasEsperaPromedio: observedMinutes(s.espera_promedio_minutos),
+                metricasAtencionPromedio: observedMinutes(s.atencion_promedio_minutos), metricasPrioridadFrecuente: s.prioridad_frecuente || 'Sin datos disponibles',
+                metricasTasaAusentismo: s.tasa_ausentismo_historico === null ? 'Sin datos disponibles' : `${s.tasa_ausentismo_historico}%` })) text(id, value);
+            node('metricasEsperaPromedio').title = `${s.muestras_espera} observaciones válidas (inicio − arribo).`;
+            node('metricasAtencionPromedio').title = `${s.muestras_atencion} consultas completas con inicio/cierre válidos.`;
+            node('metricasEstadoTabla').innerHTML = Object.entries(data.estados).map(([state, count]) => `<tr><td>${states[state]}</td><td>${count}</td></tr>`).join('');
+            node('metricasMedicosTabla').innerHTML = data.medicos.map(row => `<tr><td>${esc(row.medico__usuario__nombre + ' ' + row.medico__usuario__apellido)}</td><td>${esc(row.medico__especialidad__nombre)}</td><td>${row.total}</td><td>${row.completados}</td><td>${row.cancelados}</td><td>${row.ausentes}</td><td>${observedMinutes(row.atencion_promedio_minutos)}</td><td>Alta: ${row.alta}, Media: ${row.media}, Baja: ${row.baja}, Sin triaje: ${row.sin_triaje}</td></tr>`).join('') || '<tr><td colspan="8">Sin datos disponibles para los filtros seleccionados.</td></tr>';
+            distribution(data);
+            const box = node('apiPageMessage'); if (box) box.remove();
+        } catch (error) { if (current === version) { clearNumbers(); pageMessage(errorMessage(error), 'danger'); node('metricasPrioridadDistribucion').textContent = 'Sin datos disponibles.'; for (const id of ['metricasEstadoTabla', 'metricasMedicosTabla']) node(id).innerHTML = '<tr><td colspan="8">No fue posible consultar los indicadores.</td></tr>'; } }
     }
-
-    Promise.all([
-        loadMock(MOCK_PATHS.USERS, fallbackData.usuarios),
-        loadMock(MOCK_PATHS.APPOINTMENTS, fallbackData.turnos),
-        loadMock(MOCK_PATHS.AVAILABILITY, fallbackData.disponibilidad),
-        loadMock(MOCK_PATHS.TRIAGE, fallbackData.triaje)
-    ]).then(([usuariosData, turnosData, _disponibilidadData, triajeData]) => {
-        const users = mergeStoredUsers(usuariosData.usuarios || []);
-        const loggedUser = legacyUser();
-        const accessMessage = document.getElementById("adminAccesoMensaje");
-
-        if (!loggedUser || !roleMatches(loggedUser, "administrador")) {
-            if (accessMessage) {
-                accessMessage.classList.remove("d-none");
-            }
-
-            return;
-        }
-
-        const turns = mergeStoredTurns(turnosList(turnosData));
-        const triages = Array.isArray(triajeData.triajes) ? triajeData.triajes : [];
-        const summary = calculateAdminDashboardMetrics(users, turns, triages, {
-            normalizeState,
-            priorityLabel,
-            roleMatches,
-            today: todayInputValue(),
-            triajeByTurnId
-        });
-
-        setText("adminNombreNavbar", fullName(loggedUser));
-        setText("adminFechaActual", formatToday());
-        setText("adminMetricUsuarios", summary.totalUsers);
-        setText("adminMetricPacientes", summary.totalPatients);
-        setText("adminMetricMedicos", summary.totalDoctors);
-        setText("adminMetricSecretarias", summary.totalSecretaries);
-        setText("adminMetricTurnosDia", summary.todayTurns);
-        setText("adminMetricPresentes", summary.presentTurns);
-        setText("adminMetricAtencion", summary.activeAttentionTurns);
-        setText("adminMetricReprogramaciones", summary.pendingReschedules);
-    });
-}
-
-export function initAdminMetrics(config) {
-    const {
-        fallbackData,
-        doctorById,
-        fullName,
-        mergeStoredTurns,
-        mergeStoredUsers,
-        roleMatches,
-        setText,
-        triajeByTurnId,
-        turnosList
-    } = config;
-    const metricsForm = document.getElementById("adminMetricasFiltros");
-
-    if (!metricsForm) {
-        return;
-    }
-
-    Promise.all([
-        loadMock(MOCK_PATHS.USERS, fallbackData.usuarios),
-        loadMock(MOCK_PATHS.APPOINTMENTS, fallbackData.turnos),
-        loadMock(MOCK_PATHS.AVAILABILITY, fallbackData.disponibilidad),
-        loadMock(MOCK_PATHS.TRIAGE, fallbackData.triaje)
-    ]).then(([usuariosData, turnosData, _disponibilidadData, triajeData]) => {
-        const loggedUser = legacyUser();
-        const accessMessage = document.getElementById("adminMetricasAccesoMensaje");
-
-        if (!loggedUser || !roleMatches(loggedUser, "administrador")) {
-            if (accessMessage) {
-                accessMessage.classList.remove("d-none");
-            }
-
-            return;
-        }
-
-        const users = mergeStoredUsers(usuariosData.usuarios || []);
-        const doctors = users.filter((user) => roleMatches(user, "medico"));
-        const triages = Array.isArray(triajeData.triajes) ? triajeData.triajes : [];
-        const fields = {
-            from: document.getElementById("metricasFechaDesde"),
-            to: document.getElementById("metricasFechaHasta"),
-            doctor: document.getElementById("metricasMedico"),
-            specialty: document.getElementById("metricasEspecialidad"),
-            state: document.getElementById("metricasEstado")
-        };
-        const priorityContainer = document.getElementById("metricasPrioridadDistribucion");
-        const stateTable = document.getElementById("metricasEstadoTabla");
-        const doctorTable = document.getElementById("metricasMedicosTabla");
-        const turns = enrichTurnsForMetrics(
-            mergeStoredTurns(turnosList(turnosData)),
-            triages,
-            users,
-            { doctorById, priorityLabel, triajeByTurnId }
-        );
-        const states = ["Reservado", "Pendiente", "Presente", "En atención", "Completado", "Cancelado", "Ausente"];
-
-        function renderMetrics() {
-            const visibleTurns = filterTurnsByMetrics(turns, {
-                from: fields.from.value,
-                to: fields.to.value,
-                doctor: fields.doctor.value,
-                specialty: fields.specialty.value,
-                state: fields.state.value
-            }, {
-                doctorById,
-                normalizeState,
-                users
-            });
-            const summary = calculateMetricsSummary(visibleTurns, {
-                normalizeState,
-                priorityLabel
-            });
-            const priorityDistribution = calculatePriorityDistribution(visibleTurns, priorityLabel);
-            const stateDistribution = calculateStateDistribution(visibleTurns, states, normalizeState);
-            const doctorMetrics = calculateDoctorMetrics(visibleTurns, doctors, {
-                normalizeState,
-                priorityLabel
-            });
-
-            renderMetricCards(summary, setText);
-            renderPriorityDistribution(priorityContainer, priorityDistribution, priorityDistribution.reduce((total, item) => total + item.count, 0));
-            renderStateDistribution(stateTable, stateDistribution);
-            renderDoctorMetrics(doctorTable, doctorMetrics, { doctors, fullName });
-        }
-
-        setText("adminMetricasNavbar", fullName(loggedUser));
-        fillSelect(fields.doctor, "Todos", doctors, (doctor) => String(doctor.id_medico), (doctor) => fullName(doctor));
-        fillSelect(fields.specialty, "Todas", [...new Set(doctors.map((doctor) => doctor.especialidad).filter(Boolean))], (specialty) => specialty, (specialty) => specialty);
-        fillSelect(fields.state, "Todos", [...new Set(turns.map((turn) => turn.estado).filter(Boolean))], (state) => state, (state) => state);
-        bindMetricsFilters(fields, metricsForm, renderMetrics);
-        renderMetrics();
-    });
+    filters.especialidad.addEventListener('change', doctorOptions);
+    Object.values(filters).forEach(field => field.addEventListener('change', refresh));
+    form.addEventListener('submit', event => { event.preventDefault(); refresh(); });
+    form.addEventListener('reset', () => setTimeout(() => { doctorOptions(); refresh(); }, 0));
+    await refresh();
 }

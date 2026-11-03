@@ -10,7 +10,7 @@ export function initAccountProfile() {
         matricula:user.perfil?.matricula || '', especialidad:user.perfil?.especialidad?.nombre || '' };
     form.querySelectorAll('input:not([type="password"])').forEach(input => {
         const key = input.name || Object.keys(values).find(k => input.id.toLowerCase().endsWith(k.toLowerCase()));
-        if (key && Object.hasOwn(values,key)) input.value = values[key];
+        if (key && Object.hasOwn(values,key)) { input.value = values[key]; input.defaultValue = values[key]; }
         input.readOnly = true;
     });
     pageMessage('Sus datos se consultan desde la cuenta. En esta pantalla puede cambiar su contraseña.', 'info');

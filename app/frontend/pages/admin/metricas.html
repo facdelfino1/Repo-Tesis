@@ -60,6 +60,7 @@
                         <i class="bi bi-funnel"></i>
                     </span>
                 </div>
+                <p class="text-secondary small">Los registros usan la fecha actual del turno. Espera observada: llegada a inicio; atención: inicio a cierre, solo con timestamps válidos. Ausentismo histórico: AUSENTE / (AUSENTE + COMPLETADO). Sin muestras se indica «Sin datos disponibles».</p>
                 <form id="adminMetricasFiltros" class="row g-3">
                     <div class="col-12 col-md-6 col-xl">
                         <label for="metricasFechaDesde" class="form-label">Fecha desde</label>
@@ -97,14 +98,14 @@
         </section>
 
         <section class="row g-3 mb-4">
-            <div class="col-6 col-xl-3"><article class="card dashboard-card border-0 shadow-sm h-100"><div class="card-body"><p class="text-secondary small mb-1">Total de turnos</p><p class="h4 fw-bold mb-0" id="metricasTotalTurnos">0</p></div></article></div>
-            <div class="col-6 col-xl-3"><article class="card dashboard-card border-0 shadow-sm h-100"><div class="card-body"><p class="text-secondary small mb-1">Completados</p><p class="h4 fw-bold mb-0" id="metricasCompletados">0</p></div></article></div>
-            <div class="col-6 col-xl-3"><article class="card dashboard-card border-0 shadow-sm h-100"><div class="card-body"><p class="text-secondary small mb-1">Cancelados</p><p class="h4 fw-bold mb-0" id="metricasCancelados">0</p></div></article></div>
-            <div class="col-6 col-xl-3"><article class="card dashboard-card border-0 shadow-sm h-100"><div class="card-body"><p class="text-secondary small mb-1">Ausentes</p><p class="h4 fw-bold mb-0" id="metricasAusentes">0</p></div></article></div>
-            <div class="col-6 col-xl-3"><article class="card dashboard-card border-0 shadow-sm h-100"><div class="card-body"><p class="text-secondary small mb-1">Espera promedio</p><p class="h5 fw-bold mb-0" id="metricasEsperaPromedio">No disponible</p></div></article></div>
-            <div class="col-6 col-xl-3"><article class="card dashboard-card border-0 shadow-sm h-100"><div class="card-body"><p class="text-secondary small mb-1">Atención promedio</p><p class="h5 fw-bold mb-0" id="metricasAtencionPromedio">No disponible</p></div></article></div>
+            <div class="col-6 col-xl-3"><article class="card dashboard-card border-0 shadow-sm h-100"><div class="card-body"><p class="text-secondary small mb-1">Registros de turnos</p><p class="h4 fw-bold mb-0" id="metricasTotalTurnos">—</p></div></article></div>
+            <div class="col-6 col-xl-3"><article class="card dashboard-card border-0 shadow-sm h-100"><div class="card-body"><p class="text-secondary small mb-1">Completados</p><p class="h4 fw-bold mb-0" id="metricasCompletados">—</p></div></article></div>
+            <div class="col-6 col-xl-3"><article class="card dashboard-card border-0 shadow-sm h-100"><div class="card-body"><p class="text-secondary small mb-1">Cancelados</p><p class="h4 fw-bold mb-0" id="metricasCancelados">—</p></div></article></div>
+            <div class="col-6 col-xl-3"><article class="card dashboard-card border-0 shadow-sm h-100"><div class="card-body"><p class="text-secondary small mb-1">Ausentes</p><p class="h4 fw-bold mb-0" id="metricasAusentes">—</p></div></article></div>
+            <div class="col-6 col-xl-3"><article class="card dashboard-card border-0 shadow-sm h-100"><div class="card-body"><p class="text-secondary small mb-1">Espera observada promedio</p><p class="h5 fw-bold mb-0" id="metricasEsperaPromedio">No disponible</p></div></article></div>
+            <div class="col-6 col-xl-3"><article class="card dashboard-card border-0 shadow-sm h-100"><div class="card-body"><p class="text-secondary small mb-1">Atención observada promedio</p><p class="h5 fw-bold mb-0" id="metricasAtencionPromedio">No disponible</p></div></article></div>
             <div class="col-6 col-xl-3"><article class="card dashboard-card border-0 shadow-sm h-100"><div class="card-body"><p class="text-secondary small mb-1">Prioridad frecuente</p><p class="h5 fw-bold mb-0" id="metricasPrioridadFrecuente">-</p></div></article></div>
-            <div class="col-6 col-xl-3"><article class="card dashboard-card border-0 shadow-sm h-100"><div class="card-body"><p class="text-secondary small mb-1">Tasa de ausentismo</p><p class="h4 fw-bold mb-0" id="metricasTasaAusentismo">0%</p></div></article></div>
+            <div class="col-6 col-xl-3"><article class="card dashboard-card border-0 shadow-sm h-100"><div class="card-body"><p class="text-secondary small mb-1">Ausentismo histórico (cierres)</p><p class="h4 fw-bold mb-0" id="metricasTasaAusentismo">—</p></div></article></div>
         </section>
 
         <div class="row g-4 mb-4">
@@ -142,11 +143,11 @@
                             <tr>
                                 <th>Médico</th>
                                 <th>Especialidad</th>
-                                <th>Asignados</th>
+                                <th>Registros</th>
                                 <th>Completados</th>
                                 <th>Cancelados</th>
                                 <th>Ausentes</th>
-                                <th>Atención promedio</th>
+                                <th>Atención observada promedio</th>
                                 <th>Prioridad</th>
                             </tr>
                         </thead>

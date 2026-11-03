@@ -6,21 +6,14 @@ let generation = 0;
 const frontendRoot = new URL('../../../', import.meta.url);
 const obsoleteKeys = ['usuarioActualMock','usuariosAdminMock','perfilAdminMock','perfilMedicoMock',
     'perfilSecretariaMock','perfilPacienteMock','disponibilidadPacienteMock','disponibilidadMedicoMock','disponibilidadSecretariaMock',
-    'reprogramacionMedicoMock','reprogramacionMasivaMock'];
+    'reprogramacionMedicoMock','reprogramacionMasivaMock','turnosPacienteMock','turnosMedicoMock',
+    'turnosSecretariaMock','pacientesSecretariaMock','triajesSecretariaMock'];
 
 export function clearLegacyIdentity() {
     for (const key of obsoleteKeys) { try { localStorage.removeItem(key); } catch {} }
-    try { sessionStorage.removeItem('disponibilidadSecretariaTemporal'); sessionStorage.removeItem('disponibilidadMedicoTemporal'); } catch {}
+    try { sessionStorage.removeItem('disponibilidadSecretariaTemporal'); sessionStorage.removeItem('disponibilidadMedicoTemporal'); sessionStorage.removeItem('solicitudTurnoPaciente'); sessionStorage.removeItem('turnoReservadoPaciente'); } catch {}
 }
 export function getCurrentUser() { return authenticatedUser; }
-export function legacyUser(user = authenticatedUser) {
-    if (!user) return null;
-    const role = user.rol.toLowerCase();
-    return { ...user, rol: role, id_usuario: user.id,
-        ...(role === 'paciente' ? { id_paciente: user.perfil.id, obra_social: user.perfil.obra_social } : {}),
-        ...(role === 'medico' ? { id_medico: user.perfil.id, especialidad: user.perfil.especialidad.nombre, matricula: user.perfil.matricula } : {}),
-        ...(role === 'secretaria' ? { id_secretaria: user.perfil.id, legajo: user.perfil.legajo } : {}) };
-}
 export async function refreshUser(force = false) {
     if (!checking || force) {
         const version = ++generation;
@@ -99,23 +92,3 @@ function installSessionNavigation() {
         catch (error) { if ([401,403].includes(error.status)) window.location.replace(loginUrl()); }
     });
 }
-export function protectLegacyOperations() {
-    pageMessage('Esta sección conserva datos de demostración. Las operaciones de turnos aún no están habilitadas.');
-    document.querySelector('main')?.addEventListener('submit', event => {
-        event.preventDefault(); event.stopImmediatePropagation();
-        pageMessage('Esta operación todavía no está habilitada.');
-    }, true);
-    document.querySelector('main')?.addEventListener('click', event => {
-        const button = event.target.closest('button');
-        if (!button || button.dataset.bsDismiss || ['detail','toggle-password'].includes(button.dataset.action)) return;
-        event.preventDefault(); event.stopImmediatePropagation();
-        pageMessage('Esta operación todavía no está habilitada.');
-    }, true);
-}
-
-// UI state helpers retained for unintegrated appointment flows; never identity.
-export function getSessionItem(key) { return sessionStorage.getItem(key); }
-export function setSessionItem(key,value) { sessionStorage.setItem(key,value); }
-export function removeSessionItem(key) { sessionStorage.removeItem(key); }
-export function readSessionJson(key,fallback) { try { return JSON.parse(getSessionItem(key)) ?? fallback; } catch { return fallback; } }
-export function writeSessionJson(key,value) { setSessionItem(key,JSON.stringify(value)); }

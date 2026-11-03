@@ -12,14 +12,14 @@ El proyecto consiste en el desarrollo de un sistema web orientado a optimizar la
 * CSS3
 * Bootstrap 5
 * JavaScript (ES Modules)
-* JSON Mock Data
+* API Django/DRF con sesión y CSRF
 
-## Backend (en desarrollo)
+## Backend
 
 * Python
 * Programación Orientada a Objetos
-* Django (próxima etapa)
-* PostgreSQL (próxima etapa)
+* Django 5.2 + Django REST Framework
+* PostgreSQL / Supabase
 
 ---
 
@@ -38,7 +38,7 @@ El proyecto consiste en el desarrollo de un sistema web orientado a optimizar la
 * Gestión de turnos
 * Creación, edición y cancelación de turnos
 * Registro de presencia del paciente
-* Cierre de consultas
+* Consulta del estado de atención (el Médico inicia/finaliza)
 * Reprogramación masiva
 * Gestión de disponibilidad médica
 
@@ -57,7 +57,7 @@ El proyecto consiste en el desarrollo de un sistema web orientado a optimizar la
 
 # Arquitectura del Frontend
 
-El frontend fue desarrollado siguiendo una arquitectura modular para facilitar el mantenimiento, la escalabilidad y la futura integración con el backend.
+El frontend fue desarrollado siguiendo una arquitectura modular para facilitar el mantenimiento, la escalabilidad y la integración con el backend.
 
 
 assets/js/
@@ -78,43 +78,28 @@ Esta estructura separa la infraestructura compartida, los componentes reutilizab
 
 ---
 
-# Estado del Backend
+# Estado de la integración
 
-Actualmente se encuentra implementada una primera capa de lógica de negocio desarrollada en Python mediante Programación Orientada a Objetos.
+Django/PostgreSQL es la fuente de verdad para sesión, cuentas internas,
+catálogos, disponibilidad, turnos, triaje y propuestas de reprogramación.
+Administrador es un rol de Usuario; no existe una tabla/perfil Administrador.
+La reprogramación usa una nueva fecha explícita y bloques reales de la misma
+agenda, sin predicción ni creación automática de capacidad.
 
-Se dispone de modelos para representar las principales entidades del sistema:
+B7.5 conecta Administración y métricas agregadas reales y retira los mocks y
+la persistencia local de dominio. El registro público y la edición propia de
+datos personales no tienen endpoint aprobado y permanecen deshabilitados.
+El cambio/recuperación de contraseña sí utiliza Django.
 
-* Usuario
-* Administrador
-* Médico
-* Paciente
-* Secretaria
-* Turno
+Las medias observadas requieren timestamps válidos. No hay un algoritmo aprobado
+de demora estimada: el indicador informa ausencia de datos y no muestra una
+predicción ficticia. Si la estimación es un objetivo obligatorio del TFG,
+necesita definición y validación funcional antes de implementarse.
 
-Además, se implementó una primera versión del servicio de triaje capaz de calcular la prioridad del paciente y simular la generación de una cola de atención.
-
-La integración con Django, PostgreSQL y el frontend forma parte de la siguiente etapa del proyecto.
-
----
-
-# Estado del Proyecto
-
-Actualmente el frontend utiliza datos simulados (*Mock Data*) para representar el comportamiento del sistema durante la etapa de desarrollo.
-
-Esta estrategia permitió implementar, validar y refactorizar toda la interfaz de usuario, los flujos funcionales y la arquitectura modular sin depender de la disponibilidad del backend.
-
-En las siguientes etapas, los datos simulados serán reemplazados progresivamente por información persistida mediante Django y PostgreSQL.
-
-
-# Estado actual del desarrollo
-
-* ✅ Frontend funcional.
-* ✅ Arquitectura modular implementada.
-* ✅ Flujos principales desarrollados.
-* ✅ Primera capa de lógica backend iniciada.
-* 🔄 Integración con Django en desarrollo.
-* 🔄 Integración con PostgreSQL pendiente.
-* 🔄 Comunicación Frontend–Backend pendiente.
+Para ejecución local, contratos, definiciones de métricas y verificaciones,
+consultar [la documentación backend](app/backend/README.md). El frontend y
+`/api/` se sirven desde el mismo origen; no se utiliza Live Server separado.
+La validación integral B8 sigue pendiente.
 
 ---
 

@@ -1,5 +1,6 @@
 from django.urls import include, path
 from rest_framework.routers import SimpleRouter
+from .metricas import MetricasAdminView
 
 from .views import (CsrfView, EspecialidadViewSet, LoginView, LogoutView, MeView,
                     PasswordChangeView, PasswordResetConfirmView, PasswordResetRequestView, UsuarioInternoViewSet,
@@ -22,6 +23,7 @@ router.register(r'medicos/(?P<medico_pk>[0-9]+)/propuestas', PropuestaAgendaView
 router.register(r'medicos/(?P<medico_pk>[0-9]+)/pendientes', PendienteAgendaViewSet, basename='pendiente-agenda')
 
 urlpatterns = [
+    path('admin/metricas/', MetricasAdminView.as_view(), name='admin-metricas'),
     path('medicos/<int:medico_pk>/reprogramacion/afectados/', ReprogramacionView.as_view(http_method_names=['get', 'head', 'options']), name='reprogramacion-afectados'),
     path('medicos/<int:medico_pk>/reprogramacion/', ReprogramacionView.as_view(http_method_names=['post', 'options']), name='reprogramacion'),
     path("auth/csrf/", CsrfView.as_view(), name="auth-csrf"),

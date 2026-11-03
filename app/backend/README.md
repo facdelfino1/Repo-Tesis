@@ -1052,3 +1052,81 @@ respuesta repetida/contradictoria, recuperación y cancelación con propuesta,
 aislamiento por médico/propietario y ausencia de escrituras locales de dominio.
 La regresión integral corresponde a B8; no se incorpora email ni administración
 o métricas finales en B7.4.
+
+### B7.5: Administración y métricas verificables
+
+Administración usa exclusivamente B2: listar/consultar/crear cuentas internas
+MEDICO y SECRETARIA, PATCH de campos admitidos y `is_active`. Médico requiere
+matrícula/especialidad real; Secretaría, legajo. El ID nunca se genera en JS.
+DNI/rol existentes no se envían en edición y no hay contraseña ajena ni DELETE.
+La clave de creación se envía con CSRF al serializer write-only de Django,
+se limpia al guardar/cerrar y no se almacena en storage. Los errores seguros del
+backend se muestran dentro del formulario. El backend sigue validando duplicados,
+roles/perfiles y cambios de especialidad con historial.
+
+Nuevo `GET /api/admin/metricas/`, exclusivo ADMINISTRADOR, solo lectura.
+Filtros opcionales: `desde`, `hasta` inclusivos por Turno.fecha actual,
+`medico` (Medico.pk), `especialidad` y `estado` canónico. Filtros desconocidos,
+rango invertido y valores inválidos devuelven 400. No devuelve turnos, pacientes,
+documentos, respuestas clínicas ni contraseñas. Los nombres de médicos del
+agrupamiento son los mismos datos de directorio ya autorizados al Administrador.
+Consultas ORM agregadas, sin tablas de métricas ni migraciones.
+
+Definiciones:
+- `total`: todos los registros del conjunto filtrado, incluidos cancelados y
+  pendientes. Las distribuciones por estado y médico usan ese mismo conjunto.
+- `reservas_activas`: RESERVADO + PRESENTE + EN_ATENCION; excluye PENDIENTE,
+  CANCELADO, COMPLETADO y AUSENTE. El dashboard Admin consulta solo hoy.
+- `completados`, `cancelados`, `ausentes`: conteos del estado exacto; AUSENTE
+  sigue siendo lectura histórica, no una transición nueva.
+- Espera observada media: AVG(inicio − arribo), en minutos, solo EN_ATENCION
+  o COMPLETADO con creación ≤ arribo ≤ inicio y ambos timestamps presentes.
+- Atención observada media: AVG(cierre − inicio), en minutos, solo COMPLETADO
+  con creación ≤ inicio ≤ cierre y ambos timestamps presentes.
+- `muestras_espera`/`muestras_atencion`: cantidad de pares válidos usados;
+  medias sin muestras son null. Cero minutos con timestamps iguales es real.
+- Ausentismo histórico de cierres: 100 × AUSENTE/(AUSENTE + COMPLETADO).
+  Excluye reservas, presentes, en atención, cancelados y pendientes del
+  denominador. Si no hay cierres, null. No pretende predecir ausentismo.
+- Prioridades: conteos de Triaje persistido ALTA/MEDIA/BAJA. Ausencia de fila
+  Triaje se muestra separada; nunca se convierte en BAJA. Prioridad frecuente:
+  categoría(s) de mayor frecuencia, todas si hay empate; null si no hay triajes.
+- Propuestas EN_ESPERA: filas persistidas de ese estado vinculadas a los turnos
+  filtrados. No se cuentan cancelaciones como reprogramaciones ni se infiere
+  cantidad de procesos, porque el modelo no registra una entidad proceso.
+- Usuarios del dashboard: total de cuentas, pacientes registrados, médicos
+  activos y secretarias activas. Estos conteos globales no cambian por filtros
+  temporales/estado de Turno.
+
+Los contadores Médico/Secretaría ya leen sus endpoints autorizados B4/B5.
+Se refieren a los registros de la agenda/fecha consultada; los conteos por estado
+son exactos. Cambiar filtros visuales de nombre/DNI no cambia esa cohorte.
+Mientras se consulta o falla la lectura se muestra «—», no cero. Solo un GET
+exitoso vacío permite presentar conteo cero.
+
+Demora estimada: no hay contrato/algoritmo real aprobado en B1–B6; se presenta
+«Sin datos disponibles». La duración del bloque proviene de agenda y las medias
+observadas no se usan como predicción. No se implementa ocupación porcentual:
+no existe un indicador aprobado con denominador definido en la UI actual.
+Brecha si el TFG exige estimación de demora: acordar cohorte/alcance por médico,
+datos observables y validación de una regla antes de añadir un endpoint estimado.
+No se inventa fórmula ni ventana temporal en B7.5.
+
+Registro público: sin endpoint aprobado, formulario deshabilitado con explicación.
+Datos propios de perfil: solo lectura; cambio de clave y recuperación conservan
+B2/B7.1. Restablecer el formulario conserva identidad real. La pantalla histórica
+de cierre de Secretaría muestra una derivación a Gestión de turnos: el cierre
+clínico corresponde al Médico.
+
+Retirados `core/storage.js`, constantes de mocks/storage, los tres adaptadores
+legacy de appointments y los cinco JSON frontend. Se reescriben users/metrics
+para API y se conserva únicamente la función pura de previsualización de bloques
+de disponibilidad usada por B7.1. No se cambian reglas de triaje. Session mantiene
+solo limpieza de claves históricas conocidas; no escribe dominio en storage.
+No hay preferencias visuales persistidas que requieran almacenamiento local.
+
+Pruebas: API B2 y nuevas métricas con PostgreSQL aislado; navegación con los cuatro
+roles, CRUD/activación/duplicados, medias y filtros controlados, diferencia null/0,
+permisos, actualización tras operación real y ausencia de lecturas mock/escrituras
+locales. Las reglas B1–B6 y migraciones existentes permanecen intactas. B8 queda
+reservado para la validación integral, sin ejecutarlo como parte de B7.5.

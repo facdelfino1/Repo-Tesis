@@ -55,7 +55,7 @@ export async function initOperationalAgenda(mode) {
     const filterDni = node(doctorMode ? 'agendaMedicaFiltroDni' : presence ? 'presenciaFiltroDni' : 'filtroDniTurno');
     const filterName = node(doctorMode ? 'agendaMedicaFiltroPaciente' : presence ? 'presenciaFiltroPaciente' : 'filtroPacienteTurno');
     const filterPriority = node('agendaMedicaFiltroPrioridad');
-    let doctor = doctorMode ? await getDoctor(user.perfil.id) : null, rows = [], generation = 0, busy = false;
+    let doctor = doctorMode ? await getDoctor(user.perfil.id) : null, rows = [], generation = 0, busy = false, loaded = false;
     const columns = doctorMode ? dashboard ? 7 : 8 : dashboard ? 6 : presence ? 9 : 10;
     if (date && (presence || doctorMode)) date.value = todayInputValue();
     setText('medicoFechaActual', formatDate(todayInputValue())); setText('secretariaFechaActual', formatDate(todayInputValue()));
@@ -82,20 +82,22 @@ export async function initOperationalAgenda(mode) {
                 : presence ? [patient, dni, esc(name(turn.medico)), esc(turn.medico.especialidad.nombre), hour(turn), badge(turn), state, time(turn.fecha_hora_arribo), actions(turn)]
                 : [patient, dni, esc(name(turn.medico)), esc(turn.medico.especialidad.nombre), turn.estado === 'PENDIENTE' ? 'Sin asignación vigente' : formatDate(turn.fecha), hour(turn), badge(turn), state, 'Sistema', actions(turn)];
             return `<tr>${values.map(value => `<td>${value}</td>`).join('')}</tr>`;
-        }).join('') || `<tr><td colspan="${columns}">${doctor ? 'No hay turnos para los filtros seleccionados.' : 'Seleccione un médico para consultar su agenda.'}</td></tr>`;
+        }).join('') || `<tr><td colspan="${columns}">${doctor ? loaded ? 'No hay turnos para los filtros seleccionados.' : 'Datos de agenda no disponibles o en consulta.' : 'Seleccione un médico para consultar su agenda.'}</td></tr>`;
         const counts = state => rows.filter(turn => turn.estado === state).length;
-        for (const [id, value] of Object.entries({ medicoMetricTurnosDia: rows.length, medicoMetricPresentes: counts('PRESENTE'), medicoMetricAtencion: counts('EN_ATENCION'), medicoMetricCompletadas: counts('COMPLETADO'), metricTurnosDia: rows.length, metricPresentes: counts('PRESENTE'), metricPendientes: counts('PENDIENTE'), metricAtencion: counts('EN_ATENCION'), metricCompletados: counts('COMPLETADO'), metricCancelados: counts('CANCELADO'), presenciaMetricReservados: counts('RESERVADO'), presenciaMetricPresentes: counts('PRESENTE'), presenciaMetricPendientes: counts('PENDIENTE') })) setText(id, doctor ? value : '—');
-        setText('medicoMetricProximo', rows.find(turn => turn.estado === 'RESERVADO')?.hora.slice(0, 5) || 'Sin turnos');
+        for (const [id, value] of Object.entries({ medicoMetricTurnosDia: rows.length, medicoMetricPresentes: counts('PRESENTE'), medicoMetricAtencion: counts('EN_ATENCION'), medicoMetricCompletadas: counts('COMPLETADO'), metricTurnosDia: rows.length, metricPresentes: counts('PRESENTE'), metricPendientes: counts('PENDIENTE'), metricAtencion: counts('EN_ATENCION'), metricCompletados: counts('COMPLETADO'), metricCancelados: counts('CANCELADO'), presenciaMetricReservados: counts('RESERVADO'), presenciaMetricPresentes: counts('PRESENTE'), presenciaMetricPendientes: counts('PENDIENTE') })) setText(id, doctor && loaded ? value : '—');
+        setText('medicoMetricProximo', doctor && loaded ? rows.find(turn => turn.estado === 'RESERVADO')?.hora.slice(0, 5) || 'Sin turnos' : 'Sin datos disponibles');
         setText('secretariaResumenJornada', doctor ? `Agenda de ${name(doctor)}` : 'Seleccione un médico');
     }
     async function refresh() {
         const version = ++generation, current = doctor;
+        loaded = false;
         if (!current) { rows = []; render(); return; }
+        render();
         table.innerHTML = `<tr><td colspan="${columns}">Consultando agenda...</td></tr>`;
         try {
             const data = await getAgendaTurns(current.id, dashboard ? todayInputValue() : date?.value || '');
             if (version !== generation) return;
-            rows = data; render();
+            rows = data; loaded = true; render();
         } catch (error) {
             if (version !== generation) return;
             rows = []; render(); throw error;
@@ -108,9 +110,9 @@ export async function initOperationalAgenda(mode) {
             const controls = document.createElement('div'); controls.className = 'row g-3 mb-3';
             controls.innerHTML = '<div class="col-md-6"><label class="form-label" for="agendaEspecialidad">Especialidad</label><select id="agendaEspecialidad" class="form-select"></select></div><div class="col-md-6"><label class="form-label" for="agendaMedico">Médico</label><select id="agendaMedico" class="form-select"></select></div>';
             table.closest('section').querySelector('.table-responsive').before(controls); specialty = node('agendaEspecialidad'); select = node('agendaMedico');
-            setText('secretariaAlertasOperativas', 'Seleccione un médico. Las propuestas y métricas finales se integrarán en los siguientes bloques.');
+            setText('secretariaAlertasOperativas', 'Los conteos corresponden al médico seleccionado y a la fecha consultada. Las propuestas se consultan en Reprogramación.');
         }
-        await bindDoctorSelectors(specialty, select, async (value, error) => { doctor = value; ++generation; rows = []; render(); if (error) feedback(message, errorMessage(error)); else await reload(); });
+        await bindDoctorSelectors(specialty, select, async (value, error) => { doctor = value; loaded = false; ++generation; rows = []; render(); if (error) feedback(message, errorMessage(error)); else await reload(); });
     }
     [date, filterDni, filterName, filterState, filterPriority].filter(Boolean).forEach(control => control.addEventListener('input', () => control === date ? reload() : render()));
     document.querySelectorAll('main form:not([data-form])').forEach(form => {

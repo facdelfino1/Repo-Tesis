@@ -74,7 +74,6 @@
                         <label for="adminUsuariosRolFiltro" class="form-label">Rol</label>
                         <select class="form-select" id="adminUsuariosRolFiltro">
                             <option value="">Todos</option>
-                            <option value="paciente">Pacientes</option>
                             <option value="medico">Medicos</option>
                             <option value="secretaria">Secretarias</option>
                         </select>
@@ -176,7 +175,7 @@
                             </div>
                             <div class="col-12 col-md-6 d-none" id="crearMedicoEspecialidadGrupo">
                                 <label for="crearUsuarioEspecialidad" class="form-label">Especialidad</label>
-                                <input type="text" class="form-control" id="crearUsuarioEspecialidad">
+                                <select class="form-select" id="crearUsuarioEspecialidad"></select>
                                 <div class="invalid-feedback" id="crearUsuarioEspecialidadError"></div>
                             </div>
                             <div class="col-12 d-none" id="crearSecretariaLegajoGrupo">
@@ -240,17 +239,13 @@
                             </div>
                             <div class="col-12 col-md-6 d-none" id="editarMedicoEspecialidadGrupo">
                                 <label for="editarUsuarioEspecialidad" class="form-label">Especialidad</label>
-                                <input type="text" class="form-control" id="editarUsuarioEspecialidad">
+                                <select class="form-select" id="editarUsuarioEspecialidad"></select>
                                 <div class="invalid-feedback" id="editarUsuarioEspecialidadError"></div>
                             </div>
                             <div class="col-12 d-none" id="editarSecretariaLegajoGrupo">
                                 <label for="editarUsuarioLegajo" class="form-label">Legajo</label>
                                 <input type="text" class="form-control" id="editarUsuarioLegajo">
                                 <div class="invalid-feedback" id="editarUsuarioLegajoError"></div>
-                            </div>
-                            <div class="col-12 d-none" id="editarPacienteObraSocialGrupo">
-                                <label for="editarUsuarioObraSocial" class="form-label">Obra social</label>
-                                <input type="text" class="form-control" id="editarUsuarioObraSocial">
                             </div>
                         </div>
                     </div>

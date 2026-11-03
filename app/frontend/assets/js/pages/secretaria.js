@@ -19,8 +19,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             await availability.initSecretaryAvailability(); return;
         }
         if (location.pathname.endsWith('/finalizar-consulta.html')) {
+            document.querySelector('main').replaceChildren();
             session.pageMessage('El cierre corresponde al M\u00e9dico. Consulte el estado real en Gesti\u00f3n de turnos.', 'info');
-            document.querySelectorAll('main input, main select, main button').forEach(node => { node.disabled = true; }); return;
+            const link = document.createElement('a'); link.href = 'gestion-turnos.html'; link.className = 'btn btn-primary'; link.textContent = 'Ir a Gestión de turnos'; document.querySelector('main').append(link); return;
         }
         const { initOperationalAgenda } = await import(new URL('../features/appointments/agenda-ui.js', pageScriptUrl));
         await initOperationalAgenda(document.getElementById('secretariaAgendaDia') ? 'dashboard' : document.getElementById('presenciaTabla') ? 'presence' : 'management');

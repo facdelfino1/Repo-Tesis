@@ -13,11 +13,6 @@ export async function getAssignableAvailability(doctorId) {
     // Presentation only; the backend revalidates time, state and consumers on every write.
     return rows.filter(row => new Date(`${row.fecha}T${row.hora_inicio}`).getTime() > Date.now());
 }
-export function legacyDoctor(doctor) {
-    return { ...doctor, id_medico: doctor.id, rol:'medico', especialidad_id:doctor.especialidad.id,
-        especialidad:doctor.especialidad.nombre };
-}
-
 export async function bindDoctorSelectors(specialtySelect, doctorSelect, onChange = () => {}) {
     const specialties = await getSpecialties();
     let doctors = [];
