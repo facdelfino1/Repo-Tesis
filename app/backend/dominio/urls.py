@@ -3,7 +3,7 @@ from rest_framework.routers import SimpleRouter
 
 from .views import (CsrfView, EspecialidadViewSet, LoginView, LogoutView, MeView,
                     PasswordChangeView, PasswordResetConfirmView, PasswordResetRequestView, UsuarioInternoViewSet,
-                    CatalogoEspecialidadViewSet, DisponibilidadViewSet, MedicoViewSet, TurnoPropioViewSet, TurnoAgendaViewSet)
+                    CatalogoEspecialidadViewSet, DisponibilidadViewSet, MedicoViewSet, TurnoPropioViewSet, TurnoAgendaViewSet, PacienteBusquedaViewSet)
 
 router = SimpleRouter()
 router.register("admin/usuarios", UsuarioInternoViewSet, basename="usuario-interno")
@@ -14,6 +14,8 @@ router.register(r"medicos/(?P<medico_pk>[0-9]+)/disponibilidades", Disponibilida
 
 router.register("turnos", TurnoPropioViewSet, basename="turno")
 router.register(r"medicos/(?P<medico_pk>[0-9]+)/turnos", TurnoAgendaViewSet, basename="turno-agenda")
+
+router.register("pacientes", PacienteBusquedaViewSet, basename="paciente-busqueda")
 
 urlpatterns = [
     path("auth/csrf/", CsrfView.as_view(), name="auth-csrf"),

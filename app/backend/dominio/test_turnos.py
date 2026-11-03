@@ -1,4 +1,4 @@
-﻿import secrets
+import secrets
 from datetime import time, timedelta
 from unittest.mock import patch
 
@@ -132,7 +132,7 @@ class ReservaAPITests(APITestCase):
         self.assertEqual(self.client.post(self.url(), self.payload(), format='json').status_code, 403)
         for role in ['MEDICO', 'SECRETARIA', 'ADMINISTRADOR']:
             self.client.force_login(self.users[role], backend='dominio.authentication.CuentaBackend')
-            self.assertEqual(self.reserve().status_code, 403)
+            self.assertEqual(self.reserve().status_code, 400 if role == 'SECRETARIA' else 403)
         self.client.logout()
         self.assertEqual(self.client.get(reverse('turno-list')).status_code, 403)
 

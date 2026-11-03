@@ -264,10 +264,42 @@ class TurnoPropioViewSet(viewsets.ReadOnlyModelViewSet):
             'medico__usuario', 'medico__especialidad', 'triaje').order_by('fecha', 'hora', 'pk')
 
 
+    def _operar(self, request, accion):
+        from . import turnos
+        from .serializers import AccionTurnoSerializer, ModificarTurnoSerializer
+        schema = ModificarTurnoSerializer if accion == 'modificar' else AccionTurnoSerializer
+        serializer = schema(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        functions = {'cancelar': turnos.cancelar_turno, 'modificar': turnos.modificar_turno,
+                     'presencia': turnos.registrar_presencia, 'iniciar': turnos.iniciar_consulta,
+                     'finalizar': turnos.finalizar_consulta}
+        args = {'medico_id': self.kwargs.get('medico_pk')}
+        if accion == 'modificar':
+            args['disponibilidad_id'] = serializer.validated_data['disponibilidad']
+        turno = functions[accion](request.user, self.kwargs['pk'], **args)
+        return Response(self.get_serializer(turno).data)
+
+    @action(detail=True, methods=['post'])
+    def cancelar(self, request, **kwargs):
+        return self._operar(request, 'cancelar')
+
+    @action(detail=True, methods=['post'])
+    def modificar(self, request, **kwargs):
+        return self._operar(request, 'modificar')
+
+
 class TurnoAgendaViewSet(TurnoPropioViewSet):
     def get_permissions(self):
         from .permissions import IsPaciente
-        return [IsPaciente() if self.request.method == 'POST' else IsGestorAgenda()]
+        from .permissions import IsSecretaria
+        if self.action == 'create':
+            return [IsLectorAgenda()]
+        if self.action in ('presencia', 'cancelar', 'modificar'):
+            return [IsSecretaria()]
+        if self.action in ('iniciar', 'finalizar'):
+            from .permissions import IsMedico
+            return [IsMedico()]
+        return [IsGestorAgenda()]
 
     def get_queryset(self):
         from .models import Turno
@@ -285,10 +317,42 @@ class TurnoAgendaViewSet(TurnoPropioViewSet):
         return rows.filter(**filters.validated_data).order_by('fecha', 'hora', 'pk')
 
     def create(self, request, **kwargs):
-        from .serializers import ReservaTurnoSerializer
+        from .serializers import ReservaTurnoSerializer, ReservaSecretariaSerializer
         from .turnos import reservar_turno
-        serializer = ReservaTurnoSerializer(data=request.data)
+        if request.user.rol not in (Usuario.Rol.PACIENTE, Usuario.Rol.SECRETARIA):
+            raise PermissionDenied()
+        schema = ReservaSecretariaSerializer if request.user.rol == Usuario.Rol.SECRETARIA else ReservaTurnoSerializer
+        serializer = schema(data=request.data)
         serializer.is_valid(raise_exception=True)
         turno = reservar_turno(request.user, kwargs['medico_pk'], serializer.validated_data['disponibilidad'],
-                               serializer.validated_data.get('respuestas'))
+                               serializer.validated_data.get('respuestas'), paciente_id=serializer.validated_data.get('paciente'))
         return Response(self.get_serializer(turno).data, status=status.HTTP_201_CREATED)
+
+
+    @action(detail=True, methods=['post'])
+    def presencia(self, request, **kwargs):
+        return self._operar(request, 'presencia')
+
+    @action(detail=True, methods=['post'])
+    def iniciar(self, request, **kwargs):
+        return self._operar(request, 'iniciar')
+
+    @action(detail=True, methods=['post'])
+    def finalizar(self, request, **kwargs):
+        return self._operar(request, 'finalizar')
+
+
+class PacienteBusquedaViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    from .permissions import IsSecretaria
+    from .serializers import PacienteConsultaSerializer
+    permission_classes = [IsSecretaria]
+    serializer_class = PacienteConsultaSerializer
+
+    def get_queryset(self):
+        from .models import Paciente
+        from .serializers import PacienteBusquedaSerializer
+        serializer = PacienteBusquedaSerializer(data=self.request.query_params)
+        serializer.is_valid(raise_exception=True)
+        return Paciente.objects.filter(usuario__dni=serializer.validated_data['dni'],
+            usuario__is_active=True, usuario__rol=Usuario.Rol.PACIENTE,
+            usuario__medico__isnull=True, usuario__secretaria__isnull=True).select_related('usuario').order_by('pk')

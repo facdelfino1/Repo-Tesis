@@ -643,3 +643,65 @@ fecha_hora_creacion, identidad y los locks en futuras operaciones; B6 definirá
 precedencia dentro del mismo médico: prioridad, creación, ID técnico. B4 no
 desplaza reservas ni asigna por prioridad. El registro de algoritmos usa los
 nombres canónicos del catálogo obligatorio, sin IDs fijos.
+
+## B5 — Ciclo operativo del turno
+
+Todas las acciones requieren sesión activa, perfil válido y CSRF. No se habilita
+PATCH genérico, edición de timestamps ni DELETE de Turno.
+
+| Acción (POST) | Actor | Transición/body |
+| --- | --- | --- |
+| turnos/{id}/cancelar/ | Paciente propio | RESERVADO -> CANCELADO; {} |
+| turnos/{id}/modificar/ | Paciente propio | RESERVADO -> RESERVADO; {"disponibilidad":123} |
+| medicos/{m}/turnos/{id}/presencia/ | Secretaría | RESERVADO -> PRESENTE; {} |
+| medicos/{m}/turnos/{id}/iniciar/ | Médico de la agenda | PRESENTE -> EN_ATENCION; {} |
+| medicos/{m}/turnos/{id}/finalizar/ | Médico de la agenda | EN_ATENCION -> COMPLETADO; {} |
+| medicos/{m}/turnos/{id}/cancelar/ | Secretaría | RESERVADO -> CANCELADO; {} |
+| medicos/{m}/turnos/{id}/modificar/ | Secretaría | RESERVADO -> RESERVADO; {"disponibilidad":123} |
+
+Prefijo /api/. Las acciones devuelven el Turno actualizado (200). Estado o contexto
+incompatible devuelve 409; entrada no permitida 400; rol/CSRF 403; recurso ajeno o
+inexistente 404. Presencia, inicio y cierre repetidos devuelven 409 sin sobrescribir
+fechas. Cancelación repetida devuelve 200 y nunca vuelve a tocar disponibilidad.
+
+La presencia solo se registra durante la fecha local programada, antes o después
+de la hora prevista. Inicio y cierre admiten cruzar medianoche. Los timestamps
+server-side deben cumplir creación <= arribo <= inicio <= cierre. Una incoherencia
+se rechaza sin completar ni reparar datos. Completar conserva el bloque OCUPADO y
+la duración planificada. Espera y duración real son diferencias derivables, no
+columnas nuevas. PENDIENTE no se genera; AUSENTE permanece solo histórico.
+
+El Paciente cancela con al menos dos horas de anticipación (exactamente dos pasa).
+Para modificar, el turno actual debe seguir siendo futuro; no se aplica la regla
+de dos horas. Secretaría puede cancelar o modificar RESERVADO vencido. Médico y
+Administrador no cancelan/modifican. Un médico inactivo no recibe reservas ni nuevas
+asignaciones y no puede iniciar/cerrar; Secretaría puede cancelar sus reservas.
+
+turnos.py mantiene atomic y el orden Medico -> Usuario relacionados por PK ->
+Turno -> Disponibilidad por PK. Valida bajo locks la asociación de origen: bloque
+OCUPADO, mismo médico/fecha/hora/duración y ningún otro consumidor no cancelado.
+Al cancelar conserva la FK histórica y Triaje, y libera solo ese bloque. Una
+cancelación repetida no libera el bloque si otra reserva ya lo reutilizó.
+
+Modificar preserva paciente, médico, especialidad derivada, creación, identidad,
+Triaje/prioridad/evaluación y atribución a Secretaría. Solo actualiza disponibilidad,
+fecha, hora y duración derivada del destino futuro DISPONIBLE del mismo médico.
+Origen libre, destino ocupado y Turno se guardan conjuntamente; fallo revierte todo.
+Destino igual al actual es no-op tras validar contexto y estado. No se intercambian
+bloques ocupados. No se conserva un historial completo de cada asignación anterior.
+
+POST medicos/{m}/turnos/ admite ahora Secretaría con paciente (PK positivo de
+Paciente), disponibilidad y respuestas cuando corresponde. Usa reservar_turno(),
+valida paciente activo/perfil, calcula el mismo triaje y guarda Turno.secretaria.
+No suplanta sesión ni crea pacientes. El Paciente sigue sin poder enviar paciente.
+La atribución secretaria identifica al creador, no al último editor.
+
+GET pacientes/?dni=... solo para Secretaría busca DNI exacto y devuelve una lista
+paginada de pacientes activos con perfil válido: id, nombre, apellido y dni. DNI no
+es único: múltiples coincidencias se conservan y se elige por PK. No expone email,
+contraseña ni otros datos de cuenta. No hay modificación de modelos/migraciones.
+
+B6 queda a cargo de pendientes, propuestas, aceptación/rechazo, reprogramación
+masiva y precedencia operativa por prioridad/antigüedad dentro del mismo médico.
+Las garantías transaccionales exigen usar estos servicios; ORM/SQL directo puede
+saltarlas. No hay integración frontend ni auditoría completa de cada acción en B5.

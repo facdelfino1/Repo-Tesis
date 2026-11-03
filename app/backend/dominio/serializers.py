@@ -299,3 +299,44 @@ class TurnoConsultaSerializer(serializers.ModelSerializer):
             return None
         return {'id_triaje': triaje.pk, 'respuesta_sintomas': triaje.respuesta_sintomas,
                 'nivel_prioridad': triaje.nivel_prioridad, 'fecha_hora_evaluacion': triaje.fecha_hora_evaluacion.isoformat()}
+
+
+class ReservaSecretariaSerializer(ReservaTurnoSerializer):
+    paciente = serializers.IntegerField(min_value=1)
+
+    def to_internal_value(self, data):
+        if isinstance(data, Mapping) and type(data.get('paciente')) is not int:
+            raise serializers.ValidationError({'paciente': 'Seleccione un identificador entero de paciente.'})
+        return super().to_internal_value(data)
+
+
+class ModificarTurnoSerializer(ReservaTurnoSerializer):
+    respuestas = None
+
+
+class AccionTurnoSerializer(serializers.Serializer):
+    def to_internal_value(self, data):
+        if not isinstance(data, Mapping) or data:
+            raise serializers.ValidationError({'detail': 'Esta acción no recibe campos.'})
+        return {}
+
+
+class PacienteBusquedaSerializer(serializers.Serializer):
+    dni = serializers.CharField(max_length=20, allow_blank=False)
+
+    def to_internal_value(self, data):
+        if 'dni' not in data or set(data) - {'dni', 'page'}:
+            raise serializers.ValidationError({'dni': 'Indique únicamente el DNI exacto a buscar.'})
+        return super().to_internal_value(data)
+
+
+class PacienteConsultaSerializer(serializers.ModelSerializer):
+    nombre = serializers.CharField(source='usuario.nombre', read_only=True)
+    apellido = serializers.CharField(source='usuario.apellido', read_only=True)
+    dni = serializers.CharField(source='usuario.dni', read_only=True)
+
+    class Meta:
+        from .models import Paciente
+        model = Paciente
+        fields = ('id', 'nombre', 'apellido', 'dni')
+        read_only_fields = fields
