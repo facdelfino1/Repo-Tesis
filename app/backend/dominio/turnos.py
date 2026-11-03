@@ -26,7 +26,7 @@ def _available(block):
         _validate_interval({'fecha': block.fecha, 'hora_inicio': block.hora_inicio, 'hora_fin': block.hora_fin})
     except ValidationError as error:
         raise AgendaConflict('El intervalo seleccionado ya no es válido para reservar.') from error
-    if block.turnos.exclude(estado=Turno.Estado.CANCELADO).exists():
+    if block.turnos.exclude(estado__in=[Turno.Estado.CANCELADO, Turno.Estado.PENDIENTE]).exists():
         raise AgendaConflict('No fue posible verificar la disponibilidad del horario.')
 
 
@@ -111,7 +111,7 @@ def _occupied(turno, block):
             or block.estado != Disponibilidad.Estado.OCUPADO
             or block.fecha != turno.fecha or block.hora_inicio != turno.hora
             or _duration(block) != turno.duracion_turno
-            or block.turnos.exclude(pk=turno.pk).exclude(estado=Turno.Estado.CANCELADO).exists()):
+            or block.turnos.exclude(pk=turno.pk).exclude(estado__in=[Turno.Estado.CANCELADO, Turno.Estado.PENDIENTE]).exists()):
         raise AgendaConflict('No fue posible verificar la asignación del turno. Actualice la información.')
 
 
@@ -172,6 +172,13 @@ def cancelar_turno(actor, turno_id, *, medico_id=None):
     turno, _, _ = _lock_turn(actor, turno_id, medico_id, (Usuario.Rol.PACIENTE, Usuario.Rol.SECRETARIA))
     if turno.estado == Turno.Estado.CANCELADO:
         return turno  # Never touch a block possibly reused since the first cancellation.
+    if turno.estado == Turno.Estado.PENDIENTE:
+        _timeline(turno, 1, timezone.now())
+        from .reprogramacion import anular_propuestas
+        anular_propuestas(turno)
+        turno.estado = Turno.Estado.CANCELADO
+        turno.save(update_fields=['estado'])
+        return turno
     if turno.estado != Turno.Estado.RESERVADO:
         raise AgendaConflict('El turno no se encuentra en un estado cancelable.')
     now = timezone.now()

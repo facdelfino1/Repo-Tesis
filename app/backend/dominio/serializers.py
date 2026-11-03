@@ -278,6 +278,7 @@ class ReservaTurnoSerializer(serializers.Serializer):
 class TurnoConsultaSerializer(serializers.ModelSerializer):
     medico = MedicoConsultaSerializer(read_only=True)
     paciente = serializers.IntegerField(source='paciente_id', read_only=True)
+    asignacion_vigente = serializers.SerializerMethodField()
     prioridad = serializers.SerializerMethodField()
     triaje = serializers.SerializerMethodField()
 
@@ -286,8 +287,11 @@ class TurnoConsultaSerializer(serializers.ModelSerializer):
         model = Turno
         fields = ('id_turno', 'paciente', 'medico', 'disponibilidad', 'fecha', 'hora', 'estado',
                   'duracion_turno', 'fecha_hora_creacion', 'fecha_hora_arribo', 'fecha_hora_inicio',
-                  'fecha_hora_cierre', 'prioridad', 'triaje')
+                  'fecha_hora_cierre', 'prioridad', 'triaje', 'asignacion_vigente')
         read_only_fields = fields
+
+    def get_asignacion_vigente(self, turno):
+        return turno.estado in ('RESERVADO', 'PRESENTE', 'EN_ATENCION')
 
     def get_prioridad(self, turno):
         triaje = getattr(turno, 'triaje', None)
@@ -340,3 +344,73 @@ class PacienteConsultaSerializer(serializers.ModelSerializer):
         model = Paciente
         fields = ('id', 'nombre', 'apellido', 'dni')
         read_only_fields = fields
+
+
+class ReprogramacionAlcanceSerializer(serializers.Serializer):
+    fecha_original = serializers.DateField()
+    hora_inicio = serializers.TimeField()
+    hora_fin = serializers.TimeField()
+
+    def to_internal_value(self, data):
+        if not isinstance(data, Mapping):
+            raise serializers.ValidationError({'detail': 'Envíe un objeto de reprogramación.'})
+        if set(data) - set(self.fields):
+            raise serializers.ValidationError({'detail': 'Se recibieron campos no permitidos.'})
+        return super().to_internal_value(data)
+
+    def validate(self, attrs):
+        if attrs['hora_fin'] <= attrs['hora_inicio']:
+            raise serializers.ValidationError({'hora_fin': 'Debe ser posterior al inicio.'})
+        for field in ('hora_inicio','hora_fin'):
+            value = attrs[field]
+            if value.tzinfo or value.second or value.microsecond:
+                raise serializers.ValidationError({field: 'Indique una hora con precisión de minutos.'})
+        return attrs
+
+
+class ReprogramacionSerializer(ReprogramacionAlcanceSerializer):
+    nueva_fecha = serializers.DateField()
+    turnos = serializers.ListField(child=serializers.IntegerField(min_value=1), allow_empty=False)
+    motivo = serializers.CharField(max_length=500, allow_blank=False)
+
+    def to_internal_value(self, data):
+        if isinstance(data, Mapping):
+            ids = data.get('turnos')
+            if type(ids) is not list or not ids or any(type(pk) is not int or pk <= 0 for pk in ids) or len(set(ids)) != len(ids):
+                raise serializers.ValidationError({'turnos': 'Seleccione IDs enteros positivos, sin duplicados.'})
+        return super().to_internal_value(data)
+
+
+class ProponerPendienteSerializer(serializers.Serializer):
+    nueva_fecha = serializers.DateField()
+    motivo = serializers.CharField(max_length=500, allow_blank=False)
+
+    def to_internal_value(self, data):
+        if not isinstance(data, Mapping) or set(data) - set(self.fields):
+            raise serializers.ValidationError({'detail': 'Indique únicamente nueva fecha y motivo.'})
+        return super().to_internal_value(data)
+
+
+class PropuestaConsultaSerializer(serializers.ModelSerializer):
+    vigente = serializers.SerializerMethodField()
+    reserva_garantizada = serializers.SerializerMethodField()
+
+    class Meta:
+        from .models import PropuestaReprogramacion
+        model = PropuestaReprogramacion
+        fields = ('id', 'turno', 'disponibilidad_origen', 'fecha_origen', 'hora_origen', 'duracion_origen',
+                  'disponibilidad_destino', 'fecha_destino', 'hora_inicio_destino', 'hora_fin_destino',
+                  'creada_por', 'motivo', 'estado', 'fecha_hora_creacion', 'fecha_hora_resolucion',
+                  'motivo_cierre', 'vigente', 'reserva_garantizada')
+        read_only_fields = fields
+
+    def get_vigente(self, proposal):
+        from .reprogramacion import destino_vigente
+        from .turnos import _valid_user
+        return (proposal.estado == 'EN_ESPERA' and proposal.turno.estado == 'PENDIENTE'
+                and _valid_user(proposal.turno.medico.usuario, Usuario.Rol.MEDICO)
+                and _valid_user(proposal.turno.paciente.usuario, Usuario.Rol.PACIENTE)
+                and destino_vigente(proposal))
+
+    def get_reserva_garantizada(self, proposal):
+        return False

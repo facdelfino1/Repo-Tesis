@@ -164,3 +164,40 @@ class Triaje(models.Model):
         super().clean()
         if not isinstance(self.respuesta_sintomas, dict):
             raise ValidationError({"respuesta_sintomas": "Las respuestas deben ser un objeto estructurado."})
+
+
+class PropuestaReprogramacion(models.Model):
+    class Estado(models.TextChoices):
+        EN_ESPERA = 'EN_ESPERA', 'En espera'
+        ACEPTADA = 'ACEPTADA', 'Aceptada'
+        RECHAZADA = 'RECHAZADA', 'Rechazada'
+        ANULADA = 'ANULADA', 'Anulada'
+        INVALIDADA = 'INVALIDADA', 'Invalidada'
+
+    turno = models.ForeignKey(Turno, on_delete=models.PROTECT, related_name='propuestas')
+    disponibilidad_origen = models.ForeignKey(Disponibilidad, on_delete=models.PROTECT, related_name='propuestas_origen', null=True)
+    fecha_origen = models.DateField()
+    hora_origen = models.TimeField()
+    duracion_origen = models.PositiveSmallIntegerField()
+    disponibilidad_destino = models.ForeignKey(Disponibilidad, on_delete=models.PROTECT, related_name='propuestas_destino')
+    fecha_destino = models.DateField()
+    hora_inicio_destino = models.TimeField()
+    hora_fin_destino = models.TimeField()
+    creada_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='propuestas_creadas')
+    motivo = models.CharField(max_length=500)
+    estado = models.CharField(max_length=12, choices=Estado.choices, default=Estado.EN_ESPERA)
+    fecha_hora_creacion = models.DateTimeField(default=timezone.now, editable=False)
+    fecha_hora_resolucion = models.DateTimeField(null=True, editable=False)
+    motivo_cierre = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['turno'], condition=models.Q(estado='EN_ESPERA'), name='propuesta_abierta_turno'),
+            models.UniqueConstraint(fields=['disponibilidad_destino'], condition=models.Q(estado='EN_ESPERA'), name='propuesta_abierta_destino'),
+            models.CheckConstraint(condition=~models.Q(disponibilidad_origen=models.F('disponibilidad_destino')), name='propuesta_bloques_distintos'),
+            models.CheckConstraint(condition=models.Q(hora_fin_destino__gt=models.F('hora_inicio_destino')), name='propuesta_intervalo_valido'),
+            models.CheckConstraint(condition=models.Q(duracion_origen__gt=0), name='propuesta_duracion_positiva'),
+            models.CheckConstraint(condition=models.Q(estado__in=['EN_ESPERA','ACEPTADA','RECHAZADA','ANULADA','INVALIDADA']), name='propuesta_estado_valido'),
+            models.CheckConstraint(condition=(models.Q(estado='EN_ESPERA', fecha_hora_resolucion__isnull=True) | (~models.Q(estado='EN_ESPERA') & models.Q(fecha_hora_resolucion__isnull=False))), name='propuesta_resolucion_estado'),
+            models.CheckConstraint(condition=models.Q(fecha_hora_resolucion__isnull=True) | models.Q(fecha_hora_resolucion__gte=models.F('fecha_hora_creacion')), name='propuesta_orden_temporal'),
+        ]

@@ -1,4 +1,4 @@
-﻿from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta
 from unittest.mock import patch
 
 from django.test import TransactionTestCase
@@ -210,7 +210,7 @@ class OperacionesTests(APITestCase):
         for state in ('PENDIENTE', 'PRESENTE', 'EN_ATENCION', 'COMPLETADO', 'AUSENTE'):
             turno.estado = state
             turno.save(update_fields=['estado'])
-            self.assertEqual(self.call('cancelar', turno).status_code, 409)
+            self.assertEqual(self.call('cancelar', turno).status_code, 200 if state == 'PENDIENTE' else 409)
             self.assertEqual(self.call('modificar', turno, {'disponibilidad': self.block.pk}).status_code, 409)
 
     def test_foreign_patient_cannot_change(self):

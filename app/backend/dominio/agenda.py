@@ -132,4 +132,6 @@ def delete_block(actor, medico_id, block_id):
     _editable_block(block)
     if block.turnos.exists():
         raise AgendaConflict("El bloque tiene historial de turnos y no se puede eliminar.")
+    if block.propuestas_origen.exists() or block.propuestas_destino.exists():
+        raise AgendaConflict("El bloque tiene historial de propuestas y no se puede eliminar.")
     block.delete()

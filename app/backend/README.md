@@ -705,3 +705,93 @@ B6 queda a cargo de pendientes, propuestas, aceptación/rechazo, reprogramación
 masiva y precedencia operativa por prioridad/antigüedad dentro del mismo médico.
 Las garantías transaccionales exigen usar estos servicios; ORM/SQL directo puede
 saltarlas. No hay integración frontend ni auditoría completa de cada acción en B5.
+
+## B6 — Reprogramación con nueva fecha explícita
+
+La reprogramación determinística no optimiza globalmente ni crea capacidad.
+Cada confirmación identifica un médico, fecha e intervalo originales, nueva_fecha,
+IDs explícitos de turnos RESERVADOS sin atención y motivo. Nueva fecha es obligatoria,
+no pasada y distinta de la original. Nunca se busca otra fecha ni otro médico.
+
+Los turnos se ordenan dentro de la misma agenda: CM/PED por ALTA/MEDIA/BAJA,
+fecha_hora_creacion e ID numérico. Especialidades sin algoritmo usan fecha/hora
+originales e ID, con prioridad null. Las mezclas o prioridades inconsistentes
+rechazan la operación completa antes de escribir.
+
+La declaración y generación inicial son una transacción: Medico -> Usuario por
+PK -> Turnos por PK -> Disponibilidades por PK -> Propuestas por PK. No se impone
+un máximo arbitrario de turnos. Bloques destino exclusivamente de nueva_fecha,
+DISPONIBLES, futuros, válidos y sin consumidor operativo, ordenados cronológicamente.
+Las ofertas abiertas de otros turnos no se duplican para el mismo destino.
+
+Turnos afectados pasan a PENDIENTE conservando asignación histórica, creación y
+Triaje. Orígenes pasan de OCUPADO a BLOQUEADO. Se bloquean también los bloques
+reales libres que solapan el intervalo confirmado; no se tocan reservas no
+seleccionadas ni se inventan intervalos. No hay cambios parciales ante selección
+inconsistente: 409 con turnos_rechazados. Capacidad insuficiente no es error:
+se crean las ofertas posibles y los restantes requieren revisión. Cero capacidad
+persiste igualmente los afectados pendientes, sin buscar otra fecha.
+
+Consumen/protegen bloque: RESERVADO, PRESENTE, EN_ATENCION, COMPLETADO y AUSENTE
+histórico conservador. PENDIENTE y CANCELADO no consumen. La FK histórica no se
+borra. Turno expone asignacion_vigente=false para PENDIENTE; fecha/hora almacenadas
+son referencia histórica. No hay prioridad recalculada ni antigüedad regenerada.
+
+PropuestaReprogramacion es persistente, con Turno, origen y destino protegidos,
+snapshots exactos, creador, motivo, estado y fechas server-side. No duplica paciente,
+médico, especialidad o triaje. Estados EN_ESPERA/ACEPTADA/RECHAZADA/ANULADA/INVALIDADA.
+Unicidad parcial por Turno y destino mientras EN_ESPERA; intervalos, resolución y
+estados se protegen también por constraints. Migración 0004 exclusivamente para
+esta entidad. No se crean tablas de Notificación, Proceso ni ListaEspera.
+
+Destino permanece DISPONIBLE: una propuesta NO garantiza reserva. Otra reserva
+normal puede obtenerlo antes. Aceptar exige revalidación y snapshot coincidente,
+Turno PENDIENTE y cuentas habilitadas. Actualiza el mismo Turno a RESERVADO,
+deriva duración del bloque y lo ocupa. No libera nuevamente el origen.
+Rechazar mantiene PENDIENTE y no toca bloques. Repetir la misma decisión devuelve
+200 sin reaplicar; decisión contradictoria devuelve 409. Un destino cambiado,
+ocupado, bloqueado o vencido invalida persistentemente la propuesta y devuelve
+409 tras confirmar esa invalidación; no se buscan alternativas automáticas.
+
+No hay vencimiento fijo. GET informa vigente sin escribir. Regenerar para un
+Pendiente requiere nuevamente nueva_fecha y motivo; invalida su oferta previa
+si ya dejó de ser aplicable. Una oferta todavía válida impide duplicación.
+Cancelar Pendiente no aplica dos horas ni libera FK histórica y anula oferta
+abierta. Reasignar directamente por Paciente propio/Secretaría exige bloque real
+futuro del mismo médico y anula oferta abierta en la misma transacción.
+
+### API B6 (prefijo /api/)
+
+| Método/ruta | Actor/body |
+| --- | --- |
+| GET medicos/{m}/reprogramacion/afectados/ | Médico propio/Secretaría; fecha_original, hora_inicio, hora_fin |
+| POST medicos/{m}/reprogramacion/ | Mismos; alcance, nueva_fecha, turnos, motivo |
+| POST medicos/{m}/turnos/{id}/propuestas/ | Mismos; nueva_fecha, motivo |
+| GET propuestas/ y propuestas/{id}/ | Paciente propietario |
+| POST propuestas/{id}/aceptar/ o rechazar/ | Paciente propietario; {} |
+| GET medicos/{m}/propuestas/ | Médico propio/Secretaría |
+| GET medicos/{m}/pendientes/ | Médico propio/Secretaría; precedencia de esa agenda |
+| POST turnos/{id}/reasignar/ | Paciente propio; disponibilidad |
+| POST medicos/{m}/turnos/{id}/reasignar/ | Secretaría; disponibilidad |
+
+Se extiende cancelar/ de B5 a PENDIENTE. Administrador no opera. Médico/Secretaría
+no responden en nombre del paciente. Body estricto: sin estado, prioridad,
+timestamps ni identidades alternativas. Sesión y CSRF B2. Respuesta de proceso:
+nueva_fecha, propuestas, requiere_revision, turnos_rechazados. 201 si crea ofertas,
+200 si no hay capacidad; conflictos 409, contratos 400, rol/CSRF 403, ajenos 404.
+
+Las propuestas consultables son la notificación interna; no se envía correo ni
+se afirma entrega. No hay cambios frontend ni documento TFG externo. B7 deberá
+integrar formularios con nueva fecha, propuestas propias, respuestas reales,
+pendientes sin horario vigente y recuperación; descartará almacenamiento local,
+IDs sintéticos y respuestas simuladas. No existe retención ni garantía de oferta.
+
+DER técnico de la extensión (relaciones derivadas evitan redundancia):
+
+```mermaid
+erDiagram
+    TURNO ||--o{ PROPUESTA_REPROGRAMACION : recibe
+    DISPONIBILIDAD o|--o{ PROPUESTA_REPROGRAMACION : origen_historico
+    DISPONIBILIDAD ||--o{ PROPUESTA_REPROGRAMACION : destino_ofrecido
+    USUARIO ||--o{ PROPUESTA_REPROGRAMACION : creada_por
+```

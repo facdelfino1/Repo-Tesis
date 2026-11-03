@@ -267,14 +267,16 @@ class TurnoPropioViewSet(viewsets.ReadOnlyModelViewSet):
     def _operar(self, request, accion):
         from . import turnos
         from .serializers import AccionTurnoSerializer, ModificarTurnoSerializer
-        schema = ModificarTurnoSerializer if accion == 'modificar' else AccionTurnoSerializer
+        schema = ModificarTurnoSerializer if accion in ('modificar', 'reasignar') else AccionTurnoSerializer
         serializer = schema(data=request.data)
         serializer.is_valid(raise_exception=True)
         functions = {'cancelar': turnos.cancelar_turno, 'modificar': turnos.modificar_turno,
                      'presencia': turnos.registrar_presencia, 'iniciar': turnos.iniciar_consulta,
                      'finalizar': turnos.finalizar_consulta}
+        from .reprogramacion import reasignar_pendiente
+        functions['reasignar'] = reasignar_pendiente
         args = {'medico_id': self.kwargs.get('medico_pk')}
-        if accion == 'modificar':
+        if accion in ('modificar', 'reasignar'):
             args['disponibilidad_id'] = serializer.validated_data['disponibilidad']
         turno = functions[accion](request.user, self.kwargs['pk'], **args)
         return Response(self.get_serializer(turno).data)
@@ -288,13 +290,18 @@ class TurnoPropioViewSet(viewsets.ReadOnlyModelViewSet):
         return self._operar(request, 'modificar')
 
 
+    @action(detail=True, methods=['post'])
+    def reasignar(self, request, **kwargs):
+        return self._operar(request, 'reasignar')
+
+
 class TurnoAgendaViewSet(TurnoPropioViewSet):
     def get_permissions(self):
         from .permissions import IsPaciente
         from .permissions import IsSecretaria
         if self.action == 'create':
             return [IsLectorAgenda()]
-        if self.action in ('presencia', 'cancelar', 'modificar'):
+        if self.action in ('presencia', 'cancelar', 'modificar', 'reasignar'):
             return [IsSecretaria()]
         if self.action in ('iniciar', 'finalizar'):
             from .permissions import IsMedico
@@ -342,6 +349,16 @@ class TurnoAgendaViewSet(TurnoPropioViewSet):
         return self._operar(request, 'finalizar')
 
 
+    @action(detail=True, methods=['post'])
+    def propuestas(self, request, **kwargs):
+        from .serializers import ProponerPendienteSerializer
+        from .reprogramacion import proponer_pendiente
+        serializer = ProponerPendienteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = proponer_pendiente(request.user, kwargs['medico_pk'], kwargs['pk'], **serializer.validated_data)
+        return Response(_resultado_reprogramacion(result), status=201 if result['propuestas'] else 200)
+
+
 class PacienteBusquedaViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     from .permissions import IsSecretaria
     from .serializers import PacienteConsultaSerializer
@@ -356,3 +373,105 @@ class PacienteBusquedaViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         return Paciente.objects.filter(usuario__dni=serializer.validated_data['dni'],
             usuario__is_active=True, usuario__rol=Usuario.Rol.PACIENTE,
             usuario__medico__isnull=True, usuario__secretaria__isnull=True).select_related('usuario').order_by('pk')
+
+
+
+def _resultado_reprogramacion(result):
+    from .serializers import PropuestaConsultaSerializer
+    return {**result, 'propuestas': PropuestaConsultaSerializer(result['propuestas'], many=True).data}
+
+
+class ReprogramacionView(APIView):
+    permission_classes = [IsGestorAgenda]
+
+    def _medico(self, request, medico_pk):
+        medico = get_object_or_404(Medico, pk=medico_pk)
+        if request.user.rol == Usuario.Rol.MEDICO and medico.usuario_id != request.user.pk:
+            raise NotFound()
+        return medico
+
+    def get(self, request, medico_pk):
+        from .models import Turno
+        from .serializers import ReprogramacionAlcanceSerializer, TurnoConsultaSerializer
+        medico = self._medico(request, medico_pk)
+        serializer = ReprogramacionAlcanceSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        rows = Turno.objects.filter(medico=medico, fecha=data['fecha_original'], estado='RESERVADO',
+            fecha_hora_arribo__isnull=True, fecha_hora_inicio__isnull=True, fecha_hora_cierre__isnull=True,
+            disponibilidad__hora_inicio__lt=data['hora_fin'], disponibilidad__hora_fin__gt=data['hora_inicio'])
+        return Response(TurnoConsultaSerializer(rows.order_by('hora','pk'), many=True).data)
+
+    def post(self, request, medico_pk):
+        from .serializers import ReprogramacionSerializer
+        from .reprogramacion import reprogramar
+        self._medico(request, medico_pk)
+        serializer = ReprogramacionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = reprogramar(request.user, medico_pk, **serializer.validated_data)
+        return Response(_resultado_reprogramacion(result), status=201 if result['propuestas'] else 200)
+
+
+class PropuestaViewSet(viewsets.ReadOnlyModelViewSet):
+    from .permissions import IsPaciente
+    from .serializers import PropuestaConsultaSerializer
+    permission_classes = [IsPaciente]
+    serializer_class = PropuestaConsultaSerializer
+    lookup_value_regex = '[0-9]+'
+
+    def get_queryset(self):
+        from .models import PropuestaReprogramacion
+        return PropuestaReprogramacion.objects.filter(turno__paciente__usuario=self.request.user).select_related(
+            'turno__medico__usuario', 'turno__paciente__usuario', 'disponibilidad_destino').order_by('-fecha_hora_creacion','pk')
+
+    def _responder(self, request, aceptar):
+        from .serializers import AccionTurnoSerializer
+        from .reprogramacion import responder
+        serializer = AccionTurnoSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        proposal, conflict = responder(request.user, self.kwargs['pk'], aceptar=aceptar)
+        data = self.get_serializer(proposal).data
+        if conflict:
+            return Response({'detail': 'La propuesta ya no es aplicable. Su turno sigue pendiente.', 'propuesta': data}, status=409)
+        return Response(data)
+
+    @action(detail=True, methods=['post'])
+    def aceptar(self, request, **kwargs):
+        return self._responder(request, True)
+
+    @action(detail=True, methods=['post'])
+    def rechazar(self, request, **kwargs):
+        return self._responder(request, False)
+
+
+class PropuestaAgendaViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    permission_classes = [IsGestorAgenda]
+    from .serializers import PropuestaConsultaSerializer
+    serializer_class = PropuestaConsultaSerializer
+
+    def get_queryset(self):
+        from .models import PropuestaReprogramacion
+        medico = get_object_or_404(Medico, pk=self.kwargs['medico_pk'])
+        if self.request.user.rol == Usuario.Rol.MEDICO and medico.usuario_id != self.request.user.pk:
+            raise NotFound()
+        return PropuestaReprogramacion.objects.filter(turno__medico=medico).select_related(
+            'turno__medico__usuario', 'turno__paciente__usuario', 'disponibilidad_destino').order_by('-fecha_hora_creacion','pk')
+
+
+class PendienteAgendaViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    permission_classes = [IsGestorAgenda]
+
+    def get_serializer_class(self):
+        from .serializers import TurnoConsultaSerializer
+        return TurnoConsultaSerializer
+    def get_queryset(self):
+        from .reprogramacion import ordenar_turnos, proyeccion
+        rows = TurnoAgendaViewSet.get_queryset(self).filter(estado='PENDIENTE')
+        turns = list(rows)
+        try:
+            ordered = ordenar_turnos([proyeccion(t) for t in turns])
+        except ValueError as error:
+            from .agenda import AgendaConflict
+            raise AgendaConflict(str(error)) from error
+        by_id = {t.pk:t for t in turns}
+        return [by_id[item['id']] for item in ordered]
