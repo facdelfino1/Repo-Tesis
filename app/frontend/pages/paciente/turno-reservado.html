@@ -21,10 +21,10 @@
         <section class="dashboard-hero rounded-4 p-4 p-lg-5 mb-4">
             <div class="row align-items-center g-4">
                 <div class="col-lg-8">
-                    <span class="badge text-bg-success mb-3">Turno reservado</span>
-                    <h1 class="h2 fw-bold mb-2">Su turno fue reservado</h1>
+                    <span class="badge text-bg-success mb-3" id="turnoDetalleBadge">Turno</span>
+                    <h1 class="h2 fw-bold mb-2">Detalle de su turno</h1>
                     <p class="text-secondary mb-0">
-                        La reserva quedo registrada localmente para esta simulacion del portal paciente.
+                        Información del turno registrado en el sistema.
                     </p>
                 </div>
                 <div class="col-lg-4">
@@ -35,7 +35,7 @@
                             </div>
                             <div>
                                 <p class="text-secondary small mb-1">Estado</p>
-                                <p class="fw-semibold mb-0">Reservado</p>
+                                <p class="fw-semibold mb-0" id="turnoReservadoEstado">—</p>
                             </div>
                         </div>
                     </div>
@@ -46,7 +46,7 @@
         <section class="card dashboard-card border-0 shadow-sm">
             <div class="card-body p-4">
                 <div id="turnoReservadoVacio" class="alert alert-warning d-none mb-0" role="alert">
-                    No se encontro un turno reservado en esta sesion.
+                    Seleccione un turno desde Mis turnos para consultar su detalle.
                 </div>
 
                 <div id="turnoReservadoDetalle" class="d-none">

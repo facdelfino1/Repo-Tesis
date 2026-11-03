@@ -1,7 +1,7 @@
 import { getCurrentUser, legacyUser } from './session.js';
 import { getDoctors, legacyDoctor } from '../features/catalog/catalog-service.js';
 
-const retired = new Set(['usuarioActualMock','usuariosAdminMock','perfilAdminMock','perfilMedicoMock','perfilSecretariaMock','perfilPacienteMock','disponibilidadPacienteMock','disponibilidadMedicoMock','disponibilidadSecretariaMock']);
+const retired = new Set(['usuarioActualMock','usuariosAdminMock','perfilAdminMock','perfilMedicoMock','perfilSecretariaMock','perfilPacienteMock','disponibilidadPacienteMock','disponibilidadMedicoMock','disponibilidadSecretariaMock','turnosPacienteMock']);
 export async function loadMock(path, fallback) {
     // Transitional reads for pages not yet integrated; no simulated catalog or inventory.
     if (path.endsWith('/disponibilidad.json')) return [];

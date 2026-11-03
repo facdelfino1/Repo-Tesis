@@ -880,3 +880,52 @@ smoke con navegador real y PostgreSQL temporal, tests focalizados Django B2/B3 y
 entrega estática. No se repite la suite completa de negocio porque no se alteraron
 modelos, migraciones, servicios ni reglas B1–B6; se conserva como referencia el
 último resultado 217/217. Los cambios backend son entrega local y enlace de email.
+
+### B7.2: turnos reales del Paciente
+
+El dashboard, solicitud, Mis turnos y detalle del Paciente consultan Django.
+`features/appointments/patient-api.js` mantiene los contratos de B4/B5;
+`patient-ui.js` reutiliza cuestionario, tarjetas y modales existentes.
+No se modifican reglas ni código backend para este bloque.
+
+Reserva: `POST /api/medicos/{id}/turnos/` con `disponibilidad` entero y,
+solo en Clínica Médica/Pediatría, `respuestas`. No se envían prioridad, paciente,
+médico alternativo, estado, duración ni timestamps. El cuestionario recopila
+booleanos/números/fecha; Django valida y clasifica al confirmar. No hay
+preclasificación frontend. La navegación al detalle lleva solo el ID en la URL
+y el detalle se obtiene mediante `GET /api/turnos/{id}/`.
+
+Consulta: `GET /api/turnos/` (incluida paginación). Modificación de RESERVADO:
+consulta disponibilidad del mismo médico y envía solo `disponibilidad` a
+`POST /api/turnos/{id}/modificar/`. Cancelación: body vacío a
+`POST /api/turnos/{id}/cancelar/`. El backend decide estados, anticipación,
+ocupación/liberación e identidad conservada. Un conflicto 409 de reserva o
+modificación muestra el error y vuelve a consultar disponibilidad sin reintentar
+la escritura automáticamente. Ante un fallo de red, verificar Mis turnos antes
+de volver a reservar: no se implementa idempotencia de reserva en navegador.
+
+PENDIENTE se muestra como «Pendiente de nueva asignación», sin ofrecer su
+horario histórico ni modificación simulada. Puede cancelarse realmente.
+PRESENTE/EN_ATENCION siguen activos y sin acciones de modificar/cancelar.
+El detalle muestra el estado real, incluso al abrir una antigua URL de reserva.
+
+Se retiran de uso `turnosPacienteMock`, `solicitudTurnoPaciente` y
+`turnoReservadoPaciente`; se limpian al cargar las páginas del Paciente.
+Ninguna página del Paciente lee JSON de turnos/triajes ni guarda entidades en
+storage. Los mocks y adaptadores de otros roles permanecen para las pantallas
+todavía no integradas; no representan los turnos reales del Paciente.
+
+Smoke reproducible con cuentas y disponibilidades controladas:
+1. Reservar Clínica y Pediatría; comprobar prioridad/Triaje e intervalo backend.
+2. Reservar Cardiología; comprobar prioridad null y ausencia de Triaje.
+3. Ocupar el destino después de mostrarlo: confirmar debe mostrar conflicto
+   y retirarlo de las alternativas, tanto en reserva como modificación.
+4. Modificar RESERVADO; comprobar mismo ID, creación y Triaje/prioridad.
+5. Cancelar RESERVADO futuro y comprobar historial y bloque liberado.
+   Con menos de dos horas, el servidor debe rechazar la cancelación.
+6. Consultar PENDIENTE, PRESENTE y EN_ATENCION; cancelar PENDIENTE sin
+   liberar su FK histórica. No hay UI de propuestas habilitada en B7.2.
+7. Verificar que otro paciente no aparece en listado ni puede abrirse por ID.
+
+Pendiente B7.3/B7.4: operaciones de otros roles, propuestas/reprogramación,
+recuperación real de PENDIENTE y métricas. No se conecta `reasignar/` en B7.2.
