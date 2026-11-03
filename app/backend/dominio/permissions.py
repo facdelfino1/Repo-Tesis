@@ -47,3 +47,11 @@ class IsMedico(HasRole):
 
 class IsSecretaria(HasRole):
     allowed_roles = (Usuario.Rol.SECRETARIA,)
+
+
+class IsLectorAgenda(HasRole):
+    allowed_roles = (Usuario.Rol.PACIENTE, Usuario.Rol.MEDICO, Usuario.Rol.SECRETARIA)
+
+
+class IsGestorAgenda(HasRole):
+    allowed_roles = (Usuario.Rol.MEDICO, Usuario.Rol.SECRETARIA)

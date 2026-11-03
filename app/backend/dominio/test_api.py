@@ -15,7 +15,7 @@ class IdentityAPITests(APITestCase):
     @classmethod
     def setUpTestData(cls):
         cls.password = secrets.token_urlsafe(24)
-        cls.especialidad = Especialidad.objects.create(nombre="Clínica Médica")
+        cls.especialidad, _ = Especialidad.objects.get_or_create(nombre="Clínica Médica")
         cls.users = {}
         for role in Usuario.Rol.values:
             user = Usuario.objects.create_user(
@@ -210,7 +210,7 @@ class IdentityAPITests(APITestCase):
         self.assert_safe(response.data)
         response = self.client.get(reverse("especialidad-list"))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["results"][0]["id"], self.especialidad.pk)
+        self.assertIn(self.especialidad.pk, [row["id"] for row in response.data["results"]])
         for role in (Usuario.Rol.ADMINISTRADOR, Usuario.Rol.PACIENTE):
             self.assertEqual(self.client.get(reverse("usuario-interno-detail", args=[self.users[role].pk])).status_code, 404)
 

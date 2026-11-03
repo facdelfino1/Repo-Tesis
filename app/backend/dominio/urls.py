@@ -2,11 +2,15 @@ from django.urls import include, path
 from rest_framework.routers import SimpleRouter
 
 from .views import (CsrfView, EspecialidadViewSet, LoginView, LogoutView, MeView,
-                    PasswordChangeView, PasswordResetConfirmView, PasswordResetRequestView, UsuarioInternoViewSet)
+                    PasswordChangeView, PasswordResetConfirmView, PasswordResetRequestView, UsuarioInternoViewSet,
+                    CatalogoEspecialidadViewSet, DisponibilidadViewSet, MedicoViewSet)
 
 router = SimpleRouter()
 router.register("admin/usuarios", UsuarioInternoViewSet, basename="usuario-interno")
 router.register("admin/especialidades", EspecialidadViewSet, basename="especialidad")
+router.register("especialidades", CatalogoEspecialidadViewSet, basename="catalogo-especialidad")
+router.register("medicos", MedicoViewSet, basename="medico")
+router.register(r"medicos/(?P<medico_pk>[0-9]+)/disponibilidades", DisponibilidadViewSet, basename="disponibilidad")
 
 urlpatterns = [
     path("auth/csrf/", CsrfView.as_view(), name="auth-csrf"),

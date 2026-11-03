@@ -1,9 +1,11 @@
-# Backend - Bloques 1 y 2
+# Backend - Bloques 1, 2 y 3
 
 Proyecto Django 5.2 LTS y DRF con PostgreSQL como unico motor. Una app
 `dominio` contiene el modelo relacional; `config` contiene infraestructura.
 El Bloque 1 define el esquema. El Bloque 2 agrega autenticación por sesión,
 identidad y administración de cuentas internas; no conecta el frontend.
+El Bloque 3 agrega catálogo, directorio de médicos y disponibilidad por agenda,
+sin reservar turnos ni implementar triaje o reprogramación.
 
 ## Auditoria inicial
 
@@ -450,3 +452,124 @@ afirmar la garantía de select_for_update.
   `manage.py migrate dominio 0002 --noinput`, después de revisar --plan.
 - manage.py check, makemigrations --check, migrate --check y pip check correctos.
 - Frontend, 0001_initial y requirements.txt intactos. Sin commit ni push.
+
+## Bloque 3: especialidades, médicos y disponibilidad
+
+### Modelo y catálogo
+
+Especialidad -> Medico -> Disponibilidad. El identificador de agenda es
+Medico.pk, distinto de Usuario.pk. Disponibilidad no duplica especialidad ni
+almacena duración/prioridad: duracion_minutos se calcula del intervalo. Los
+bloques nuevos tienen precisión de minutos y pertenecen a una fecha, sin
+intervalos que crucen medianoche. No hay mínimo clínico de veinte minutos.
+
+0003_catalogo_especialidades es exclusivamente una data migration. Provisiona
+Clínica Médica, Pediatría y Cardiología con get_or_create por nombre canónico,
+sin IDs fijos. Es idempotente y no modifica especialidades preexistentes ni
+interpreta aliases del frontend. Su reversa no borra datos que podrían estar
+referenciados; reaplicarla tampoco duplica el catálogo. No cambia models.py,
+0001, 0002 ni instala extensiones PostgreSQL.
+
+El catálogo es de solo lectura para la API. La administración de cuentas sigue
+en B2. Una especialidad solo puede cambiarse si el médico todavía no tiene
+disponibilidades ni turnos, incluidos históricos/sin disponibilidad. B2 adquiere
+el mismo bloqueo de Medico y revalida la condición antes de guardar. La edición
+de otros datos del profesional y el envío de la misma especialidad siguen
+permitidos. No se pueden trasladar bloques a otro médico.
+
+### Contrato de endpoints (prefijo /api/)
+
+| Método/ruta | Acceso |
+| --- | --- |
+| GET especialidades/ | Los cuatro roles autenticados/activos con perfil válido. |
+| GET admin/especialidades/ | Conserva el contrato B2: solo Administrador. |
+| GET medicos/ | Los cuatro roles; filtros especialidad={id}, incluir_inactivos=true. |
+| GET medicos/{id}/ | Directorio seguro de profesionales. |
+| GET medicos/{medico_pk}/disponibilidades/ | Paciente: solo futuras DISPONIBLE; Médico: propia agenda; Secretaría: agenda explícita. |
+| GET medicos/{medico_pk}/disponibilidades/{id}/ | Mismos límites de consulta, también para el bloque individual. |
+| POST medicos/{medico_pk}/disponibilidades/ | Médico propio o Secretaría. Crea un bloque DISPONIBLE. |
+| POST medicos/{medico_pk}/disponibilidades/lote/ | Mismos roles, 1–100 bloques explícitos en una transacción. |
+| PATCH medicos/{medico_pk}/disponibilidades/{id}/ | Mismos roles. Solo fecha/hora_inicio/hora_fin. |
+| POST .../disponibilidades/{id}/bloquear/ | Mismos roles; sin body. DISPONIBLE -> BLOQUEADO. |
+| POST .../disponibilidades/{id}/desbloquear/ | Mismos roles; sin body. BLOQUEADO -> DISPONIBLE. |
+| DELETE .../disponibilidades/{id}/ | Mismos roles; bloque futuro no ocupado y sin ningún Turno relacionado. |
+
+Escrituras con sesión y CSRF de B2. Administrador no tiene acceso operativo a
+disponibilidad. Un médico accede al directorio de otros profesionales, pero no
+a sus agendas. Los intentos de usar otra agenda/bloque anidado ajeno devuelven
+404; roles sin permiso devuelven 403. PUT de disponibilidad no está habilitado.
+
+Los listados son paginados (page, tamaño configurado en B2). Médicos expone solo
+id, nombre, apellido, matricula y especialidad {id,nombre}. No expone DNI,
+credenciales ni email. Por defecto excluye cuentas médicas inactivas; solo
+Secretaría/Administrador pueden solicitar incluir_inactivos=true. Un paciente
+no puede consultar disponibilidad de un médico inactivo. Secretaría conserva
+acceso de lectura a esas agendas, puede retirar/bloquear bloques, pero no crear,
+modificar intervalos ni desbloquear para habilitar horarios del médico inactivo.
+
+Disponibilidad expone id, medico, fecha, hora_inicio, hora_fin, estado y
+duracion_minutos. No publica paciente/turno. Filtros: fecha o desde/hasta, estado;
+se validan formatos/rangos. Un paciente no puede ampliar su visibilidad con esos
+filtros. Las vistas profesionales conservan consulta del historial, incluso pasado.
+El orden es fecha/hora/ID: no se trata de priorización clínica ni antigüedad.
+
+Creación individual:
+
+```json
+{"fecha":"2099-01-01","hora_inicio":"09:00","hora_fin":"09:20"}
+```
+
+Lote (los intervalos vienen de una selección/configuración explícita):
+
+```json
+{"bloques":[
+  {"fecha":"2099-01-01","hora_inicio":"09:00","hora_fin":"09:20"},
+  {"fecha":"2099-01-01","hora_inicio":"09:20","hora_fin":"09:40"}
+]}
+```
+
+POST devuelve 201; PATCH/acciones 200; DELETE 204. No se aceptan médico,
+especialidad, estado, duración ni ID enviados como campos de escritura.
+Ningún endpoint permite establecer OCUPADO. Duplicado/solapamiento, ocupación o
+historial incompatible devuelven 409; formatos, intervalos y fechas pasadas 400.
+
+### Servicio transaccional y límites para B4
+
+agenda.py concentra create_blocks/update_block/set_blocked/delete_block. Primero
+autoriza al actor, bloquea Medico con select_for_update y después el bloque
+concreto. Valida nuevamente dentro de atomic. La misma agenda no admite
+solapamientos, duplicados ni contenciones, cualquiera sea el estado existente;
+intervalos adyacentes sí se permiten. Médicos distintos son independientes.
+El lote valida contra la BD y contra sí mismo antes de insertar: fallo implica
+cero altas del lote. PATCH usa valores actuales, no una copia antigua, y escribe
+únicamente campos editados. Bloquear/desbloquear es idempotente y no altera Turno.
+
+OCUPADO es exclusivo de las futuras operaciones de Turno en B4. B3 nunca lo
+asigna ni modifica/elimina un bloque con ese estado. No se cambia fecha/horario
+ni se elimina un bloque con cualquier referencia de Turno, aunque esté cancelado.
+El bloqueo de un recurso actualmente DISPONIBLE puede cambiar su configuración
+sin borrar historial cancelado ni alterar el Turno. No se representa simultáneamente
+OCUPADO+BLOQUEADO. Pasado se conserva para lectura, no se reescribe ni elimina
+desde estas operaciones. Consultar no genera bloques ni modifica su estado.
+
+No hay ExclusionConstraint: la exclusión parcial se garantiza para operaciones
+que pasan por este servicio y usan el bloqueo del padre. SQL/scripts externos
+pueden saltar esa regla; la BD sigue protegiendo intervalo y duplicado exacto.
+B4 debe seguir el mismo orden de bloqueos, comprobar médico/actividad/estado,
+revalidar el bloque y guardar Turno + ocupación/liberación conjuntamente. Una
+lectura actual DISPONIBLE no constituye una reserva. Debe definir qué estados de
+Turno consumen un bloque y cómo se tratará una indisponibilidad sobre uno ocupado.
+
+No hay algoritmo de triaje, prioridad, sobreturnos ni duración clínica en B3.
+Cardiología no recibe prioridad Baja artificial. Los IDs proceden de PostgreSQL;
+no se copiaron JSON, localStorage, aliases o reconciliaciones del frontend.
+
+### Validación B3
+
+Los 70 tests de B1/B2 se conservan. El fixture de identidad usa get_or_create
+para Clínica Médica y verifica su presencia en el catálogo (ya no supone un
+catálogo de una única fila). Se agregan pruebas API, catálogo idempotente,
+matriz de roles, historial, lotes y concurrencia PostgreSQL mediante conexiones
+independientes. Para Supavisor se usa una base temporal única con --keepdb y
+limpieza posterior mediante Django; esto evita hacer fallar el resultado de la
+suite por conexiones ociosas retenidas durante el teardown automático.

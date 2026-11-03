@@ -1,11 +1,12 @@
 from collections.abc import Mapping
+from datetime import datetime
 
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
 from rest_framework import serializers
 
-from .models import Especialidad, Medico, Secretaria, Usuario
+from .models import Disponibilidad, Especialidad, Medico, Secretaria, Usuario
 from .permissions import has_valid_role_profile
 
 
@@ -152,15 +153,22 @@ class UsuarioInternoSerializer(serializers.ModelSerializer):
                     instance = Usuario.objects.create_user(password=password, **data)
                     profile = Medico(usuario=instance, **profile_data) if instance.rol == Usuario.Rol.MEDICO else Secretaria(usuario=instance, **profile_data)
                 else:
+                    # Coordinate specialty changes with all writers of this doctor's agenda.
+                    profile = Medico.objects.select_for_update().get(usuario=instance) if instance.rol == Usuario.Rol.MEDICO else instance.secretaria
+                    if (instance.rol == Usuario.Rol.MEDICO and "especialidad" in profile_data
+                            and profile_data["especialidad"].pk != profile.especialidad_id
+                            and (profile.disponibilidades.exists() or profile.turnos.exists())):
+                        raise serializers.ValidationError({"especialidad": "No puede cambiarse mientras el médico tenga agenda o historial de turnos."})
                     for key, value in data.items():
                         setattr(instance, key, value)
                     # Never write a stale password, last_login or lockout counter.
                     instance.save(update_fields=list(data))
-                    profile = instance.medico if instance.rol == Usuario.Rol.MEDICO else instance.secretaria
                     for key, value in profile_data.items():
                         setattr(profile, key, value)
                 profile.full_clean()
                 profile.save()
+                # Response serialization must not reuse a stale reverse-relation cache.
+                instance._state.fields_cache["medico" if instance.rol == Usuario.Rol.MEDICO else "secretaria"] = profile
         except DjangoValidationError as error:
             raise serializers.ValidationError(error.message_dict if hasattr(error, "message_dict") else error.messages) from error
         except IntegrityError as error:
@@ -183,3 +191,68 @@ class EspecialidadSerializer(serializers.ModelSerializer):
         model = Especialidad
         fields = ("id", "nombre")
         read_only_fields = fields
+
+
+class MedicoConsultaSerializer(serializers.ModelSerializer):
+    nombre = serializers.CharField(source="usuario.nombre", read_only=True)
+    apellido = serializers.CharField(source="usuario.apellido", read_only=True)
+    especialidad = EspecialidadSerializer(read_only=True)
+
+    class Meta:
+        model = Medico
+        fields = ("id", "nombre", "apellido", "matricula", "especialidad")
+        read_only_fields = fields
+
+
+class DisponibilidadConsultaSerializer(serializers.ModelSerializer):
+    duracion_minutos = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Disponibilidad
+        fields = ("id", "medico", "fecha", "hora_inicio", "hora_fin", "estado", "duracion_minutos")
+        read_only_fields = fields
+
+    def get_duracion_minutos(self, block):
+        minutes = (datetime.combine(block.fecha, block.hora_fin)
+                   - datetime.combine(block.fecha, block.hora_inicio)).total_seconds() / 60
+        return int(minutes) if minutes.is_integer() else minutes
+
+
+class DisponibilidadEscrituraSerializer(serializers.Serializer):
+    fecha = serializers.DateField()
+    hora_inicio = serializers.TimeField()
+    hora_fin = serializers.TimeField()
+
+    def to_internal_value(self, data):
+        if not isinstance(data, Mapping):
+            raise serializers.ValidationError("Envíe un objeto con fecha y horario.")
+        unknown = set(data) - set(self.fields)
+        if unknown:
+            raise serializers.ValidationError({field: "Campo no permitido." for field in sorted(unknown)})
+        return super().to_internal_value(data)
+
+
+class DisponibilidadLoteSerializer(DisponibilidadEscrituraSerializer):
+    fecha = None
+    hora_inicio = None
+    hora_fin = None
+    bloques = DisponibilidadEscrituraSerializer(many=True, allow_empty=False, max_length=100)
+
+
+class MedicoFiltroSerializer(serializers.Serializer):
+    especialidad = serializers.IntegerField(required=False, min_value=1)
+    incluir_inactivos = serializers.BooleanField(required=False, default=False)
+
+
+class DisponibilidadFiltroSerializer(serializers.Serializer):
+    fecha = serializers.DateField(required=False)
+    desde = serializers.DateField(required=False)
+    hasta = serializers.DateField(required=False)
+    estado = serializers.ChoiceField(choices=Disponibilidad.Estado.choices, required=False)
+
+    def validate(self, attrs):
+        if "fecha" in attrs and ("desde" in attrs or "hasta" in attrs):
+            raise serializers.ValidationError("Utilice fecha o rango desde/hasta, no ambos.")
+        if "desde" in attrs and "hasta" in attrs and attrs["desde"] > attrs["hasta"]:
+            raise serializers.ValidationError("Desde debe ser anterior o igual a hasta.")
+        return attrs

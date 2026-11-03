@@ -4,25 +4,33 @@ from django.contrib.auth.forms import PasswordResetForm, SetPasswordForm
 from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
+from django.db.models import Q
 from django.middleware.csrf import get_token
+from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_protect
 from urllib.parse import urlsplit
 from rest_framework import mixins, status, viewsets
-from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
+from rest_framework.permissions import AllowAny, IsAuthenticated, SAFE_METHODS
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-from .models import Especialidad, Usuario
-from .permissions import IsAdministrador, has_valid_role_profile
+from .agenda import create_blocks, delete_block, set_blocked, update_block
+from .models import Disponibilidad, Especialidad, Medico, Usuario
+from .permissions import IsActiveUser, IsAdministrador, IsGestorAgenda, IsLectorAgenda, has_valid_role_profile
 from .serializers import (EspecialidadSerializer, LoginSerializer, PasswordChangeSerializer,
                           PasswordResetConfirmSerializer, PasswordResetRequestSerializer,
                           UsuarioInternoSerializer, UsuarioSerializer)
+from .serializers import (DisponibilidadConsultaSerializer, DisponibilidadEscrituraSerializer,
+                          DisponibilidadFiltroSerializer, DisponibilidadLoteSerializer,
+                          MedicoConsultaSerializer, MedicoFiltroSerializer)
 
 
 class CsrfView(APIView):
@@ -150,3 +158,92 @@ class EspecialidadViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     permission_classes = [IsAdministrador]
     serializer_class = EspecialidadSerializer
     queryset = Especialidad.objects.order_by("nombre")
+
+
+class CatalogoEspecialidadViewSet(EspecialidadViewSet):
+    permission_classes = [IsActiveUser]
+
+
+class MedicoViewSet(viewsets.ReadOnlyModelViewSet):
+    lookup_value_regex = "[0-9]+"
+    permission_classes = [IsActiveUser]
+    serializer_class = MedicoConsultaSerializer
+
+    def get_queryset(self):
+        filters = MedicoFiltroSerializer(data=self.request.query_params)
+        filters.is_valid(raise_exception=True)
+        data = filters.validated_data
+        rows = Medico.objects.filter(usuario__rol=Usuario.Rol.MEDICO).select_related("usuario", "especialidad")
+        if data["incluir_inactivos"]:
+            if self.request.user.rol not in (Usuario.Rol.SECRETARIA, Usuario.Rol.ADMINISTRADOR):
+                raise PermissionDenied()
+        else:
+            rows = rows.filter(usuario__is_active=True)
+        if "especialidad" in data:
+            rows = rows.filter(especialidad_id=data["especialidad"])
+        return rows.order_by("usuario__apellido", "usuario__nombre", "pk")
+
+
+class DisponibilidadViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    lookup_value_regex = "[0-9]+"
+    serializer_class = DisponibilidadConsultaSerializer
+
+    def get_permissions(self):
+        return [IsLectorAgenda() if self.request.method in SAFE_METHODS else IsGestorAgenda()]
+
+    def get_queryset(self):
+        medico = get_object_or_404(Medico.objects.select_related("usuario"),
+                                   pk=self.kwargs["medico_pk"], usuario__rol=Usuario.Rol.MEDICO)
+        user = self.request.user
+        if user.rol == Usuario.Rol.MEDICO and medico.usuario_id != user.pk:
+            raise NotFound()
+        if not has_valid_role_profile(medico.usuario) or (user.rol == Usuario.Rol.PACIENTE and not medico.usuario.is_active):
+            raise NotFound()
+        rows = Disponibilidad.objects.filter(medico=medico)
+        if user.rol == Usuario.Rol.PACIENTE:
+            now = timezone.localtime()
+            rows = rows.filter(estado=Disponibilidad.Estado.DISPONIBLE).filter(
+                Q(fecha__gt=now.date()) | Q(fecha=now.date(), hora_inicio__gt=now.time()))
+        filters = DisponibilidadFiltroSerializer(data=self.request.query_params)
+        filters.is_valid(raise_exception=True)
+        for name, lookup in (("fecha", "fecha"), ("desde", "fecha__gte"), ("hasta", "fecha__lte"), ("estado", "estado")):
+            if name in filters.validated_data:
+                rows = rows.filter(**{lookup: filters.validated_data[name]})
+        return rows.order_by("fecha", "hora_inicio", "pk")
+
+    def create(self, request, **kwargs):
+        serializer = DisponibilidadEscrituraSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        block = create_blocks(request.user, kwargs["medico_pk"], [serializer.validated_data])[0]
+        return Response(self.get_serializer(block).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["post"])
+    def lote(self, request, **kwargs):
+        serializer = DisponibilidadLoteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        blocks = create_blocks(request.user, kwargs["medico_pk"], serializer.validated_data["bloques"])
+        return Response(self.get_serializer(blocks, many=True).data, status=status.HTTP_201_CREATED)
+
+    def partial_update(self, request, **kwargs):
+        serializer = DisponibilidadEscrituraSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        block = update_block(request.user, kwargs["medico_pk"], kwargs["pk"], serializer.validated_data)
+        return Response(self.get_serializer(block).data)
+
+    def _set_blocked(self, request, kwargs, blocked):
+        if request.data:
+            raise ValidationError("Esta acción no recibe campos; utiliza el bloque identificado en la URL.")
+        block = set_blocked(request.user, kwargs["medico_pk"], kwargs["pk"], blocked=blocked)
+        return Response(self.get_serializer(block).data)
+
+    @action(detail=True, methods=["post"])
+    def bloquear(self, request, **kwargs):
+        return self._set_blocked(request, kwargs, True)
+
+    @action(detail=True, methods=["post"])
+    def desbloquear(self, request, **kwargs):
+        return self._set_blocked(request, kwargs, False)
+
+    def destroy(self, request, **kwargs):
+        delete_block(request.user, kwargs["medico_pk"], kwargs["pk"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
