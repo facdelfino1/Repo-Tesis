@@ -573,3 +573,73 @@ matriz de roles, historial, lotes y concurrencia PostgreSQL mediante conexiones
 independientes. Para Supavisor se usa una base temporal única con --keepdb y
 limpieza posterior mediante Django; esto evita hacer fallar el resultado de la
 suite por conexiones ociosas retenidas durante el teardown automático.
+
+## B4 — Turnos, triaje y reserva
+
+La solicitud persistida nace exclusivamente al confirmar la reserva. No se
+persisten cuestionarios preliminares ni Turnos incompletos. El backend genera
+fecha_hora_creacion al crear Turno; la API B4 no ofrece modificaciones del Turno.
+
+### API (prefijo /api/)
+
+| Método/ruta | Acceso |
+| --- | --- |
+| POST medicos/{medico_pk}/turnos/ | Paciente activo con perfil válido; reserva para sí. |
+| GET turnos/ | Paciente: listado propio paginado. |
+| GET turnos/{id_turno}/ | Paciente: detalle propio; ajenos devuelven 404. |
+| GET medicos/{medico_pk}/turnos/ | Médico propio o Secretaría con médico explícito. Filtros fecha/estado. |
+| GET medicos/{medico_pk}/turnos/{id_turno}/ | Mismos límites de agenda. |
+
+El POST acepta únicamente disponibilidad (entero positivo) y respuestas cuando
+la especialidad real del médico tiene algoritmo. No acepta paciente, médico,
+estado, prioridad, duración ni timestamps. Las consultas se ordenan por fecha,
+hora e ID; no implementan precedencia por prioridad. Administrador no opera
+turnos; Secretaría no reserva por terceros en B4. Autenticación de sesión y
+CSRF conservan el contrato B2.
+
+Reserva Clínica Médica:
+
+```json
+{"disponibilidad":123,"respuestas":{"fiebre":false,"dificultadRespirar":false,"dolor":4}}
+```
+
+Pediatría requiere fechaNacimiento (YYYY-MM-DD), fiebre, duracionFiebreHoras,
+dificultadRespirar, muyAgitado, estadoGeneral y vomitosRepetidos. Los indicadores
+son booleanos JSON estrictos. Con fiebre, duración finita >= 0; sin fiebre,
+duración null explícita. Estado general admite alerta_normal,
+decaido_responde_normalmente, letargico_muy_somnoliento,
+pobre_respuesta_estimulos o dificultad_despertar. Dolor de Clínica es entero
+0–10. No se completan campos faltantes ni se convierten cadenas/números en
+booleanos. Se rechazan campos desconocidos. La validación completa precede a
+cualquier clasificación, incluso ante un indicador de prioridad Alta.
+
+triage.py implementa CM-01..05 y PED-01..09 con precedencia ALTA/MEDIA/BAJA,
+sin ORM ni HTTP. La edad usa meses calendario, ajustando al último día del mes;
+exactamente tres meses no cumple menor de tres meses. La evaluación utiliza la
+fecha local del servidor. Es priorización preliminar ambulatoria autoinformada,
+no diagnóstico ni sustituto de evaluación profesional.
+
+Sin algoritmo (incluida Cardiología) se omite respuestas: no existe fila Triaje
+y la API devuelve prioridad y triaje null. Enviar respuestas se rechaza.
+No se copia ni modifica el frontend, mocks o almacenamiento local.
+
+turnos.reservar_turno usa atomic y locks Medico -> Usuario relacionados por PK
+-> Disponibilidad. La autorización de reserva no amplía los permisos B3.
+Revalida actividad/perfiles, pertenencia del bloque, DISPONIBLE, intervalo válido
+y futuro, y ausencia de asociaciones consumidoras. Historial cancelado no
+consume el bloque; cualquier otra asociación incompatible exige revisión.
+Deriva fecha/hora/duración entera del bloque y crea Turno RESERVADO, exactamente
+un Triaje para CM/PED y disponibilidad OCUPADO en una transacción. Un fallo
+revierte todas las escrituras. No hay sobreturnos ni horarios alternativos.
+
+POST devuelve 201. Validación de entrada/cuestionario: 400; rol o CSRF: 403;
+recurso inexistente/ajeno: 404; conflicto de bloque, médico inactivo o intervalo
+vencido: 409. Los detalles no exponen credenciales, email ni DNI.
+
+No hay migración 0004. La FK de disponibilidad conserva historial y no es
+única: la exclusividad activa se garantiza mediante el servicio y sus locks.
+Scripts SQL/ORM que lo omitan no reciben esa garantía. B5 deberá conservar
+fecha_hora_creacion, identidad y los locks en futuras operaciones; B6 definirá
+precedencia dentro del mismo médico: prioridad, creación, ID técnico. B4 no
+desplaza reservas ni asigna por prioridad. El registro de algoritmos usa los
+nombres canónicos del catálogo obligatorio, sin IDs fijos.

@@ -14,15 +14,21 @@ class AgendaConflict(APIException):
     default_code = "conflicto_agenda"
 
 
-def _lock_medico(actor, medico_id, *, publish=False):
-    if not (actor.is_authenticated and actor.is_active and has_valid_role_profile(actor)
-            and actor.rol in (Usuario.Rol.MEDICO, Usuario.Rol.SECRETARIA)):
-        raise PermissionDenied()
+def lock_medico(medico_id):
+    """Common parent lock. Call inside atomic, after authorizing the operation."""
     try:
         # Always lock the parent, including for an agenda with no blocks yet.
         medico = Medico.objects.select_for_update().get(pk=medico_id)
     except (Medico.DoesNotExist, ValueError, TypeError, OverflowError):
         raise NotFound()
+    return medico
+
+
+def _lock_medico(actor, medico_id, *, publish=False):
+    if not (actor.is_authenticated and actor.is_active and has_valid_role_profile(actor)
+            and actor.rol in (Usuario.Rol.MEDICO, Usuario.Rol.SECRETARIA)):
+        raise PermissionDenied()
+    medico = lock_medico(medico_id)
     if actor.rol == Usuario.Rol.MEDICO and medico.usuario_id != actor.pk:
         raise NotFound()
     if medico.usuario.rol != Usuario.Rol.MEDICO or not has_valid_role_profile(medico.usuario):

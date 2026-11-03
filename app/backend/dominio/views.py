@@ -247,3 +247,48 @@ class DisponibilidadViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, vi
     def destroy(self, request, **kwargs):
         delete_block(request.user, kwargs["medico_pk"], kwargs["pk"])
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class TurnoPropioViewSet(viewsets.ReadOnlyModelViewSet):
+    from .permissions import IsPaciente
+    permission_classes = [IsPaciente]
+    lookup_value_regex = '[0-9]+'
+
+    def get_serializer_class(self):
+        from .serializers import TurnoConsultaSerializer
+        return TurnoConsultaSerializer
+
+    def get_queryset(self):
+        from .models import Turno
+        return Turno.objects.filter(paciente__usuario=self.request.user).select_related(
+            'medico__usuario', 'medico__especialidad', 'triaje').order_by('fecha', 'hora', 'pk')
+
+
+class TurnoAgendaViewSet(TurnoPropioViewSet):
+    def get_permissions(self):
+        from .permissions import IsPaciente
+        return [IsPaciente() if self.request.method == 'POST' else IsGestorAgenda()]
+
+    def get_queryset(self):
+        from .models import Turno
+        medico = get_object_or_404(Medico, pk=self.kwargs['medico_pk'])
+        if self.request.user.rol == Usuario.Rol.MEDICO and medico.usuario_id != self.request.user.pk:
+            raise NotFound()
+        rows = Turno.objects.filter(medico=medico).select_related('medico__usuario', 'medico__especialidad', 'triaje')
+        # Only date filters apply here; availability states are a different domain.
+        from rest_framework import serializers
+        class Filtros(serializers.Serializer):
+            fecha = serializers.DateField(required=False)
+            estado = serializers.ChoiceField(choices=Turno.Estado.choices, required=False)
+        filters = Filtros(data=self.request.query_params)
+        filters.is_valid(raise_exception=True)
+        return rows.filter(**filters.validated_data).order_by('fecha', 'hora', 'pk')
+
+    def create(self, request, **kwargs):
+        from .serializers import ReservaTurnoSerializer
+        from .turnos import reservar_turno
+        serializer = ReservaTurnoSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        turno = reservar_turno(request.user, kwargs['medico_pk'], serializer.validated_data['disponibilidad'],
+                               serializer.validated_data.get('respuestas'))
+        return Response(self.get_serializer(turno).data, status=status.HTTP_201_CREATED)

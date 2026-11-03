@@ -256,3 +256,46 @@ class DisponibilidadFiltroSerializer(serializers.Serializer):
         if "desde" in attrs and "hasta" in attrs and attrs["desde"] > attrs["hasta"]:
             raise serializers.ValidationError("Desde debe ser anterior o igual a hasta.")
         return attrs
+
+
+class ReservaTurnoSerializer(serializers.Serializer):
+    disponibilidad = serializers.IntegerField(min_value=1)
+    respuestas = serializers.JSONField(required=False)
+
+    def to_internal_value(self, data):
+        if not isinstance(data, Mapping):
+            raise serializers.ValidationError('Envíe un objeto de reserva.')
+        unknown = set(data) - set(self.fields)
+        if unknown:
+            raise serializers.ValidationError({key: 'Campo no permitido.' for key in sorted(unknown)})
+        if type(data.get('disponibilidad')) is not int:
+            raise serializers.ValidationError({'disponibilidad': 'Seleccione un identificador entero de disponibilidad.'})
+        if 'respuestas' in data and type(data['respuestas']) is not dict:
+            raise serializers.ValidationError({'respuestas': 'Envíe un cuestionario completo como objeto.'})
+        return super().to_internal_value(data)
+
+
+class TurnoConsultaSerializer(serializers.ModelSerializer):
+    medico = MedicoConsultaSerializer(read_only=True)
+    paciente = serializers.IntegerField(source='paciente_id', read_only=True)
+    prioridad = serializers.SerializerMethodField()
+    triaje = serializers.SerializerMethodField()
+
+    class Meta:
+        from .models import Turno
+        model = Turno
+        fields = ('id_turno', 'paciente', 'medico', 'disponibilidad', 'fecha', 'hora', 'estado',
+                  'duracion_turno', 'fecha_hora_creacion', 'fecha_hora_arribo', 'fecha_hora_inicio',
+                  'fecha_hora_cierre', 'prioridad', 'triaje')
+        read_only_fields = fields
+
+    def get_prioridad(self, turno):
+        triaje = getattr(turno, 'triaje', None)
+        return triaje.nivel_prioridad if triaje else None
+
+    def get_triaje(self, turno):
+        triaje = getattr(turno, 'triaje', None)
+        if not triaje:
+            return None
+        return {'id_triaje': triaje.pk, 'respuesta_sintomas': triaje.respuesta_sintomas,
+                'nivel_prioridad': triaje.nivel_prioridad, 'fecha_hora_evaluacion': triaje.fecha_hora_evaluacion.isoformat()}
