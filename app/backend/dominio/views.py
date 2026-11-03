@@ -262,7 +262,7 @@ class TurnoPropioViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         from .models import Turno
         return Turno.objects.filter(paciente__usuario=self.request.user).select_related(
-            'medico__usuario', 'medico__especialidad', 'triaje').order_by('fecha', 'hora', 'pk')
+            'medico__usuario', 'medico__especialidad', 'triaje', 'paciente__usuario').order_by('fecha', 'hora', 'pk')
 
 
     def _operar(self, request, accion):
@@ -314,7 +314,7 @@ class TurnoAgendaViewSet(TurnoPropioViewSet):
         medico = get_object_or_404(Medico, pk=self.kwargs['medico_pk'])
         if self.request.user.rol == Usuario.Rol.MEDICO and medico.usuario_id != self.request.user.pk:
             raise NotFound()
-        rows = Turno.objects.filter(medico=medico).select_related('medico__usuario', 'medico__especialidad', 'triaje')
+        rows = Turno.objects.filter(medico=medico).select_related('medico__usuario', 'medico__especialidad', 'triaje', 'paciente__usuario')
         # Only date filters apply here; availability states are a different domain.
         from rest_framework import serializers
         class Filtros(serializers.Serializer):

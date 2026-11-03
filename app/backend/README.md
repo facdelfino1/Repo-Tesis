@@ -929,3 +929,61 @@ Smoke reproducible con cuentas y disponibilidades controladas:
 
 Pendiente B7.3/B7.4: operaciones de otros roles, propuestas/reprogramación,
 recuperación real de PENDIENTE y métricas. No se conecta `reasignar/` en B7.2.
+
+### B7.3: operación real de Secretaría y Médico
+
+`features/appointments/agenda-api.js` centraliza los contratos B5 y
+`agenda-ui.js` presenta los datos reales en Gestión de turnos, Registrar
+presencia y los dashboards/agendas de ambos roles. Las páginas operativas
+retornan antes de ejecutar los inicializadores legacy de mocks/storage.
+
+Secretaría selecciona explícitamente un médico; no se agrega ni prioriza una
+colección global de agendas. El Médico utiliza `me.perfil.id` (Medico.pk).
+Las tablas conservan el orden cronológico del endpoint; no ejecutan precedencia
+clínica ni reprogramación B6. Los contadores del dashboard corresponden solo
+a la agenda/fecha consultada, no a métricas finales.
+
+Contratos consumidos:
+- `GET /api/pacientes/?dni=...`: búsqueda exacta; se selecciona un ID real,
+  incluyendo nombre/DNI/ID para distinguir múltiples coincidencias.
+- `GET /api/medicos/{m}/turnos/` y `.../{id}/`: lista paginada y detalle.
+- `POST /api/medicos/{m}/turnos/`: `paciente`, `disponibilidad` y, únicamente
+  cuando corresponde, `respuestas`. Django clasifica y persiste el triaje.
+- `POST .../{id}/modificar/`: únicamente `disponibilidad`.
+- `POST .../{id}/cancelar/`, `presencia/`, `iniciar/`, `finalizar/`: objeto vacío.
+
+La consulta B3 de un gestor también permite inventario histórico/no disponible.
+Los selectores de asignación usan `estado=DISPONIBLE&desde=...` y descartan
+horarios ya pasados para UX; la transacción backend revalida siempre. Ante 409,
+se informa el conflicto y se refresca la agenda/disponibilidad según la acción.
+No se escriben estados, inventario, IDs ni timestamps desde el navegador.
+
+Carencia de representación subsanada: `TurnoConsultaSerializer` conserva
+`paciente` como ID y agrega `paciente_detalle` de solo lectura con exactamente
+`id`, `nombre`, `apellido`, `dni`. Es necesario para que el Médico identifique
+a sus pacientes sin acceso al buscador exclusivo de Secretaría. Los querysets
+precargan `paciente__usuario`; no cambian permisos ni servicios de negocio.
+No se agregan email, contraseña, teléfono ni obra social. En el formulario de
+reserva, esos dos últimos campos quedan deshabilitados porque el contrato de
+búsqueda no los expone; no son datos editables ni necesarios para una reserva
+de un paciente existente. Una prueba API verifica representación y aislamiento.
+
+PENDIENTE no se presenta como horario vigente ni permite reasignación simulada.
+Secretaría puede cancelarlo realmente; la API gestiona propuestas/origen
+histórico. La antigua pantalla de finalización administrativa queda sin acciones:
+solo el Médico finaliza consulta. PRESENTE y EN_ATENCION ofrecen las acciones
+B5 correspondientes; todos los timestamps mostrados provienen del servidor.
+COMPLETADO conserva el bloque histórico ocupado.
+
+Se dejan de consumir turnos/estados/pacientes/triajes simulados en estas páginas.
+Las claves y adaptadores legacy siguen físicamente para reprogramación,
+propuestas, métricas y administración no integradas (páginas de demostración con
+mutaciones bloqueadas desde B7.1). No se mezclan con las respuestas operativas.
+El retiro físico de esas dependencias corresponde a B7.4 y cierre posterior.
+
+Smoke con PostgreSQL aislado: búsqueda múltiple por DNI, reserva triada,
+modificación de RESERVADO vencido, cancelación, presencia, login del Médico,
+inicio/finalización, especialidad convencional null, conflicto de destino/estado
+y accesos cruzados. Validar desde la base Turno/Triaje, Secretaría creadora,
+identidad/creación conservadas, timestamps ordenados, liberación al cancelar
+y permanencia de ocupación al completar. No se integra B6 ni email en B7.3.

@@ -12,6 +12,20 @@ document.addEventListener("DOMContentLoaded", async () => {
         const { initAccountProfile } = await import(new URL('../features/auth/auth-ui.js',pageScriptUrl));
         initAccountProfile(); return;
     }
+    // B7.3: real operational pages never enter the legacy mock initializers.
+    try {
+        if (document.getElementById('agendaMedicaTabla')) {
+            const { initOperationalAgenda } = await import(new URL('../features/appointments/agenda-ui.js', pageScriptUrl));
+            await initOperationalAgenda('agenda'); return;
+        }
+        if (document.getElementById('medicoAgendaDia')) {
+            const { initOperationalAgenda } = await import(new URL('../features/appointments/agenda-ui.js', pageScriptUrl));
+            await initOperationalAgenda('dashboard'); return;
+        }
+    } catch (error) {
+        const { errorMessage } = await import(new URL('../core/api.js', pageScriptUrl));
+        session.pageMessage(errorMessage(error), 'danger'); return;
+    }
     try {
         const availability = await import(new URL('../features/availability/availability-ui.js',pageScriptUrl));
         if (document.querySelector('[data-form="doctor-availability"]')) { await availability.initDoctorAvailability(); return; }

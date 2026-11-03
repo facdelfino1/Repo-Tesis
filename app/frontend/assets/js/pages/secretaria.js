@@ -12,6 +12,28 @@ document.addEventListener("DOMContentLoaded", async () => {
         const { initAccountProfile } = await import(new URL('../features/auth/auth-ui.js',pageScriptUrl));
         initAccountProfile(); return;
     }
+    // B7.3: real operational pages never enter the legacy mock initializers.
+    try {
+        if (document.getElementById('Gesti\u00f3nTurnosTabla')) {
+            const { initOperationalAgenda } = await import(new URL('../features/appointments/agenda-ui.js', pageScriptUrl));
+            await initOperationalAgenda('management'); return;
+        }
+        if (document.getElementById('presenciaTabla')) {
+            const { initOperationalAgenda } = await import(new URL('../features/appointments/agenda-ui.js', pageScriptUrl));
+            await initOperationalAgenda('presence'); return;
+        }
+        if (document.getElementById('secretariaAgendaDia')) {
+            const { initOperationalAgenda } = await import(new URL('../features/appointments/agenda-ui.js', pageScriptUrl));
+            await initOperationalAgenda('dashboard'); return;
+        }
+        if (location.pathname.endsWith('/finalizar-consulta.html')) {
+            session.pageMessage('El cierre de consulta corresponde al M\u00e9dico. Consulte el estado real desde Gesti\u00f3n de turnos.', 'info');
+            document.querySelectorAll('main input, main select, main button').forEach(control => { control.disabled = true; }); return;
+        }
+    } catch (error) {
+        const { errorMessage } = await import(new URL('../core/api.js', pageScriptUrl));
+        session.pageMessage(errorMessage(error), 'danger'); return;
+    }
     try {
         const availability = await import(new URL('../features/availability/availability-ui.js',pageScriptUrl));
         if (document.querySelector('[data-form="doctor-availability"]')) { await availability.initDoctorAvailability(); return; }

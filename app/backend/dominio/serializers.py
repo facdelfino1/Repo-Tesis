@@ -278,6 +278,7 @@ class ReservaTurnoSerializer(serializers.Serializer):
 class TurnoConsultaSerializer(serializers.ModelSerializer):
     medico = MedicoConsultaSerializer(read_only=True)
     paciente = serializers.IntegerField(source='paciente_id', read_only=True)
+    paciente_detalle = serializers.SerializerMethodField()
     asignacion_vigente = serializers.SerializerMethodField()
     prioridad = serializers.SerializerMethodField()
     triaje = serializers.SerializerMethodField()
@@ -287,11 +288,16 @@ class TurnoConsultaSerializer(serializers.ModelSerializer):
         model = Turno
         fields = ('id_turno', 'paciente', 'medico', 'disponibilidad', 'fecha', 'hora', 'estado',
                   'duracion_turno', 'fecha_hora_creacion', 'fecha_hora_arribo', 'fecha_hora_inicio',
-                  'fecha_hora_cierre', 'prioridad', 'triaje', 'asignacion_vigente')
+                  'fecha_hora_cierre', 'prioridad', 'triaje', 'asignacion_vigente', 'paciente_detalle')
         read_only_fields = fields
 
     def get_asignacion_vigente(self, turno):
         return turno.estado in ('RESERVADO', 'PRESENTE', 'EN_ATENCION')
+
+    def get_paciente_detalle(self, turno):
+        usuario = turno.paciente.usuario
+        return {'id': turno.paciente_id, 'nombre': usuario.nombre,
+                'apellido': usuario.apellido, 'dni': usuario.dni}
 
     def get_prioridad(self, turno):
         triaje = getattr(turno, 'triaje', None)

@@ -132,7 +132,7 @@
                         </thead>
                         <tbody id="GestiónTurnosTabla">
                             <tr>
-                                <td colspan="10" class="text-secondary">Cargando turnos simulados...</td>
+                                <td colspan="10" class="text-secondary">Consultando turnos...</td>
                             </tr>
                         </tbody>
                     </table>
@@ -154,22 +154,25 @@
                             <div class="col-12 col-md-3">
                                 <label for="asignarPacienteDni" class="form-label">DNI del paciente</label>
                                 <input type="text" class="form-control" id="asignarPacienteDni" required>
+                                <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="buscarPacienteBtn">Buscar paciente</button>
+                                <label for="asignarPacienteSeleccion" class="form-label mt-2">Paciente existente</label>
+                                <select id="asignarPacienteSeleccion" class="form-select"><option value="">Busque un paciente por DNI</option></select>
                             </div>
                             <div class="col-12 col-md-3">
                                 <label for="asignarPacienteNombre" class="form-label">Nombre</label>
-                                <input type="text" class="form-control" id="asignarPacienteNombre" required>
+                                <input type="text" class="form-control" id="asignarPacienteNombre" readonly>
                             </div>
                             <div class="col-12 col-md-3">
                                 <label for="asignarPacienteApellido" class="form-label">Apellido</label>
-                                <input type="text" class="form-control" id="asignarPacienteApellido" required>
+                                <input type="text" class="form-control" id="asignarPacienteApellido" readonly>
                             </div>
                             <div class="col-12 col-md-3">
                                 <label for="asignarPacienteTelefono" class="form-label">Telefono</label>
-                                <input type="text" class="form-control" id="asignarPacienteTelefono" required>
+                                <input type="text" class="form-control" id="asignarPacienteTelefono" disabled placeholder="No disponible en esta consulta">
                             </div>
                             <div class="col-12 col-md-4">
                                 <label for="asignarPacienteObraSocial" class="form-label">Obra social</label>
-                                <input type="text" class="form-control" id="asignarPacienteObraSocial" required>
+                                <input type="text" class="form-control" id="asignarPacienteObraSocial" disabled placeholder="No disponible en esta consulta">
                             </div>
                             <div class="col-12 col-md-4">
                                 <label for="asignarEspecialidad" class="form-label">Especialidad</label>
