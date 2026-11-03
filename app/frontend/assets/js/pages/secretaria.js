@@ -1,8 +1,29 @@
+const pageScriptUrl = document.currentScript.src;
 const coreModuleBaseUrl = new URL("../core/", document.currentScript.src).href;
 const componentModuleBaseUrl = new URL("../components/", document.currentScript.src).href;
 const featureModuleBaseUrl = new URL("../features/", document.currentScript.src).href;
 
 document.addEventListener("DOMContentLoaded", async () => {
+    const session = await import(new URL('../core/session.js', pageScriptUrl));
+    const realUser = await session.requireRole('SECRETARIA');
+    if (!realUser) return;
+    document.querySelectorAll('[id$="Navbar"]').forEach(node => { node.textContent = realUser.nombre + ' ' + realUser.apellido; });
+    if (document.querySelector('form[data-form$="-profile"]')) {
+        const { initAccountProfile } = await import(new URL('../features/auth/auth-ui.js',pageScriptUrl));
+        initAccountProfile(); return;
+    }
+    try {
+        const availability = await import(new URL('../features/availability/availability-ui.js',pageScriptUrl));
+        if (document.querySelector('[data-form="doctor-availability"]')) { await availability.initDoctorAvailability(); return; }
+        if (document.querySelector('[data-form="secretary-availability"]')) { await availability.initSecretaryAvailability(); return; }
+        if (document.querySelector('[data-form="appointment-request"]')) { await availability.initPatientAvailabilityBrowser(); return; }
+    } catch (error) {
+        const { errorMessage } = await import(new URL('../core/api.js',pageScriptUrl));
+        session.pageMessage(errorMessage(error),'danger'); return;
+    }
+    session.protectLegacyOperations();
+    try {
+
     const fallbackData = {
         usuarios: {
             usuarios: []
@@ -130,33 +151,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     function currentUser() {
-        return readStoredJson(LOCAL_STORAGE_KEYS.CURRENT_USER, null);
+        return session.legacyUser(realUser);
     }
 
-    function currentSecretary(usuarios) {
-        const loggedUser = currentUser();
-        const users = usuarios.usuarios || [];
-        const storedSecretary = readStoredJson(LOCAL_STORAGE_KEYS.SECRETARY_PROFILE, null);
-        let secretary = null;
-
-        if (loggedUser && roleMatches(loggedUser, "secretaria")) {
-            secretary = users.find((user) => user.id_secretaria === loggedUser.id_secretaria) || loggedUser;
-        } else {
-            secretary = users.find((user) => roleMatches(user, "secretaria"))
-                || usuarios.secretariaActual
-                || {};
-        }
-
-        if (storedSecretary && String(storedSecretary.id_secretaria) === String(secretary.id_secretaria)) {
-            return {
-                ...secretary,
-                ...storedSecretary,
-                legajo: secretary.legajo
-            };
-        }
-
-        return secretary;
-    }
+    function currentSecretary() { return session.legacyUser(realUser); }
 
     function doctorsFromUsers(usuarios) {
         return (usuarios.usuarios || [])
@@ -1913,4 +1911,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     await initSecretaryConsultationClosure();
     await initSecretaryMassReschedule();
     await initSecretaryProfile();
+    } catch (error) {
+        const { errorMessage } = await import(new URL('../core/api.js',pageScriptUrl));
+        session.pageMessage(errorMessage(error),'danger');
+    }
 });

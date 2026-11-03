@@ -1,8 +1,29 @@
-﻿const coreModuleBaseUrl = new URL("../core/", document.currentScript.src).href;
+const pageScriptUrl = document.currentScript.src;
+const coreModuleBaseUrl = new URL("../core/", document.currentScript.src).href;
 const componentModuleBaseUrl = new URL("../components/", document.currentScript.src).href;
 const featureModuleBaseUrl = new URL("../features/", document.currentScript.src).href;
 
 document.addEventListener("DOMContentLoaded", async () => {
+    const session = await import(new URL('../core/session.js', pageScriptUrl));
+    const realUser = await session.requireRole('PACIENTE');
+    if (!realUser) return;
+    document.querySelectorAll('[id$="Navbar"]').forEach(node => { node.textContent = realUser.nombre + ' ' + realUser.apellido; });
+    if (document.querySelector('form[data-form$="-profile"]')) {
+        const { initAccountProfile } = await import(new URL('../features/auth/auth-ui.js',pageScriptUrl));
+        initAccountProfile(); return;
+    }
+    try {
+        const availability = await import(new URL('../features/availability/availability-ui.js',pageScriptUrl));
+        if (document.querySelector('[data-form="doctor-availability"]')) { await availability.initDoctorAvailability(); return; }
+        if (document.querySelector('[data-form="secretary-availability"]')) { await availability.initSecretaryAvailability(); return; }
+        if (document.querySelector('[data-form="appointment-request"]')) { await availability.initPatientAvailabilityBrowser(); return; }
+    } catch (error) {
+        const { errorMessage } = await import(new URL('../core/api.js',pageScriptUrl));
+        session.pageMessage(errorMessage(error),'danger'); return;
+    }
+    session.protectLegacyOperations();
+    try {
+
     const fallbackData = {
         usuarios: {
             usuarios: []
@@ -102,22 +123,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     function currentUser() {
-        return readStoredJson(LOCAL_STORAGE_KEYS.CURRENT_USER, null);
+        return session.legacyUser(realUser);
     }
 
-    function currentPatient(usuarios) {
-        const loggedUser = currentUser();
-        const users = usuarios.usuarios || [];
-
-        if (loggedUser && loggedUser.id_paciente) {
-            return users.find((user) => user.id_paciente === loggedUser.id_paciente) || loggedUser;
-        }
-
-        return users.find((user) => user.id_paciente === 1)
-            || usuarios.pacienteActual
-            || users.find((user) => roleMatches(user, "paciente"))
-            || {};
-    }
+    function currentPatient() { return session.legacyUser(realUser); }
 
     function doctorsFromUsers(usuarios) {
         return (usuarios.usuarios || [])
@@ -753,4 +762,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
     await initPatientProfile();
     initReservedAppointment();
+    } catch (error) {
+        const { errorMessage } = await import(new URL('../core/api.js',pageScriptUrl));
+        session.pageMessage(errorMessage(error),'danger');
+    }
 });

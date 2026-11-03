@@ -1,237 +1,72 @@
-document.addEventListener("DOMContentLoaded", () => {
-    async function loadMock(path, fallback) {
-        try {
-            const response = await fetch(path);
+import { login, dashboardUrl, refreshUser } from './core/session.js';
+import { request, errorMessage } from './core/api.js';
+import { initPasswordToggles } from './components/forms.js';
 
-            if (!response.ok) {
-                throw new Error("No se pudo leer el archivo mock.");
-            }
+function alert(form,text,type='danger') {
+    let element=form.querySelector('[data-api-feedback]');
+    if (!element) { element=document.createElement('div'); element.dataset.apiFeedback=''; element.setAttribute('role','alert'); form.prepend(element); }
+    element.className=`alert alert-${type}`; element.textContent=text;
+}
+async function submit(form,operation) {
+    const button=form.querySelector('[type="submit"]');
+    if (button) button.disabled=true;
+    try { await operation(); }
+    catch(error) { alert(form,errorMessage(error)); }
+    finally { if(button)button.disabled=false; }
+}
 
-            return await response.json();
-        } catch (error) {
-            return fallback;
-        }
-    }
-
-    function setValidity(input, isValid) {
-        input.classList.toggle("is-invalid", !isValid);
-        input.classList.toggle("is-valid", isValid);
-    }
-
-    function initPasswordToggles() {
-        document.querySelectorAll('[data-action="toggle-password"]').forEach((button) => {
-            button.addEventListener("click", () => {
-                const input = document.getElementById(button.dataset.target);
-                const icon = button.querySelector("i");
-
-                if (!input) {
-                    return;
-                }
-
-                const isVisible = input.type === "text";
-                input.type = isVisible ? "password" : "text";
-                button.setAttribute("aria-label", isVisible ? "Mostrar contraseña" : "Ocultar contraseña");
-                button.setAttribute("title", isVisible ? "Mostrar contraseña" : "Ocultar contraseña");
-
-                if (icon) {
-                    icon.className = isVisible ? "bi bi-eye" : "bi bi-eye-slash";
-                }
-            });
-        });
-    }
-
-    function roleDashboard(role) {
-        const dashboards = {
-            paciente: "../paciente/dashboard.html",
-            secretaria: "../secretaria/dashboard.html",
-            medico: "../medico/dashboard.html",
-            administrador: "../admin/dashboard.html"
-        };
-
-        return dashboards[role] || "";
-    }
-
-    function initLogin() {
-        if (!window.location.pathname.endsWith("/login.html")) {
-            return;
-        }
-
-        const loginForm = document.querySelector('form[action="#"]');
-        const emailInput = document.getElementById("email");
-        const passwordInput = document.getElementById("password");
-        const submitButton = loginForm ? loginForm.querySelector(".btn-primary") : null;
-
-        if (!loginForm || !emailInput || !passwordInput || !submitButton) {
-            return;
-        }
-
-        const message = document.createElement("div");
-        message.className = "alert alert-danger d-none";
-        message.setAttribute("role", "alert");
-        loginForm.prepend(message);
-
-        async function submitLogin(event) {
+document.addEventListener('DOMContentLoaded', async () => {
+    initPasswordToggles(document);
+    const path=window.location.pathname;
+    if (path.endsWith('/login.html')) {
+        const form=document.querySelector('form');
+        form.querySelector('.btn-primary').type='submit';
+        form.addEventListener('submit', event => {
             event.preventDefault();
-            message.classList.add("d-none");
-
-            const usuariosData = await loadMock("../../assets/mock/usuarios.json", { usuarios: [] });
-            const user = (usuariosData.usuarios || []).find((item) => (
-                item.email === emailInput.value.trim()
-                && item.contraseña === passwordInput.value
-            ));
-
-            setValidity(emailInput, Boolean(user));
-            setValidity(passwordInput, Boolean(user));
-
-            if (!user) {
-                message.textContent = "Credenciales invalidas.";
-                message.classList.remove("d-none");
-                return;
-            }
-
-            localStorage.setItem("usuarioActualMock", JSON.stringify(user));
-            const dashboardUrl = roleDashboard(user.rol);
-
-            if (!dashboardUrl) {
-                message.className = "alert alert-info";
-                message.textContent = "Credenciales validas. El panel para este rol aun no esta implementado.";
-                message.classList.remove("d-none");
-                return;
-            }
-
-            window.location.href = dashboardUrl;
-        }
-
-        submitButton.setAttribute("type", "submit");
-        loginForm.addEventListener("submit", submitLogin);
-    }
-
-    function initPatientRegister() {
-        const registerForm = document.querySelector('[data-form="patient-register"]');
-
-        if (!registerForm) {
-            return;
-        }
-
-        const successMessage = document.getElementById("registroSuccess");
-        const fields = {
-            nombre: document.getElementById("nombre"),
-            apellido: document.getElementById("apellido"),
-            dni: document.getElementById("dni"),
-            telefono: document.getElementById("telefono"),
-            email: document.getElementById("email"),
-            password: document.getElementById("password"),
-            confirmPassword: document.getElementById("confirmPassword")
-        };
-
-        const passwordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
-        let validationStarted = false;
-
-        function validateRegisterForm() {
-            const validations = {
-                nombre: fields.nombre.value.trim().length > 0,
-                apellido: fields.apellido.value.trim().length > 0,
-                dni: /^\d+$/.test(fields.dni.value.trim()),
-                telefono: /^\d+$/.test(fields.telefono.value.trim()),
-                email: fields.email.checkValidity(),
-                password: passwordPattern.test(fields.password.value),
-                confirmPassword: fields.confirmPassword.value === fields.password.value && fields.confirmPassword.value.length > 0
-            };
-
-            Object.entries(validations).forEach(([fieldName, isValid]) => {
-                setValidity(fields[fieldName], isValid);
+            if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
+            submit(form,async () => {
+                const user=await login(document.getElementById('email').value.trim(),document.getElementById('password').value);
+                const destination=dashboardUrl(user.rol);
+                if (!destination) throw new Error('Rol sin panel.');
+                form.reset(); window.location.assign(destination);
             });
-
-            return Object.values(validations).every(Boolean);
+        });
+        try { const user=await refreshUser(); const url=dashboardUrl(user.rol); if(url)window.location.replace(url); }
+        catch(error) { if (![401,403].includes(error.status)) alert(form,errorMessage(error)); }
+    }
+    const recovery=document.querySelector('[data-form="password-recovery"]');
+    if (recovery) {
+        const params=new URLSearchParams(window.location.search);
+        const uid=params.get('uid'), token=params.get('token');
+        if (uid && token) {
+            // Keep reset secrets in memory; remove them from the address bar/history entry.
+            history.replaceState(null,'',window.location.pathname);
+            recovery.querySelector('input[type="email"]').closest('.mb-3').hidden=true;
+            for (const [id,label] of [['password_nueva','Nueva contraseña'],['password_confirmacion','Confirmar contraseña']]) {
+                const block=document.createElement('div'); block.className='mb-3';
+                const title=document.createElement('label'); title.className='form-label'; title.htmlFor=id; title.textContent=label;
+                const input=document.createElement('input'); input.type='password'; input.id=id; input.className='form-control'; input.required=true; input.autocomplete='new-password';
+                block.append(title,input); recovery.insertBefore(block,recovery.querySelector('.d-grid'));
+            }
+            recovery.querySelector('[type="submit"]').textContent='Restablecer contraseña';
         }
-
-        registerForm.addEventListener("submit", (event) => {
+        recovery.addEventListener('submit', event => {
             event.preventDefault();
-            event.stopPropagation();
-            validationStarted = true;
-
-            if (successMessage) {
-                successMessage.classList.add("d-none");
-            }
-
-            if (!validateRegisterForm()) {
-                return;
-            }
-
-            registerForm.reset();
-            Object.values(fields).forEach((field) => {
-                field.classList.remove("is-valid", "is-invalid");
-            });
-
-            if (successMessage) {
-                successMessage.classList.remove("d-none");
-            }
-        });
-
-        Object.values(fields).forEach((field) => {
-            field.addEventListener("input", () => {
-                if (successMessage) {
-                    successMessage.classList.add("d-none");
+            submit(recovery,async () => {
+                let result;
+                if (uid && token) {
+                    result=await request('auth/password-reset/confirm/',{method:'POST',body:{uid,token,
+                        password_nueva:document.getElementById('password_nueva').value,
+                        password_confirmacion:document.getElementById('password_confirmacion').value}});
+                } else {
+                    const email=document.getElementById('recoveryEmail');
+                    if(!email.checkValidity()){email.classList.add('is-invalid');return;}
+                    result=await request('auth/password-reset/',{method:'POST',body:{email:email.value.trim()}});
                 }
-
-                if (validationStarted) {
-                    validateRegisterForm();
-                }
+                recovery.reset(); alert(recovery,result.detail,'success');
             });
         });
     }
-
-    function initPasswordRecovery() {
-        const recoveryForm = document.querySelector('[data-form="password-recovery"]');
-
-        if (!recoveryForm) {
-            return;
-        }
-
-        const emailInput = document.getElementById("recoveryEmail");
-        const successMessage = document.getElementById("recuperarPasswordSuccess");
-        let validationStarted = false;
-
-        function validateRecoveryForm() {
-            const isValid = emailInput.checkValidity();
-            setValidity(emailInput, isValid);
-            return isValid;
-        }
-
-        recoveryForm.addEventListener("submit", (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            validationStarted = true;
-
-            if (successMessage) {
-                successMessage.classList.add("d-none");
-            }
-
-            if (!validateRecoveryForm()) {
-                return;
-            }
-
-            recoveryForm.reset();
-            emailInput.classList.remove("is-valid", "is-invalid");
-
-            if (successMessage) {
-                successMessage.classList.remove("d-none");
-            }
-        });
-
-        emailInput.addEventListener("input", () => {
-            if (successMessage) {
-                successMessage.classList.add("d-none");
-            }
-
-            if (validationStarted) {
-                validateRecoveryForm();
-            }
-        });
-    }
-
-    initPasswordToggles();
-    initLogin();
-    initPatientRegister();
-    initPasswordRecovery();
+    const register=document.querySelector('[data-form="patient-register"]');
+    if(register)register.addEventListener('submit',event=>{event.preventDefault();alert(register,'El registro de pacientes todavía no está habilitado. Comuníquese con Secretaría.','info');});
 });

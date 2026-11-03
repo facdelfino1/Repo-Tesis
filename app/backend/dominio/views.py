@@ -108,7 +108,8 @@ class PasswordResetRequestView(APIView):
         form.save(domain_override=origin.netloc, use_https=origin.scheme == "https",
                   subject_template_name="dominio/password_reset_subject.txt",
                   email_template_name="dominio/password_reset_email.txt",
-                  extra_email_context={"reset_path": reverse("auth-password-reset-confirm")})
+                  extra_email_context={"reset_path": reverse("auth-password-reset-confirm"),
+                                       "reset_page_path": "/frontend/pages/auth/recuperar-password.html"})
         return Response({"detail": "Si la cuenta permite recuperación, recibirá un correo con las instrucciones."})
 
 

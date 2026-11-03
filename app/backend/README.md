@@ -795,3 +795,88 @@ erDiagram
     DISPONIBILIDAD ||--o{ PROPUESTA_REPROGRAMACION : destino_ofrecido
     USUARIO ||--o{ PROPUESTA_REPROGRAMACION : creada_por
 ```
+
+## B7.1 — API común, sesión real, catálogos y disponibilidad
+
+Desarrollo con un solo origen (sin CORS ni nuevas dependencias): configurar
+DJANGO_DEBUG=true para el servidor local y ejecutar manage.py runserver. Abrir
+http://localhost:8000/frontend/pages/auth/login.html, usando siempre el mismo
+host para página y API. No abrir con file:// ni mezclar localhost:5500 con la API
+8000. config.frontend entrega únicamente app/frontend, solo con DEBUG; producción
+debe publicar esa carpeta bajo /frontend/ y enrutar /api/ a Django en el mismo
+origen. No se desactiva CSRF ni se publica el backend/directorio .env.
+
+core/api.js concentra fetch JSON, cookies same-origin, token CSRF en memoria,
+respuestas 204, paginación DRF y ApiError(status,data). No reintenta mutaciones
+silenciosamente. Los errores conservan su status/payload; 5xx/HTML no exponen
+traceback. core/session.js obtiene identidad/rol de auth/me/, protege los cuatro
+roles y cierra sesión mediante auth/logout/. Ningún storage acredita identidad.
+Una respuesta 403 de permiso se distingue de sesión perdida consultando me/;
+solo una sesión no válida provoca login. No hay JWT ni sesión/token en storage.
+
+Login, logout, me, cambio de contraseña, solicitud y confirmación de recuperación
+consumen B2 real. El email conserva origen confiable y token Django, pero su enlace
+abre el formulario /frontend/pages/auth/recuperar-password.html. La pantalla retira
+uid/token de la barra de direcciones y los conserva solo en memoria. No inicia
+sesión automáticamente después del reset. Las reglas de intentos, bloqueo,
+activación, contraseñas y permisos B2 no se modificaron.
+
+Catálogos usan especialidades/, medicos/?especialidad={id} y medicos/{id}/,
+incluida paginación. IDs de PostgreSQL, sin nombres/IDs de médicos hardcodeados.
+La selección directa de médico ajusta la especialidad; la consulta espera a que
+termine esa selección para evitar respuestas obsoletas.
+
+Paciente: solicitar-turno consulta disponibilidad real autorizada; no ocupa/libera
+slots ni confirma todavía reservas. Mantiene el cuestionario preparado, sin
+migrar su cálculo/reserva en este subbloque. Médico: carga y visualiza su propia
+disponibilidad. Secretaría: selecciona especialidad/médico y gestiona esa agenda.
+Creación explícita de bloques de 20 minutos mediante lote/ (elección de UI ya
+existente), bloqueo/desbloqueo y eliminación usan exclusivamente B3. El servidor
+valida futuro, solapamientos, historial y autorización; frontend no decide autoridad.
+
+Perfiles de los cuatro roles muestran me/ y permiten cambio de contraseña real.
+Los datos personales quedan de solo lectura porque B2 no ofrece edición propia
+para esos campos. La administración local de usuarios y el registro demostrativo
+no simulan guardados ni crean cuentas. Su integración/contrato se resolverá en el
+subbloque correspondiente, sin inventar endpoints nuevos aquí.
+
+Se retiran de uso y se eliminan al abrir páginas protegidas: usuarioActualMock,
+usuariosAdminMock, perfilAdminMock, perfilMedicoMock, perfilSecretariaMock,
+perfilPacienteMock, disponibilidadPacienteMock, disponibilidadMedicoMock y
+ disponibilidadSecretariaMock; también disponibilidadSecretariaTemporal y
+ disponibilidadMedicoTemporal de sessionStorage. No se escriben claves retiradas.
+No se elimina el almacenamiento de turnos, pacientes demostrativos, triajes,
+reprogramación/propuestas ni solicitudes/resultados de turno de sessionStorage.
+
+Compatibilidad localizada: las páginas no integradas conservan visualización de
+turnos/métricas de demostración, anunciada como tal, con mutaciones deshabilitadas.
+loadMock no devuelve inventario local ni el catálogo médico JSON: adapta médicos
+reales a la forma antigua solo para esas vistas. Los usuarios JSON se usan como
+fixtures de pacientes/historial, sanitizados de contraseñas, nunca como identidad
+o credenciales. No existe fallback de catálogo/disponibilidad real a mocks.
+
+Pendiente B7.2 y siguientes: reserva/triaje, modificación/cancelación, presencia,
+atención, reprogramación, propuestas, pendientes y métricas. Conectar sus servicios
+a B4–B6, retirar la compatibilidad localizada y habilitar cada acción solo cuando
+use la API. No mezclar IDs reales de agenda con persistencia local de turnos.
+
+Verificación reproducible (cuentas provisionadas en PostgreSQL con perfiles):
+1. Sin cookie, abrir una página protegida: debe redirigir al login.
+2. Login de cada rol: me/ y panel deben coincidir; manipular usuarioActualMock no
+   debe permitir cambiar de rol. Logout debe hacer que me/ vuelva a denegarse.
+3. Solicitar turno: seleccionar especialidad/médico real; consultar bloques; la
+   confirmación permanece deshabilitada. No se crea Turno.
+4. Cargar disponibilidad de Médico/Secretaría: generar y guardar lote; recargar
+   y verificar datos; bloquear/desbloquear/eliminar un bloque permitido. Intentar
+   solapamiento debe mostrar el conflicto backend sin override local.
+5. Perfil: comprobar identidad, cambio de contraseña y login con la nueva.
+6. Recuperación: pedir correo, abrir enlace, completar y volver a iniciar sesión.
+   El reset no crea sesión ni muestra éxito ante errores de validación.
+7. Cortar API: mostrar error sin sesión ficticia. Limpiar cookies y recargar:
+   login. Un 403 de agenda ajena con me/ válido no debe fabricar un logout.
+
+Checks de B7.1: node --check, comprobaciones en memoria con Node sin framework,
+smoke con navegador real y PostgreSQL temporal, tests focalizados Django B2/B3 y
+entrega estática. No se repite la suite completa de negocio porque no se alteraron
+modelos, migraciones, servicios ni reglas B1–B6; se conserva como referencia el
+último resultado 217/217. Los cambios backend son entrega local y enlace de email.

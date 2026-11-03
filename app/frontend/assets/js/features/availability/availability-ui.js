@@ -1,634 +1,125 @@
-import { LOCAL_STORAGE_KEYS, MOCK_PATHS, SESSION_STORAGE_KEYS } from "../../core/constants.js";
-import { loadMock, readStoredJson, writeStoredJson } from "../../core/storage.js";
-import { removeSessionItem } from "../../core/session.js";
-import { escapeHtml } from "../../core/helpers.js";
-import { formatDate, timeToMinutes } from "../../core/formatters.js";
-import { hideAlert, showAlert } from "../../components/alerts.js";
-import { stateText as renderStateText } from "../../components/badges.js";
-import { clearErrors as clearFieldErrors, setFieldError as applyFieldError } from "../../components/forms.js";
-import { getBootstrapModal, showModal } from "../../components/modals.js";
-import { renderTableEmptyRow } from "../../components/tables.js";
-import {
-    buildAvailabilityBlocks,
-    availabilityDurationMinutes,
-    persistAvailabilityChanges,
-    hasOverlap,
-    mergeAllStoredAvailability,
-    mergeStoredAvailability
-} from "./availability-service.js";
+import { getBootstrapModal, showModal } from '../../components/modals.js';
+import { request, errorMessage } from '../../core/api.js';
+import { getCurrentUser, pageMessage } from '../../core/session.js';
+import { bindDoctorSelectors, getAvailability } from '../catalog/catalog-service.js';
+import { buildAvailabilityBlocks } from './availability-service.js';
+import { escapeHtml } from '../../core/helpers.js';
+import { formatDate, timeToMinutes } from '../../core/formatters.js';
+import { updateTriageQuestionnaire } from '../triage/triage-ui.js';
 
-export async function initDoctorAvailability(config) {
-    const {
-        currentUser,
-        doctorsFromData,
-        fallbackData,
-        fullName,
-        renderUnauthorized,
-        roleMatches,
-        setText
-    } = config;
-    const form = document.querySelector('[data-form="doctor-availability"]');
-
-    if (!form) {
-        return;
+async function initAvailability(doctorMode) {
+    const form=document.querySelector(`[data-form="${doctorMode?'doctor':'secretary'}-availability"]`);
+    if(!form)return;
+    const user=getCurrentUser();
+    const fields=doctorMode ? {date:'disponibilidadMedicoFecha',start:'disponibilidadMedicoHoraInicio',end:'disponibilidadMedicoHoraFin'}
+        :{date:'disponibilidadFecha',start:'disponibilidadHoraInicio',end:'disponibilidadHoraFin'};
+    Object.keys(fields).forEach(key=>fields[key]=document.getElementById(fields[key]));
+    const table=document.getElementById(doctorMode?'disponibilidadMedicoTabla':'disponibilidadTabla');
+    const preview=document.getElementById(doctorMode?'bloquesMedicoPreview':'bloquesPreview');
+    const empty=document.getElementById(doctorMode?'bloquesMedicoVacio':'bloquesVacio');
+    const message=document.getElementById(doctorMode?'disponibilidadMedicoMensaje':'disponibilidadMensaje');
+    const generate=document.getElementById(doctorMode?'generarBloquesMedicoBtn':'generarBloquesBtn');
+    let selected=doctorMode?{id:user.perfil.id,nombre:user.nombre,apellido:user.apellido,especialidad:user.perfil.especialidad}:null;
+    let blocks=[], generatedFor=null, sequence=0;
+    function feedback(text,type='danger'){message.className=`alert alert-${type}`;message.textContent=text;}
+    function clearPreview(){blocks=[];generatedFor=null;preview.replaceChildren();empty.classList.remove('d-none');}
+    async function refresh(){
+        const current=++sequence;
+        if(!selected){table.innerHTML=`<tr><td colspan="${doctorMode?5:7}">Seleccione un médico para consultar su disponibilidad.</td></tr>`;return;}
+        const doctor=selected;
+        table.innerHTML=`<tr><td colspan="${doctorMode?5:7}">Consultando disponibilidad...</td></tr>`;
+        const rows=await getAvailability(doctor.id);
+        if(current!==sequence)return;
+        table.innerHTML=rows.length?rows.map(row=>{
+            const state={DISPONIBLE:'Disponible',BLOQUEADO:'Bloqueado',OCUPADO:'Ocupado'}[row.estado]||row.estado;
+            const actions=row.estado==='OCUPADO'?'Sin acciones':
+                `<button type="button" class="btn btn-sm btn-outline-secondary" data-slot="${row.id}" data-operation="${row.estado==='BLOQUEADO'?'desbloquear':'bloquear'}">${row.estado==='BLOQUEADO'?'Desbloquear':'Bloquear'}</button>
+                 <button type="button" class="btn btn-sm btn-outline-danger" data-slot="${row.id}" data-operation="eliminar">Eliminar</button>`;
+            return `<tr>${doctorMode?'':`<td>${escapeHtml(doctor.nombre+' '+doctor.apellido)}</td><td>${escapeHtml(doctor.especialidad.nombre)}</td>`}
+                <td>${formatDate(row.fecha)}</td><td>${escapeHtml(row.hora_inicio.slice(0,5))}</td><td>${escapeHtml(row.hora_fin.slice(0,5))}</td><td>${escapeHtml(state)}</td><td>${actions}</td></tr>`;
+        }).join(''):`<tr><td colspan="${doctorMode?5:7}">No hay disponibilidad registrada para este médico.</td></tr>`;
     }
-
-    const [usuarios, medicosData, disponibilidadData] = await Promise.all([
-        loadMock(MOCK_PATHS.USERS, fallbackData.usuarios),
-        loadMock(MOCK_PATHS.DOCTORS, fallbackData.medicos),
-        loadMock(MOCK_PATHS.AVAILABILITY, fallbackData.disponibilidad)
-    ]);
-    const loggedUser = currentUser();
-    const message = document.getElementById("disponibilidadMedicoMensaje");
-    const tableBody = document.getElementById("disponibilidadMedicoTabla");
-    const generateButton = document.getElementById("generarBloquesMedicoBtn");
-    const cancelButton = document.getElementById("cancelarDisponibilidadMedicoBtn");
-    const confirmExitButton = document.getElementById("confirmarSalirSinGuardarMedicoBtn");
-    const exitModalElement = document.getElementById("salirSinGuardarMedicoModal");
-    const exitModal = getBootstrapModal(exitModalElement);
-    const preview = document.getElementById("bloquesMedicoPreview");
-    const emptyPreview = document.getElementById("bloquesMedicoVacio");
-    const fields = {
-        date: document.getElementById("disponibilidadMedicoFecha"),
-        start: document.getElementById("disponibilidadMedicoHoraInicio"),
-        end: document.getElementById("disponibilidadMedicoHoraFin")
-    };
-    const baseSlotDuration = 20;
-    let generatedBlocks = [];
-
-    if (!loggedUser || !roleMatches(loggedUser, "medico")) {
-        renderUnauthorized();
-        form.classList.add("d-none");
-
-        if (tableBody) {
-            tableBody.innerHTML = renderTableEmptyRow(5, "No hay informacion disponible para este usuario.");
-        }
-
-        return;
-    }
-
-    const doctors = doctorsFromData(usuarios, medicosData);
-    const mockDoctor = doctors.find((doctor) => String(doctor.id_medico || doctor.id) === String(loggedUser.id_medico))
-        || loggedUser;
-    const storedDoctor = readStoredJson(LOCAL_STORAGE_KEYS.DOCTOR_PROFILE, null);
-    const doctor = storedDoctor && String(storedDoctor.id_medico) === String(mockDoctor.id_medico || mockDoctor.id)
-        ? {
-            ...mockDoctor,
-            ...loggedUser,
-            ...storedDoctor,
-            matricula: mockDoctor.matricula,
-            especialidad: mockDoctor.especialidad
-        }
-        : {
-            ...mockDoctor,
-            ...loggedUser,
-            matricula: mockDoctor.matricula,
-            especialidad: mockDoctor.especialidad
-        };
-    let availability = mergeAllStoredAvailability(Array.isArray(disponibilidadData) ? disponibilidadData : []);
-
-    function doctorId() {
-        return doctor.id_medico || doctor.id;
-    }
-
-    function ownAvailability() {
-        return availability
-            .filter((item) => String(item.id_medico) === String(doctorId()))
-            .sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)) || timeToMinutes(a.hora_inicio) - timeToMinutes(b.hora_inicio));
-    }
-
-    function setFieldError(fieldName, text) {
-        const errorIds = {
-            date: "disponibilidadMedicoFechaError",
-            start: "disponibilidadMedicoHoraInicioError",
-            end: "disponibilidadMedicoHoraFinError"
-        };
-        applyFieldError(fields, fieldName, text, (name) => document.getElementById(errorIds[name]));
-    }
-
-    function clearErrors() {
-        clearFieldErrors(fields, setFieldError, {
-            onClear: () => hideAlert(message)
+    if(!doctorMode){
+        await bindDoctorSelectors(document.getElementById('disponibilidadEspecialidad'),document.getElementById('disponibilidadMedico'),async(doctor,error)=>{
+            selected=doctor;clearPreview();
+            if(error){feedback(errorMessage(error));return;}
+            try{await refresh();}catch(err){feedback(errorMessage(err));}
         });
     }
-
-    function showMessage(type, text) {
-        showAlert(message, type, text);
-    }
-
-    function validateForm() {
-        let isValid = true;
-
-        clearErrors();
-
-        if (fields.date.value === "") {
-            setFieldError("date", "La fecha es obligatoria.");
-            isValid = false;
-        }
-
-        if (fields.start.value === "") {
-            setFieldError("start", "La hora de inicio es obligatoria.");
-            isValid = false;
-        }
-
-        if (fields.end.value === "") {
-            setFieldError("end", "La hora fin es obligatoria.");
-            isValid = false;
-        }
-
-        if (fields.start.value !== "" && fields.end.value !== ""
-            && timeToMinutes(fields.start.value) >= timeToMinutes(fields.end.value)) {
-            setFieldError("start", "La hora de inicio debe ser menor que la hora fin.");
-            setFieldError("end", "Revise el rango horario.");
-            isValid = false;
-        }
-
-        if (fields.start.value !== "" && fields.end.value !== ""
-            && timeToMinutes(fields.end.value) - timeToMinutes(fields.start.value) < baseSlotDuration) {
-            setFieldError("end", "El rango horario debe permitir al menos un bloque de 20 minutos.");
-            isValid = false;
-        }
-
-        if (isValid && hasOverlap(ownAvailability(), fields.date.value, fields.start.value, fields.end.value)) {
-            setFieldError("start", "El rango se superpone con disponibilidad existente.");
-            setFieldError("end", "Seleccione un horario libre de su agenda.");
-            isValid = false;
-        }
-
-        return isValid;
-    }
-
-    function renderPreview() {
-        if (!preview || !emptyPreview) {
-            return;
-        }
-
-        emptyPreview.classList.toggle("d-none", generatedBlocks.length > 0);
-        preview.innerHTML = generatedBlocks.map((block) => `
-            <div class="col-12 col-sm-6 col-xl-3">
-                <div class="metric-box rounded-3 p-3 h-100">
-                    <p class="text-secondary small mb-1">${formatDate(block.fecha)}</p>
-                    <p class="fw-semibold mb-0">${escapeHtml(block.hora_inicio)} - ${escapeHtml(block.hora_fin)}</p>
-                </div>
-            </div>
-        `).join("");
-    }
-
-    function renderAvailabilityTable() {
-        const rows = ownAvailability();
-
-        if (!tableBody) {
-            return;
-        }
-
-        if (rows.length === 0) {
-            tableBody.innerHTML = renderTableEmptyRow(5, "No existe disponibilidad cargada para su agenda profesional.");
-            return;
-        }
-
-        tableBody.innerHTML = rows.map((item) => `
-            <tr>
-                <td>${formatDate(item.fecha)}</td>
-                <td>${escapeHtml(item.hora_inicio)}</td>
-                <td>${escapeHtml(item.hora_fin)}</td>
-                <td>${renderStateText(item.estado, escapeHtml)}</td>
-                <td>${escapeHtml(item.origen || "Mock")}</td>
-            </tr>
-        `).join("");
-    }
-
-    function persistAvailability(changedSlots) {
-        persistAvailabilityChanges(changedSlots);
-    }
-
-    function generateBlocks() {
-        if (!validateForm()) {
-            generatedBlocks = [];
-            renderPreview();
-            return;
-        }
-
-        generatedBlocks = buildAvailabilityBlocks({
-            doctorId: doctorId(),
-            doctorName: fullName(doctor),
-            specialty: doctor.especialidad,
-            date: fields.date.value,
-            start: fields.start.value,
-            end: fields.end.value,
-            origin: "Medico",
-            slotDuration: baseSlotDuration
-        });
-        renderPreview();
-    }
-
-    function saveAvailability(event) {
-        event.preventDefault();
-
-        if (generatedBlocks.length === 0) {
-            showMessage("danger", "Debe generar bloques antes de guardar la disponibilidad.");
-            return;
-        }
-
-        const maxId = availability.reduce((maxValue, item) => Math.max(maxValue, Number(item.id_disponibilidad) || 0), 0);
-        const blocksToSave = generatedBlocks.map((block, index) => ({
-            id_disponibilidad: maxId + index + 1,
-            ...block,
-            origenInterfaz: true
-        }));
-
-        availability = [...availability, ...blocksToSave];
-        persistAvailability(blocksToSave);
-        generatedBlocks = [];
-        form.reset();
-        renderPreview();
-        renderAvailabilityTable();
-        showMessage("success", "Disponibilidad medica cargada correctamente.");
-    }
-
-    function clearTemporaryData() {
-        generatedBlocks = [];
-        form.reset();
-        renderPreview();
-        clearErrors();
-        removeSessionItem(SESSION_STORAGE_KEYS.DOCTOR_TEMP_AVAILABILITY);
-    }
-
-    setText("disponibilidadMedicoNavbar", fullName(doctor));
-    renderPreview();
-    renderAvailabilityTable();
-
-    Object.values(fields).forEach((field) => {
-        field.addEventListener("input", () => {
-            generatedBlocks = [];
-            renderPreview();
-            clearErrors();
-        });
+    generate.addEventListener('click',event=>{
+        event.preventDefault();clearPreview();
+        if(!selected||!fields.date.value||!fields.start.value||!fields.end.value){feedback('Complete médico, fecha y ambas horas.');return;}
+        if(timeToMinutes(fields.start.value)>=timeToMinutes(fields.end.value)){feedback('La hora de fin debe ser posterior al inicio.');return;}
+        blocks=buildAvailabilityBlocks({doctorId:selected.id,doctorName:selected.nombre+' '+selected.apellido,
+            specialty:selected.especialidad.nombre,date:fields.date.value,start:fields.start.value,end:fields.end.value,slotDuration:20});
+        if(!blocks.length){feedback('El intervalo debe permitir al menos un bloque de 20 minutos.');return;}
+        generatedFor=JSON.stringify([selected.id,fields.date.value,fields.start.value,fields.end.value]);
+        empty.classList.add('d-none');
+        preview.innerHTML=blocks.map(b=>`<div class="col-12 col-sm-6 col-xl-3"><div class="metric-box rounded-3 p-3"><p class="mb-0">${formatDate(b.fecha)} ${escapeHtml(b.hora_inicio)}–${escapeHtml(b.hora_fin)}</p></div></div>`).join('');
+        feedback('Revise los bloques y confirme para guardarlos. El servidor validará la agenda.','info');
     });
-
-    if (generateButton) {
-        generateButton.addEventListener("click", generateBlocks);
-    }
-
-    if (cancelButton) {
-        cancelButton.addEventListener("click", () => {
-            if (exitModal) {
-                showModal(exitModal);
-                return;
-            }
-
-            clearTemporaryData();
-            window.location.href = "dashboard.html";
-        });
-    }
-
-    if (confirmExitButton) {
-        confirmExitButton.addEventListener("click", () => {
-            clearTemporaryData();
-            window.location.href = "dashboard.html";
-        });
-    }
-
-    form.addEventListener("submit", saveAvailability);
+    Object.values(fields).forEach(field=>field.addEventListener('input',clearPreview));
+    form.addEventListener('submit',async event=>{
+        event.preventDefault();
+        if(!selected||!blocks.length||generatedFor!==JSON.stringify([selected.id,fields.date.value,fields.start.value,fields.end.value])){feedback('Genere nuevamente los bloques antes de guardar.');return;}
+        const button=form.querySelector('[type="submit"]');button.disabled=true;
+        try{
+            await request(`medicos/${selected.id}/disponibilidades/lote/`,{method:'POST',body:{bloques:blocks.map(b=>({fecha:b.fecha,hora_inicio:b.hora_inicio,hora_fin:b.hora_fin}))}});
+            clearPreview();await refresh();feedback('Disponibilidad guardada correctamente.','success');
+        }catch(error){feedback(errorMessage(error));}
+        finally{button.disabled=false;}
+    });
+    table.addEventListener('click',async event=>{
+        const button=event.target.closest('[data-operation]');if(!button||!selected)return;
+        const operation=button.dataset.operation;
+        if(operation==='eliminar'&&!window.confirm('¿Eliminar este bloque de disponibilidad?'))return;
+        button.disabled=true;
+        try{
+            await request(`medicos/${selected.id}/disponibilidades/${button.dataset.slot}/${operation==='eliminar'?'':operation+'/'}`,{method:operation==='eliminar'?'DELETE':'POST',...(operation==='eliminar'?{}:{body:{}})});
+            await refresh();feedback('Disponibilidad actualizada.','success');
+        }catch(error){feedback(errorMessage(error));button.disabled=false;}
+    });
+    const exitModal=getBootstrapModal(document.getElementById(doctorMode?'salirSinGuardarMedicoModal':'salirSinGuardarModal'));
+    document.getElementById(doctorMode?'cancelarDisponibilidadMedicoBtn':'cancelarDisponibilidadBtn')?.addEventListener('click',event=>{
+        event.preventDefault();
+        if(blocks.length && exitModal) showModal(exitModal);
+        else window.location.assign('dashboard.html');
+    });
+    document.getElementById(doctorMode?'confirmarSalirSinGuardarMedicoBtn':'confirmarSalirSinGuardarBtn')?.addEventListener('click',()=>{
+        clearPreview();window.location.assign('dashboard.html');
+    });
+    await refresh();
 }
+export const initDoctorAvailability=()=>initAvailability(true);
+export const initSecretaryAvailability=()=>initAvailability(false);
 
-export async function initSecretaryAvailability(config) {
-    const {
-        currentSecretary,
-        doctorsFromUsers,
-        fallbackData,
-        fullName,
-        setText
-    } = config;
-    const form = document.querySelector('[data-form="secretary-availability"]');
-
-    if (!form) {
-        return;
-    }
-
-    const [usuarios, disponibilidadMock] = await Promise.all([
-        loadMock(MOCK_PATHS.USERS, fallbackData.usuarios),
-        loadMock(MOCK_PATHS.AVAILABILITY, fallbackData.disponibilidad)
-    ]);
-    const secretaria = currentSecretary(usuarios);
-    const doctors = doctorsFromUsers(usuarios);
-    const fields = {
-        specialty: document.getElementById("disponibilidadEspecialidad"),
-        doctor: document.getElementById("disponibilidadMedico"),
-        date: document.getElementById("disponibilidadFecha"),
-        start: document.getElementById("disponibilidadHoraInicio"),
-        end: document.getElementById("disponibilidadHoraFin")
-    };
-    const baseSlotDuration = 20;
-    const generateButton = document.getElementById("generarBloquesBtn");
-    const cancelButton = document.getElementById("cancelarDisponibilidadBtn");
-    const confirmExitButton = document.getElementById("confirmarSalirSinGuardarBtn");
-    const exitModalElement = document.getElementById("salirSinGuardarModal");
-    const exitModal = getBootstrapModal(exitModalElement);
-    const preview = document.getElementById("bloquesPreview");
-    const emptyPreview = document.getElementById("bloquesVacio");
-    const tableBody = document.getElementById("disponibilidadTabla");
-    const message = document.getElementById("disponibilidadMensaje");
-    let availability = mergeStoredAvailability(LOCAL_STORAGE_KEYS.SECRETARY_AVAILABILITY, disponibilidadMock, doctors);
-    let generatedBlocks = [];
-
-    function doctorFullName(doctor) {
-        return `${doctor.nombre} ${doctor.apellido}`;
-    }
-
-    function setFieldError(field, text) {
-        const errorIds = {
-            specialty: "disponibilidadEspecialidadError",
-            doctor: "disponibilidadMedicoError",
-            date: "disponibilidadFechaError",
-            start: "disponibilidadHoraInicioError",
-            end: "disponibilidadHoraFinError"
-        };
-        applyFieldError(fields, field, text, (name) => document.getElementById(errorIds[name]));
-    }
-
-    function clearErrors() {
-        clearFieldErrors(fields, setFieldError, {
-            onClear: () => hideAlert(message)
-        });
-    }
-
-    function showMessage(type, text) {
-        showAlert(message, type, text);
-    }
-
-    function selectedDoctor() {
-        const doctorId = Number.parseInt(fields.doctor.value, 10);
-        return doctors.find((doctor) => doctor.id === doctorId) || null;
-    }
-
-    function currentAvailabilityFilter() {
-        const doctor = selectedDoctor();
-
-        if (doctor) {
-            return {
-                type: "doctor",
-                value: String(doctor.id)
-            };
-        }
-
-        if (fields.specialty.value !== "") {
-            return {
-                type: "specialty",
-                value: fields.specialty.value
-            };
-        }
-
-        return null;
-    }
-
-    function renderSpecialties() {
-        const specialties = [...new Set(doctors.map((doctor) => doctor.especialidad))].sort();
-        fields.specialty.innerHTML = '<option value="">Seleccione una especialidad</option>';
-        specialties.forEach((specialty) => {
-            const option = document.createElement("option");
-            option.value = specialty;
-            option.textContent = specialty;
-            fields.specialty.appendChild(option);
-        });
-    }
-
-    function renderDoctors(specialty = "") {
-        const filteredDoctors = specialty === ""
-            ? doctors
-            : doctors.filter((doctor) => doctor.especialidad === specialty);
-        fields.doctor.innerHTML = '<option value="">Seleccione un medico</option>';
-        filteredDoctors.forEach((doctor) => {
-            const option = document.createElement("option");
-            option.value = String(doctor.id);
-            option.textContent = `${doctorFullName(doctor)} - ${doctor.especialidad}`;
-            fields.doctor.appendChild(option);
-        });
-    }
-
-    function validateForm() {
-        let isValid = true;
-        clearErrors();
-
-        const doctor = selectedDoctor();
-        if (!doctor || fields.specialty.value !== doctor.especialidad) {
-            setFieldError("doctor", "Seleccione un médico de la especialidad indicada.");
-            isValid = false;
-        }
-
-        if (fields.date.value === "") {
-            setFieldError("date", "La fecha es obligatoria.");
-            isValid = false;
-        }
-
-        if (fields.start.value === "") {
-            setFieldError("start", "La hora de inicio es obligatoria.");
-            isValid = false;
-        }
-
-        if (fields.end.value === "") {
-            setFieldError("end", "La hora de finalizacion es obligatoria.");
-            isValid = false;
-        }
-
-        if (fields.start.value !== "" && fields.end.value !== ""
-            && timeToMinutes(fields.start.value) >= timeToMinutes(fields.end.value)) {
-            setFieldError("start", "La hora de inicio debe ser menor que la hora de finalizacion.");
-            setFieldError("end", "Revise el rango horario.");
-            isValid = false;
-        }
-
-        if (fields.start.value !== "" && fields.end.value !== ""
-            && timeToMinutes(fields.end.value) - timeToMinutes(fields.start.value) < baseSlotDuration) {
-            setFieldError("end", "El rango horario debe permitir al menos un bloque de 20 minutos.");
-            isValid = false;
-        }
-
-        const duration = availabilityDurationMinutes(fields.start.value, fields.end.value);
-        if (fields.start.value !== "" && fields.end.value !== ""
-            && (duration === null || duration < baseSlotDuration)) {
-            setFieldError("end", "Ingrese un intervalo válido que permita al menos un bloque.");
-            isValid = false;
-        }
-        if (doctor && isValid) {
-            availability = mergeAllStoredAvailability(Array.isArray(disponibilidadMock) ? disponibilidadMock : []);
-            const own = availability.filter((item) => String(item.id_medico) === String(doctor.id));
-            if (hasOverlap(own, fields.date.value, fields.start.value, fields.end.value)) {
-                setFieldError("start", "El rango se superpone con disponibilidad existente del médico.");
-                isValid = false;
-            }
-        }
-        return isValid;
-    }
-
-    function renderPreview() {
-        emptyPreview.classList.toggle("d-none", generatedBlocks.length > 0);
-        preview.innerHTML = generatedBlocks.map((block) => `
-            <div class="col-12 col-sm-6 col-xl-3">
-                <div class="metric-box rounded-3 p-3 h-100">
-                    <p class="text-secondary small mb-1">${formatDate(block.fecha)}</p>
-                    <p class="fw-semibold mb-0">${block.hora_inicio} - ${block.hora_fin}</p>
-                </div>
-            </div>
-        `).join("");
-    }
-
-    function generateBlocks() {
-        if (!validateForm()) {
-            generatedBlocks = [];
-            renderPreview();
-            return;
-        }
-
-        const doctor = selectedDoctor();
-
-        generatedBlocks = buildAvailabilityBlocks({
-            doctorId: doctor.id,
-            doctorName: doctorFullName(doctor),
-            specialty: doctor.especialidad,
-            date: fields.date.value,
-            start: fields.start.value,
-            end: fields.end.value,
-            origin: "Secretaria",
-            slotDuration: baseSlotDuration
-        });
-        renderPreview();
-    }
-
-    function renderAvailabilityTable() {
-        const filter = currentAvailabilityFilter();
-
-        if (!filter) {
-            tableBody.innerHTML = renderTableEmptyRow(7, "Seleccione un m&eacute;dico o una especialidad para consultar la disponibilidad cargada.");
-            return;
-        }
-
-        const filteredAvailability = availability.filter((item) => {
-            if (filter.type === "doctor") {
-                return String(item.id_medico) === filter.value;
-            }
-
-            return item.especialidad === filter.value;
-        });
-
-        if (filteredAvailability.length === 0) {
-            tableBody.innerHTML = renderTableEmptyRow(7, "No existen horarios cargados para el criterio seleccionado.");
-            return;
-        }
-
-        tableBody.innerHTML = filteredAvailability.map((item) => {
-            return `
-                <tr>
-                    <td>${item.medico}</td>
-                    <td>${item.especialidad}</td>
-                    <td>${formatDate(item.fecha)}</td>
-                    <td>${item.hora_inicio}</td>
-                    <td>${item.hora_fin}</td>
-                    <td>${renderStateText(item.estado, escapeHtml)}</td>
-                    <td>${item.origen || "Mock"}</td>
-                </tr>
-            `;
-        }).join("");
-    }
-
-    function persistAvailability(changedSlots) {
-        persistAvailabilityChanges(changedSlots);
-    }
-
-    function saveAvailability(event) {
-        event.preventDefault();
-
-        if (generatedBlocks.length === 0) {
-            showMessage("danger", "Debe generar bloques antes de guardar la disponibilidad.");
-            return;
-        }
-
-        if (!validateForm()) return;
-        const doctor = selectedDoctor();
-        if (generatedBlocks.some((block) => String(block.id_medico) !== String(doctor.id)
-            || block.especialidad !== doctor.especialidad || block.fecha !== fields.date.value)
-            || generatedBlocks[0].hora_inicio !== fields.start.value
-            || timeToMinutes(generatedBlocks[generatedBlocks.length - 1].hora_fin) > timeToMinutes(fields.end.value)) {
-            showMessage("danger", "Los datos cambiaron. Genere nuevamente los bloques antes de guardar.");
-            return;
-        }
-        const maxId = availability.reduce((maxValue, item) => Math.max(maxValue, Number(item.id_disponibilidad) || 0), 0);
-        const blocksToSave = generatedBlocks.map((block, index) => ({
-            id_disponibilidad: maxId + index + 1,
-            ...block,
-            origenInterfaz: true
-        }));
-
-        availability = [...availability, ...blocksToSave];
-        persistAvailability(blocksToSave);
-        generatedBlocks = [];
-        fields.date.value = "";
-        fields.start.value = "";
-        fields.end.value = "";
-        renderPreview();
-        renderAvailabilityTable();
-        showMessage("success", "Disponibilidad medica cargada correctamente.");
-    }
-
-    function clearTemporaryAvailabilityData() {
-        generatedBlocks = [];
-        form.reset();
-        renderDoctors();
-        renderPreview();
-        renderAvailabilityTable();
-        removeSessionItem(SESSION_STORAGE_KEYS.SECRETARY_TEMP_AVAILABILITY);
-    }
-
-    setText("disponibilidadSecretariaNavbar", fullName(secretaria));
-    renderSpecialties();
-    renderDoctors();
-    renderPreview();
-    renderAvailabilityTable();
-
-    fields.specialty.addEventListener("change", () => {
-        clearErrors();
-        fields.doctor.value = "";
-        renderDoctors(fields.specialty.value);
-        generatedBlocks = [];
-        renderPreview();
-        renderAvailabilityTable();
+export async function initPatientAvailabilityBrowser(){
+    const form=document.querySelector('[data-form="appointment-request"]');if(!form)return;
+    const specialty=document.getElementById('especialidad'),doctor=document.getElementById('medico');
+    const list=document.getElementById('disponibilidadLista'),section=document.getElementById('disponibilidadSection');
+    const confirm=document.getElementById('confirmarTurnoBtn');confirm.disabled=true;
+    const consult=form.querySelector('[type="submit"]');consult.disabled=true;
+    const error=document.getElementById('disponibilidadError');
+    let selected=null,sequence=0;
+    const controls=await bindDoctorSelectors(specialty,doctor,async(value,err)=>{
+        selected=value;consult.disabled=!value;list.replaceChildren();section.classList.add('d-none');++sequence;
+        const key=value?.especialidad.nombre.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replaceAll(' ','_')||'';
+        updateTriageQuestionnaire(form,key);
+        if(err)pageMessage(errorMessage(err),'danger');
     });
-
-    fields.doctor.addEventListener("change", () => {
-        clearErrors();
-        const doctor = selectedDoctor();
-
-        if (doctor) {
-            fields.specialty.value = doctor.especialidad;
-            renderDoctors(doctor.especialidad);
-            fields.doctor.value = String(doctor.id);
-        }
-
-        generatedBlocks = [];
-        renderPreview();
-        renderAvailabilityTable();
+    updateTriageQuestionnaire(form,'');
+    form.addEventListener('submit',async event=>{
+        event.preventDefault();selected=controls.getDoctor();
+        if(doctor.disabled||!selected){pageMessage('Seleccione un médico para consultar sus horarios.');return;}
+        const current=++sequence;const id=selected.id;
+        try{
+            const rows=await getAvailability(id);
+            if(current!==sequence)return;
+            section.classList.remove('d-none');
+            error.classList.add('d-none');
+            document.getElementById('sinDisponibilidad').classList.toggle('d-none',rows.length>0);
+            list.innerHTML=rows.map(row=>`<div class="col-12 col-md-6"><div class="card border h-100"><div class="card-body"><p class="fw-semibold">${formatDate(row.fecha)} ${escapeHtml(row.hora_inicio.slice(0,5))}–${escapeHtml(row.hora_fin.slice(0,5))}</p><p>${escapeHtml(selected.nombre+' '+selected.apellido)}</p><span class="badge text-bg-success">Disponible</span></div></div></div>`).join('');
+            pageMessage('Horarios consultados. La confirmación de turnos aún no está habilitada en esta pantalla.','info');
+        }catch(err){pageMessage(errorMessage(err),'danger');}
     });
-
-    [fields.date, fields.start, fields.end].forEach((field) => {
-        field.addEventListener("input", () => {
-            clearErrors();
-            generatedBlocks = [];
-            renderPreview();
-        });
-    });
-
-    generateButton.addEventListener("click", generateBlocks);
-    cancelButton.addEventListener("click", () => {
-        if (exitModal) {
-            showModal(exitModal);
-            return;
-        }
-
-        clearTemporaryAvailabilityData();
-        window.location.href = "dashboard.html";
-    });
-    confirmExitButton.addEventListener("click", () => {
-        clearTemporaryAvailabilityData();
-        window.location.href = "dashboard.html";
-    });
-    form.addEventListener("submit", saveAvailability);
 }

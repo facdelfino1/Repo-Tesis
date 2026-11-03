@@ -1,3 +1,4 @@
+import { legacyUser } from '../../core/session.js';
 import { LOCAL_STORAGE_KEYS, MOCK_PATHS } from "../../core/constants.js";
 import { loadMock, readStoredJson } from "../../core/storage.js";
 import { escapeHtml, normalizeState } from "../../core/helpers.js";
@@ -134,7 +135,7 @@ export function initAdminDashboardMetrics(config) {
         loadMock(MOCK_PATHS.TRIAGE, fallbackData.triaje)
     ]).then(([usuariosData, turnosData, _disponibilidadData, triajeData]) => {
         const users = mergeStoredUsers(usuariosData.usuarios || []);
-        const loggedUser = readStoredJson(LOCAL_STORAGE_KEYS.CURRENT_USER, null);
+        const loggedUser = legacyUser();
         const accessMessage = document.getElementById("adminAccesoMensaje");
 
         if (!loggedUser || !roleMatches(loggedUser, "administrador")) {
@@ -192,7 +193,7 @@ export function initAdminMetrics(config) {
         loadMock(MOCK_PATHS.AVAILABILITY, fallbackData.disponibilidad),
         loadMock(MOCK_PATHS.TRIAGE, fallbackData.triaje)
     ]).then(([usuariosData, turnosData, _disponibilidadData, triajeData]) => {
-        const loggedUser = readStoredJson(LOCAL_STORAGE_KEYS.CURRENT_USER, null);
+        const loggedUser = legacyUser();
         const accessMessage = document.getElementById("adminMetricasAccesoMensaje");
 
         if (!loggedUser || !roleMatches(loggedUser, "administrador")) {
