@@ -12,9 +12,7 @@ export const LOCAL_STORAGE_KEYS = {
     ADMIN_PROFILE: "perfilAdminMock",
     DOCTOR_PROFILE: "perfilMedicoMock",
     SECRETARY_PROFILE: "perfilSecretariaMock",
-    PATIENT_PROFILE: "perfilPacienteMock",
-    DOCTOR_RESCHEDULE: "reprogramacionMedicoMock",
-    MASS_RESCHEDULE: "reprogramacionMasivaMock"
+    PATIENT_PROFILE: "perfilPacienteMock"
 };
 
 export const SESSION_STORAGE_KEYS = {

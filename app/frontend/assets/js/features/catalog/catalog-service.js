@@ -1,4 +1,5 @@
 import { request, listAll } from '../../core/api.js';
+import { todayInputValue } from '../../core/formatters.js';
 
 export const getSpecialties = () => listAll('especialidades/');
 export const getDoctors = specialty => listAll(`medicos/${specialty ? '?especialidad=' + encodeURIComponent(specialty) : ''}`);
@@ -7,6 +8,11 @@ export const getAvailability = (doctorId, filters = {}) => {
     const params = new URLSearchParams(Object.entries(filters).filter(([,v]) => v !== '' && v != null));
     return listAll(`medicos/${encodeURIComponent(doctorId)}/disponibilidades/${params.size ? '?' + params : ''}`);
 };
+export async function getAssignableAvailability(doctorId) {
+    const rows = await getAvailability(doctorId, { estado: 'DISPONIBLE', desde: todayInputValue() });
+    // Presentation only; the backend revalidates time, state and consumers on every write.
+    return rows.filter(row => new Date(`${row.fecha}T${row.hora_inicio}`).getTime() > Date.now());
+}
 export function legacyDoctor(doctor) {
     return { ...doctor, id_medico: doctor.id, rol:'medico', especialidad_id:doctor.especialidad.id,
         especialidad:doctor.especialidad.nombre };

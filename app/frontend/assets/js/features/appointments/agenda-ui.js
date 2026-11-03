@@ -4,7 +4,8 @@ import { escapeHtml as esc } from '../../core/helpers.js';
 import { formatDate, todayInputValue } from '../../core/formatters.js';
 import { priorityClass } from '../../components/badges.js';
 import { getBootstrapModal, showModal, hideModal } from '../../components/modals.js';
-import { getDoctor, getAvailability, bindDoctorSelectors } from '../catalog/catalog-service.js';
+import { getDoctor, getAssignableAvailability as assignableSlots, bindDoctorSelectors } from '../catalog/catalog-service.js';
+import { reassignAgendaTurn } from '../rescheduling/rescheduling-api.js';
 import { readAnswers, updateTriageQuestionnaire, renderTriageResponses } from '../triage/triage-ui.js';
 import { getAgendaTurns, getAgendaTurn, findPatients, reserveSecretaryTurn, modifyAgendaTurn, operateAgendaTurn } from './agenda-api.js';
 
@@ -25,11 +26,6 @@ function slots(select, rows) {
     select.replaceChildren(new Option(rows.length ? 'Seleccione un horario' : 'No hay horarios disponibles', ''));
     rows.forEach(row => select.add(new Option(`${formatDate(row.fecha)} ${row.hora_inicio.slice(0, 5)}–${row.hora_fin.slice(0, 5)}`, row.id)));
     select.disabled = !rows.length;
-}
-async function assignableSlots(doctorId) {
-    // Gestores can read history/blocked/occupied rows in B3; never offer that full inventory.
-    const rows = await getAvailability(doctorId, { estado: 'DISPONIBLE', desde: todayInputValue() });
-    return rows.filter(row => new Date(`${row.fecha}T${row.hora_inicio}`).getTime() > Date.now());
 }
 function collectedAnswers(form, doctor) {
     if (!key(doctor)) return undefined;
@@ -70,6 +66,7 @@ export async function initOperationalAgenda(mode) {
         return button('detalle', 'Detalle') + (doctorMode
             ? turn.estado === 'PRESENTE' ? button('iniciar', 'Iniciar consulta') : turn.estado === 'EN_ATENCION' ? button('finalizar', 'Finalizar consulta') : ''
             : (turn.estado === 'RESERVADO' ? (turn.fecha === todayInputValue() ? button('presencia', 'Registrar presencia') : '') + (presence ? '' : button('modificar', 'Modificar')) : '')
+                + (!presence && turn.estado === 'PENDIENTE' ? button('modificar', 'Reasignar pendiente') : '')
                 + (!presence && ['RESERVADO', 'PENDIENTE'].includes(turn.estado) ? button('cancelar', 'Cancelar') : ''));
     }
     function render() {
@@ -156,12 +153,17 @@ export async function initOperationalAgenda(mode) {
             event.preventDefault(); if (busy || !editing) return;
             if (!editRows.some(row => row.id === Number(editSelect.value))) { feedback(editError, 'Seleccione un horario disponible.'); return; }
             busy = true; const submit = editForm.querySelector('[type=submit]'); submit.disabled = true;
-            try { await modifyAgendaTurn(editing.medico.id, editing.id_turno, Number(editSelect.value)); hideModal(editModal); feedback(message, 'Turno modificado correctamente.', 'success'); await reload(); }
+            try {
+                const operation = editing.estado === 'PENDIENTE' ? reassignAgendaTurn : modifyAgendaTurn;
+                await operation(editing.medico.id, editing.id_turno, Number(editSelect.value)); hideModal(editModal);
+                feedback(message, editing.estado === 'PENDIENTE' ? 'Turno reasignado correctamente.' : 'Turno modificado correctamente.', 'success'); await reload();
+            }
             catch (error) { feedback(editError, errorMessage(error)); if (error.status === 409) { try { editRows = await assignableSlots(editing.medico.id); slots(editSelect, editRows); await reload(); } catch (refreshError) { feedback(editError, `${errorMessage(error)} ${errorMessage(refreshError)}`); } } }
             finally { busy = false; submit.disabled = false; render(); }
         });
     }
     async function edit(turn) {
+        setText('modificarTurnoTitulo', turn.estado === 'PENDIENTE' ? 'Reasignar pendiente' : 'Modificar turno');
         editing = turn; feedback(editError, ''); setText('modificarPacienteResumen', name(turn.paciente_detalle));
         setText('modificarPrioridadResumen', turn.prioridad || 'Sin triaje específico');
         node('modificarPrioridadResumen').className = `badge ${priorityClass(turn.prioridad)}`;

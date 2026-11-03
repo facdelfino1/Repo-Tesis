@@ -7,6 +7,7 @@ import { getBootstrapModal, showModal, hideModal } from '../../components/modals
 import { bindDoctorSelectors, getAvailability } from '../catalog/catalog-service.js';
 import { readAnswers, updateTriageQuestionnaire } from '../triage/triage-ui.js';
 import { getPatientTurns, getPatientTurn, reservePatientTurn, modifyPatientTurn, cancelPatientTurn } from './patient-api.js';
+import { initPatientProposals, openPendingRecovery } from '../rescheduling/rescheduling-ui.js';
 
 const labels = { RESERVADO: 'Reservado', PENDIENTE: 'Pendiente', PRESENTE: 'Presente',
     EN_ATENCION: 'En atención', COMPLETADO: 'Completado', CANCELADO: 'Cancelado', AUSENTE: 'Ausente' };
@@ -144,7 +145,7 @@ export async function initPatientConfirmation() {
     badge.textContent = priority(turn); badge.className = `badge align-self-start ${priorityClass(turn.prioridad)}`;
 }
 
-export async function initPatientDashboard() {
+async function renderPatientDashboard() {
     const turns = await getPatientTurns();
     const active = turns.filter(turn => ['RESERVADO', 'PRESENTE', 'EN_ATENCION'].includes(turn.estado) && turn.asignacion_vigente);
     const pending = turns.filter(turn => turn.estado === 'PENDIENTE');
@@ -163,6 +164,11 @@ export async function initPatientDashboard() {
         `<tr><td>${formatDate(turn.fecha)}</td><td>${escapeHtml(turn.medico.especialidad.nombre)}</td><td>${escapeHtml(fullName(turn.medico))}</td><td>${escapeHtml(state(turn))}</td></tr>`).join('') || '<tr><td colspan="4">Sin turnos históricos.</td></tr>';
 }
 
+export async function initPatientDashboard() {
+    await renderPatientDashboard();
+    await initPatientProposals({ onUpdated: renderPatientDashboard });
+}
+
 export async function initPatientTurns() {
     const list = document.getElementById('turnosReservadosLista');
     const message = document.getElementById('misTurnosMensaje');
@@ -173,6 +179,7 @@ export async function initPatientTurns() {
     const cancel = document.getElementById('confirmarCancelacionBtn');
     const modify = document.getElementById('confirmarModificacionBtn');
     let selected = null, rows = [], busy = false, generation = 0;
+    let proposals = { refresh: async () => {} };
     function setBusy(value) {
         busy = value;
         list.querySelectorAll('button').forEach(button => { button.disabled = value; });
@@ -188,6 +195,7 @@ export async function initPatientTurns() {
             ${schedule(turn)}<dt class="col-5 text-secondary">Estado</dt><dd class="col-7">${escapeHtml(state(turn))}</dd></dl>
             <button type="button" class="btn btn-outline-primary btn-sm" data-action="detail" data-turn="${turn.id_turno}">Ver detalle</button>
             ${turn.estado === 'RESERVADO' ? `<button type="button" class="btn btn-outline-secondary btn-sm" data-action="modify" data-turn="${turn.id_turno}">Modificar</button>` : ''}
+            ${turn.estado === 'PENDIENTE' ? `<button type="button" class="btn btn-outline-secondary btn-sm" data-action="recover" data-turn="${turn.id_turno}">Elegir nuevo horario</button>` : ''}
             ${['RESERVADO', 'PENDIENTE'].includes(turn.estado) ? `<button type="button" class="btn btn-outline-danger btn-sm" data-action="cancel" data-turn="${turn.id_turno}">Cancelar</button>` : ''}
             </div></article></div>`).join('');
         const history = turns.filter(turn => !activeStates.has(turn.estado));
@@ -199,7 +207,7 @@ export async function initPatientTurns() {
     }
     async function refreshAfterWrite(success) {
         feedback(message, success, 'success');
-        try { await refresh(); }
+        try { await refresh(); await proposals.refresh(); }
         catch (error) { feedback(message, `${success} No fue posible actualizar la lista. Recargue la página. ${errorMessage(error)}`, 'warning'); }
     }
     async function refreshChoices() {
@@ -219,6 +227,9 @@ export async function initPatientTurns() {
             feedback(message, '');
             if (button.dataset.action === 'detail') {
                 window.location.assign(`turno-reservado.html?id=${selected.id_turno}`); return;
+            }
+            if (button.dataset.action === 'recover') {
+                await openPendingRecovery(selected, { onUpdated: async () => { await refresh(); await proposals.refresh(); } }); return;
             }
             if (button.dataset.action === 'cancel') {
                 if (!cancelModal) throw new Error('Modal no disponible');
@@ -262,4 +273,5 @@ export async function initPatientTurns() {
         } finally { setBusy(false); cancel.disabled = false; }
     });
     await refresh();
+    proposals = await initPatientProposals({ onUpdated: refresh });
 }

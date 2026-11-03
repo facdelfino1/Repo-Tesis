@@ -987,3 +987,68 @@ inicio/finalización, especialidad convencional null, conflicto de destino/estad
 y accesos cruzados. Validar desde la base Turno/Triaje, Secretaría creadora,
 identidad/creación conservadas, timestamps ordenados, liberación al cancelar
 y permanencia de ocupación al completar. No se integra B6 ni email en B7.3.
+
+### B7.4: reprogramación adaptativa y pendientes
+
+Las pantallas existentes de Médico/Secretaría utilizan ahora
+`features/rescheduling/rescheduling-api.js` y `rescheduling-ui.js`. El primero
+declara los contratos B6; el segundo recopila selección/fecha y representa
+resultados. No hay ordenamiento, emparejamiento ni capacidad calculados en JS.
+No se modifican modelos, permisos, servicios ni serializers backend en B7.4.
+
+Proceso: consultar `GET /api/medicos/{m}/reprogramacion/afectados/` con
+`fecha_original`, `hora_inicio`, `hora_fin`. Solo se ofrecen los candidatos
+devueltos por Django, con casillas inicialmente sin seleccionar. Confirmar envía
+esos tres campos más `nueva_fecha`, `turnos` (IDs enteros) y `motivo` a
+`POST /api/medicos/{m}/reprogramacion/`. Médico usa el perfil de sesión;
+Secretaría selecciona la agenda mediante el catálogo real. Cambiar médico o
+alcance invalida la selección anterior.
+
+El resultado distingue `propuestas`, `requiere_revision`, `turnos_rechazados`
+y `nueva_fecha`. Se muestra el orden de propuestas devuelto por el POST.
+Las consultas posteriores muestran el orden de consulta de Django, sin aplicar
+precedencia local. Capacidad insuficiente/cero es un resultado persistido válido,
+no un error: los restantes quedan PENDIENTE. No se busca otra fecha.
+Un 409 por selección inconsistente muestra los IDs rechazados y refresca.
+
+Propuestas/pedientes de la agenda: `GET /api/medicos/{m}/propuestas/` y
+`GET /api/medicos/{m}/pendientes/`. Los datos de médico/paciente/especialidad
+se completan mediante los turnos autorizados de esa misma agenda; no se amplía
+el DTO de propuestas ni se leen mocks. Las propuestas incluyen snapshots,
+motivo, estado, generación/resolución y vigencia. No se afirma que se envió email
+ni que el horario esté garantizado. Solo el Paciente responde.
+
+Dashboard y Mis turnos del Paciente consultan `GET /api/propuestas/` y
+`GET /api/propuestas/{id}/`. Aceptar/rechazar envía objeto vacío a
+`POST /api/propuestas/{id}/aceptar/` o `rechazar/`. Después se consultan otra vez
+turnos/propuestas. Una invalidación 409 se muestra y se conserva el PENDIENTE
+real; no se intenta reservar otro horario. Estados resueltos no ofrecen botones
+de respuesta. El servidor mantiene idempotencia/contradicciones.
+
+Recuperación directa: Paciente elige un bloque del mismo médico y envía solo
+`disponibilidad` a `POST /api/turnos/{id}/reasignar/`; Secretaría utiliza
+`POST /api/medicos/{m}/turnos/{id}/reasignar/`, desde Gestión de turnos o
+desde la lista de pendientes. Se comparte la consulta de bloques asignables
+B3 con B7.3. Django valida y anula las propuestas abiertas. No se libera la FK
+histórica. Las cancelaciones existentes B7.2/B7.3 siguen usando sus endpoints;
+Mis turnos refresca también propuestas tras cancelar.
+
+Generar propuesta individual reutiliza nueva fecha/motivo del formulario y
+`POST /api/medicos/{m}/turnos/{id}/propuestas/`; no requiere una selección masiva
+ni busca libremente días futuros. PENDIENTE nunca se presenta como cita vigente.
+Los orígenes BLOQUEADOS solo se consultan: el frontend no los libera/ocupa.
+
+Retirados: motor `rescheduling-service.js`, simulaciones de respuesta y los
+inicializadores legacy de las páginas de Médico/Secretaría (todos sus recorridos
+actuales ya tienen ruta API o bloqueo explícito). Se limpian al cargar páginas
+protegidas `reprogramacionMedicoMock` y `reprogramacionMasivaMock` y se retiran
+sus constantes. Los mocks/adaptadores todavía usados por métricas o
+administración permanecen hasta B7.5; no son fuentes operativas de agenda.
+
+Verificación: tests PostgreSQL focalizados B6 y smoke en navegador sobre base
+aislada: capacidad completa/insuficiente/cero, precedencia clínica/antigüedad,
+Cardiología null, selección desactualizada, aceptación/rechazo/invalidación,
+respuesta repetida/contradictoria, recuperación y cancelación con propuesta,
+aislamiento por médico/propietario y ausencia de escrituras locales de dominio.
+La regresión integral corresponde a B8; no se incorpora email ni administración
+o métricas finales en B7.4.

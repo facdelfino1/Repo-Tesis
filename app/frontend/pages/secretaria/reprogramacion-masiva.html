@@ -87,6 +87,10 @@
                             <input type="time" class="form-control" id="reprogramacionHoraFin">
                             <div class="invalid-feedback" id="reprogramacionHoraFinError"></div>
                         </div>
+                        <div class="col-12 col-md-4">
+                            <label for="reprogramacionNuevaFecha" class="form-label">Nueva fecha de atención</label>
+                            <input type="date" class="form-control" id="reprogramacionNuevaFecha" required>
+                        </div>
                         <div class="col-12">
                             <label for="reprogramacionMotivo" class="form-label">Motivo de reprogramación</label>
                             <select class="form-select" id="reprogramacionMotivo">
@@ -128,6 +132,7 @@
                     <table class="table align-middle mb-0">
                         <thead>
                             <tr>
+                                <th>Seleccionar</th>
                                 <th>Paciente</th>
                                 <th>DNI</th>
                                 <th>Médico</th>
@@ -193,7 +198,7 @@
             <div class="card-body p-4">
                 <div class="d-flex flex-column flex-md-row justify-content-between gap-3 mb-3">
                     <div>
-                        <p class="text-secondary small mb-1">Notificaciones simuladas</p>
+                        <p class="text-secondary small mb-1">Notificaciones internas</p>
                         <h2 class="h5 fw-semibold mb-0">Respuesta del paciente</h2>
                     </div>
                     <span class="dashboard-icon bg-success-subtle text-success">
@@ -215,7 +220,7 @@
                 <div class="d-flex flex-column flex-md-row justify-content-between gap-3 mb-3">
                     <div>
                         <p class="text-secondary small mb-1">Seguimiento</p>
-                        <h2 class="h5 fw-semibold mb-0">Lista de espera prioritaria</h2>
+                        <h2 class="h5 fw-semibold mb-0">Turnos pendientes</h2>
                     </div>
                     <span class="dashboard-icon bg-warning-subtle text-warning">
                         <i class="bi bi-hourglass-split"></i>

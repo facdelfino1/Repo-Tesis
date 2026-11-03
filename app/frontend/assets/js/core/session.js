@@ -5,7 +5,8 @@ let checking = null;
 let generation = 0;
 const frontendRoot = new URL('../../../', import.meta.url);
 const obsoleteKeys = ['usuarioActualMock','usuariosAdminMock','perfilAdminMock','perfilMedicoMock',
-    'perfilSecretariaMock','perfilPacienteMock','disponibilidadPacienteMock','disponibilidadMedicoMock','disponibilidadSecretariaMock'];
+    'perfilSecretariaMock','perfilPacienteMock','disponibilidadPacienteMock','disponibilidadMedicoMock','disponibilidadSecretariaMock',
+    'reprogramacionMedicoMock','reprogramacionMasivaMock'];
 
 export function clearLegacyIdentity() {
     for (const key of obsoleteKeys) { try { localStorage.removeItem(key); } catch {} }

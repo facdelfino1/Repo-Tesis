@@ -79,6 +79,10 @@
                             <input type="time" class="form-control" id="reprogramacionMedicoHoraFin">
                             <div class="invalid-feedback" id="reprogramacionMedicoHoraFinError"></div>
                         </div>
+                        <div class="col-12 col-md-4">
+                            <label for="reprogramacionMedicoNuevaFecha" class="form-label">Nueva fecha de atención</label>
+                            <input type="date" class="form-control" id="reprogramacionMedicoNuevaFecha" required>
+                        </div>
                         <div class="col-12">
                             <label for="reprogramacionMedicoMotivo" class="form-label">Motivo de reprogramacion</label>
                             <select class="form-select" id="reprogramacionMedicoMotivo">
@@ -112,6 +116,7 @@
                     <table class="table align-middle mb-0">
                         <thead>
                             <tr>
+                                <th>Seleccionar</th>
                                 <th>Paciente</th>
                                 <th>DNI</th>
                                 <th>Fecha</th>
@@ -160,7 +165,7 @@
 
         <section class="card dashboard-card border-0 shadow-sm mb-4">
             <div class="card-body p-4">
-                <h2 class="h5 fw-semibold mb-3">Notificaciones simuladas</h2>
+                <h2 class="h5 fw-semibold mb-3">Notificaciones internas</h2>
                 <div id="reprogramacionMedicoNotificaciones" class="row g-3">
                     <div class="col-12">
                         <div class="alert alert-info mb-0" role="alert">
@@ -173,7 +178,7 @@
 
         <section class="card dashboard-card border-0 shadow-sm">
             <div class="card-body p-4">
-                <h2 class="h5 fw-semibold mb-3">Lista de espera prioritaria</h2>
+                <h2 class="h5 fw-semibold mb-3">Turnos pendientes</h2>
                 <div class="table-responsive">
                     <table class="table align-middle mb-0">
                         <thead>
