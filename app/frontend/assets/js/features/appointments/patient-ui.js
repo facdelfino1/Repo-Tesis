@@ -6,7 +6,7 @@ import { priorityClass } from '../../components/badges.js';
 import { getBootstrapModal, showModal, hideModal } from '../../components/modals.js';
 import { bindDoctorSelectors, getAvailability } from '../catalog/catalog-service.js';
 import { readAnswers, updateTriageQuestionnaire } from '../triage/triage-ui.js';
-import { getPatientTurns, getPatientTurn, reservePatientTurn, modifyPatientTurn, cancelPatientTurn } from './patient-api.js';
+import { getPatientTurns, getPatientTurn, getPatientDelay, reservePatientTurn, modifyPatientTurn, cancelPatientTurn } from './patient-api.js';
 import { initPatientProposals, openPendingRecovery } from '../rescheduling/rescheduling-ui.js';
 
 const labels = { RESERVADO: 'Reservado', PENDIENTE: 'Pendiente', PRESENTE: 'Presente',
@@ -145,8 +145,11 @@ export async function initPatientConfirmation() {
     badge.textContent = priority(turn); badge.className = `badge align-self-start ${priorityClass(turn.prioridad)}`;
 }
 
+let dashboardRefresh = 0;
 async function renderPatientDashboard() {
+    const version = ++dashboardRefresh;
     const turns = await getPatientTurns();
+    if (version !== dashboardRefresh) return;
     const active = turns.filter(turn => ['RESERVADO', 'PRESENTE', 'EN_ATENCION'].includes(turn.estado) && turn.asignacion_vigente);
     const pending = turns.filter(turn => turn.estado === 'PENDIENTE');
     const next = active.find(turn => ['PRESENTE', 'EN_ATENCION'].includes(turn.estado)) || active[0];
@@ -157,11 +160,28 @@ async function renderPatientDashboard() {
     text('turnoFecha', next ? formatDate(next.fecha) : '—'); text('turnoHora', next ? next.hora.slice(0, 5) : '—');
     text('turnoEstado', next ? state(next) : '—'); text('triajePrioridad', next ? priority(next) : 'Sin turno asignado');
     document.getElementById('triajePrioridad').className = `badge ${priorityClass(next?.prioridad)}`;
-    text('esperaEstimada', 'Sin datos disponibles'); text('duracionEstimada', next ? `${next.duracion_turno} min` : '—');
+    text('esperaEstimada', next ? 'Consultando...' : 'Sin estimación disponible');
+    text('demoraEstimacionDetalle', 'Estimación informativa sujeta a cambios.');
+    text('duracionEstimada', next ? `${next.duracion_turno} min` : '—');
     document.getElementById('solicitudesPendientesAviso').classList.toggle('d-none', !pending.length);
     text('solicitudesPendientesResumen', `${pending.length} solicitud(es) pendiente(s) de nueva asignación. No tienen horario vigente.`);
     document.getElementById('historialTurnos').innerHTML = turns.filter(turn => !activeStates.has(turn.estado)).map(turn =>
         `<tr><td>${formatDate(turn.fecha)}</td><td>${escapeHtml(turn.medico.especialidad.nombre)}</td><td>${escapeHtml(fullName(turn.medico))}</td><td>${escapeHtml(state(turn))}</td></tr>`).join('') || '<tr><td colspan="4">Sin turnos históricos.</td></tr>';
+    if (!next) return;
+    try {
+        const estimate = await getPatientDelay(next.id_turno);
+        if (version !== dashboardRefresh) return;
+        text('esperaEstimada', estimate.demora_estimada_minutos === null ? 'Sin estimación disponible'
+            : estimate.demora_estimada_minutos === 0 ? 'Sin demora estimada'
+                : `${estimate.demora_estimada_minutos} min`);
+        text('demoraEstimacionDetalle', estimate.demora_estimada_minutos === null
+            ? `${estimate.motivo} Estimación informativa sujeta a cambios.`
+            : 'Estimación informativa sujeta a cambios.');
+    } catch (error) {
+        if (version !== dashboardRefresh) return;
+        text('esperaEstimada', 'Sin estimación disponible');
+        text('demoraEstimacionDetalle', `No fue posible consultar la estimación. ${errorMessage(error)}`);
+    }
 }
 
 export async function initPatientDashboard() {

@@ -1160,3 +1160,29 @@ Validación: 400; CSRF: 403; exceso de solicitudes: 429. No se devuelve identida
 contraseña/hash ni se inicia sesión. El formulario existente muestra confirmación
 solo después del 201 y vuelve al login, sin persistir datos de registro en storage.
 No se generan migraciones ni se verifican documentos o control del email en este bloque.
+
+# Demora estimada del turno (B7.6B)
+
+`GET /api/turnos/{id}/demora/` entrega una estimación informativa solo al paciente
+propietario. Se calcula en el servidor para un turno RESERVADO o PRESENTE de la
+jornada actual del médico. No se almacena ni modifica el Turno.
+
+Sea `H` el horario programado, `N` la hora del servidor y `M` la media de
+duraciones **observadas** (inicio a cierre) de consultas COMPLETADO válidas del
+mismo médico. La cola incluye únicamente turnos PRESENTE de esa jornada
+programados antes del consultado; una consulta EN_ATENCION aporta
+`M - (N - inicio)` de trabajo restante. Entonces:
+
+`inicio_estimado = max(H, N + trabajo_restante + cantidad_presentes_anteriores × M)`
+
+`demora_estimada_minutos = max(0, ceil((inicio_estimado - H) / 1 minuto))`.
+
+Si no hay trabajo observable por delante, la demora estimada es cero. Si hay
+trabajo por delante y no existen duraciones válidas, hay más de una consulta en
+curso, faltan marcas temporales, o la consulta en curso ya excedió la media,
+se devuelve `null` con `estado_estimacion=SIN_DATOS` y un motivo. Para un turno
+futuro o pasado sin llegada registrada tampoco se extrapola. Los turnos solo
+RESERVADO no cuentan como cola hasta registrar llegada. Las citas canceladas,
+ausentes y de otros médicos no cuentan. La media histórica no se presenta como
+demora actual: solo estima la carga pendiente observada. El cálculo no garantiza
+la hora de atención y puede cambiar al actualizarse la agenda.

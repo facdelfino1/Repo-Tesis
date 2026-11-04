@@ -279,6 +279,12 @@ class TurnoPropioViewSet(viewsets.ReadOnlyModelViewSet):
         return Turno.objects.filter(paciente__usuario=self.request.user).select_related(
             'medico__usuario', 'medico__especialidad', 'triaje', 'paciente__usuario').order_by('fecha', 'hora', 'pk')
 
+    @action(detail=True, methods=['get'])
+    def demora(self, request, **kwargs):
+        from .demora import estimar_demora
+
+        return Response(estimar_demora(self.get_object()))
+
 
     def _operar(self, request, accion):
         from . import turnos
@@ -323,6 +329,9 @@ class TurnoAgendaViewSet(TurnoPropioViewSet):
             from .permissions import IsMedico
             return [IsMedico()]
         return [IsGestorAgenda()]
+
+    def demora(self, request, **kwargs):
+        raise NotFound()
 
     def get_queryset(self):
         from .models import Turno

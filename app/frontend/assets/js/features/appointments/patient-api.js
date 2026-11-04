@@ -3,6 +3,7 @@ import { request, listAll } from '../../core/api.js';
 // Only backend DTOs: no local identity, dates, state transitions or inventory writes.
 export const getPatientTurns = () => listAll('turnos/');
 export const getPatientTurn = id => request(`turnos/${encodeURIComponent(id)}/`);
+export const getPatientDelay = id => request(`turnos/${encodeURIComponent(id)}/demora/`);
 export const reservePatientTurn = (doctorId, disponibilidad, respuestas) => request(
     `medicos/${encodeURIComponent(doctorId)}/turnos/`, {
         method: 'POST', body: { disponibilidad, ...(respuestas === undefined ? {} : { respuestas }) }
