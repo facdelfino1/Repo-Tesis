@@ -64,7 +64,7 @@ AUTH_PASSWORD_VALIDATORS = [
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
     "DEFAULT_PERMISSION_CLASSES": ["dominio.permissions.IsActiveUser"],
-    "DEFAULT_THROTTLE_RATES": {"login": "10/min", "password_reset": "10/min"},
+    "DEFAULT_THROTTLE_RATES": {"login": "10/min", "password_reset": "10/min", "registro_paciente": "10/min"},
     "NUM_PROXIES": 0,
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 25,

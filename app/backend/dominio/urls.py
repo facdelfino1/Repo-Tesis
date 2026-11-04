@@ -2,7 +2,7 @@ from django.urls import include, path
 from rest_framework.routers import SimpleRouter
 from .metricas import MetricasAdminView
 
-from .views import (CsrfView, EspecialidadViewSet, LoginView, LogoutView, MeView,
+from .views import (CsrfView, EspecialidadViewSet, LoginView, LogoutView, MeView, RegistroPacienteView,
                     PasswordChangeView, PasswordResetConfirmView, PasswordResetRequestView, UsuarioInternoViewSet,
                     CatalogoEspecialidadViewSet, DisponibilidadViewSet, MedicoViewSet, TurnoPropioViewSet, TurnoAgendaViewSet, PacienteBusquedaViewSet, ReprogramacionView, PropuestaViewSet, PropuestaAgendaViewSet, PendienteAgendaViewSet)
 
@@ -28,6 +28,7 @@ urlpatterns = [
     path('medicos/<int:medico_pk>/reprogramacion/', ReprogramacionView.as_view(http_method_names=['post', 'options']), name='reprogramacion'),
     path("auth/csrf/", CsrfView.as_view(), name="auth-csrf"),
     path("auth/login/", LoginView.as_view(), name="auth-login"),
+    path("auth/registro-paciente/", RegistroPacienteView.as_view(), name="auth-registro-paciente"),
     path("auth/logout/", LogoutView.as_view(), name="auth-logout"),
     path("auth/me/", MeView.as_view(), name="auth-me"),
     path("auth/password/", PasswordChangeView.as_view(), name="auth-password"),

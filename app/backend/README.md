@@ -1130,3 +1130,33 @@ roles, CRUD/activación/duplicados, medias y filtros controlados, diferencia nul
 permisos, actualización tras operación real y ausencia de lecturas mock/escrituras
 locales. Las reglas B1–B6 y migraciones existentes permanecen intactas. B8 queda
 reservado para la validación integral, sin ejecutarlo como parte de B7.5.
+
+## B7.6A — Registro público de pacientes
+
+`POST /api/auth/registro-paciente/` es público y exige CSRF del mismo origen,
+obtenido con `GET /api/auth/csrf/`. Tiene límite complementario de 10 solicitudes
+por minuto/IP, mediante el mecanismo de throttle existente.
+
+Entrada estricta: `nombre`, `apellido`, `dni`, `telefono`, `email`, `password`,
+`password_confirmacion` y `obra_social` opcional. DNI/teléfono son numéricos;
+longitudes y campos obligatorios respetan los modelos. Email se normaliza y se
+comprueba sin distinguir mayúsculas. Se rechazan todos los campos adicionales,
+incluidos rol, IDs, activación, perfiles y permisos.
+
+La contraseña requiere al menos ocho caracteres, mayúscula, minúscula, número
+y carácter especial, además de los validadores nativos configurados. Se utiliza
+`create_user`/`set_password` y el hashing Django existente (PBKDF2 por defecto),
+sin incorporar bcrypt ni alterar el login, cambio o recuperación de contraseña.
+
+Usuario PACIENTE y perfil Paciente se crean juntos en `transaction.atomic()`.
+Se rechaza un DNI ya registrado en cualquier rol. Como el modelo histórico
+permite DNI repetidos en operaciones internas, las altas públicas del mismo DNI
+se serializan con un advisory lock transaccional PostgreSQL y se revalida dentro
+de la transacción. Esto no agrega una restricción global de DNI ni cambia B2/B5:
+otros escritores internos conservan sus contratos anteriores.
+
+Éxito: HTTP 201 con únicamente `{"detail": "Cuenta creada correctamente. Ya puede iniciar sesión."}`.
+Validación: 400; CSRF: 403; exceso de solicitudes: 429. No se devuelve identidad,
+contraseña/hash ni se inicia sesión. El formulario existente muestra confirmación
+solo después del 201 y vuelve al login, sin persistir datos de registro en storage.
+No se generan migraciones ni se verifican documentos o control del email en este bloque.

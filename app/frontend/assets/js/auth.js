@@ -69,8 +69,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     const register=document.querySelector('[data-form="patient-register"]');
     if (register) {
-        alert(register, 'El registro público de pacientes no está habilitado. Comuníquese con Secretaría.', 'info');
-        register.querySelectorAll('input, select, button').forEach(control => { control.disabled = true; });
-        register.addEventListener('submit', event => event.preventDefault());
+        const password = register.elements.namedItem('password');
+        const confirmation = register.elements.namedItem('confirmPassword');
+        const button = register.querySelector('[type="submit"]');
+        const success = document.getElementById('registroSuccess');
+        let busy = false, registered = false;
+        function checkConfirmation() {
+            confirmation.setCustomValidity(confirmation.value && confirmation.value !== password.value
+                ? 'Las contraseñas no coinciden.' : '');
+        }
+        register.addEventListener('input', () => {
+            checkConfirmation();
+            register.querySelector('[data-api-feedback]')?.remove();
+        });
+        register.addEventListener('submit', async event => {
+            event.preventDefault();
+            if (busy || registered) return;
+            checkConfirmation();
+            if (!register.checkValidity()) {
+                register.classList.add('was-validated');
+                alert(register, confirmation.validity.customError ? 'Las contraseñas no coinciden.' : 'Complete los campos obligatorios con datos válidos.');
+                return;
+            }
+            const field = name => register.elements.namedItem(name).value.trim();
+            const body = { nombre: field('nombre'), apellido: field('apellido'), dni: field('dni'),
+                telefono: field('telefono'), email: field('email'), obra_social: field('obraSocial'),
+                password: password.value, password_confirmacion: confirmation.value };
+            busy = true; button.disabled = true;
+            try {
+                const result = await request('auth/registro-paciente/', { method: 'POST', body });
+                registered = true; register.reset();
+                register.querySelector('[data-api-feedback]')?.remove();
+                register.classList.remove('was-validated');
+                success.textContent = result.detail; success.classList.remove('d-none');
+                register.querySelectorAll('input, button').forEach(control => { control.disabled = true; });
+                window.setTimeout(() => window.location.assign('login.html'), 1500);
+            } catch (error) { alert(register, errorMessage(error)); }
+            finally { busy = false; if (!registered) button.disabled = false; }
+        });
     }
 });

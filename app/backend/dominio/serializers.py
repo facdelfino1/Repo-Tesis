@@ -3,10 +3,10 @@ from datetime import datetime
 
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 from rest_framework import serializers
 
-from .models import Disponibilidad, Especialidad, Medico, Secretaria, Usuario
+from .models import Disponibilidad, Especialidad, Medico, Paciente, Secretaria, Usuario
 from .permissions import has_valid_role_profile
 
 
@@ -45,6 +45,84 @@ class LoginSerializer(serializers.Serializer):
 
     def validate_email(self, value):
         return value.strip().lower()
+
+
+class RegistroPacienteSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, trim_whitespace=False)
+    password_confirmacion = serializers.CharField(write_only=True, trim_whitespace=False)
+    obra_social = serializers.CharField(max_length=150, required=False, allow_blank=True)
+
+    class Meta:
+        model = Usuario
+        fields = ("nombre", "apellido", "dni", "telefono", "email", "obra_social",
+                  "password", "password_confirmacion")
+        extra_kwargs = {"email": {"validators": []}}
+
+    def to_internal_value(self, data):
+        if not isinstance(data, Mapping):
+            raise serializers.ValidationError({"detail": "Envíe el formulario como un objeto."})
+        forbidden = set(data) - set(self.fields)
+        if forbidden:
+            raise serializers.ValidationError({key: "Campo no permitido." for key in sorted(forbidden)})
+        return super().to_internal_value(data)
+
+    def validate_email(self, value):
+        value = value.strip().lower()
+        if Usuario.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError("Ya existe una cuenta con este email.")
+        return value
+
+    def validate_dni(self, value):
+        if not value.isascii() or not value.isdecimal():
+            raise serializers.ValidationError("Ingrese un DNI numérico.")
+        if Usuario.objects.filter(dni=value).exists():
+            raise serializers.ValidationError("Ya existe una cuenta con este DNI.")
+        return value
+
+    def validate_telefono(self, value):
+        if not value.isascii() or not value.isdecimal():
+            raise serializers.ValidationError("Ingrese un teléfono numérico.")
+        return value
+
+    def validate(self, attrs):
+        password = attrs["password"]
+        if password != attrs["password_confirmacion"]:
+            raise serializers.ValidationError({"password_confirmacion": "Las contraseñas no coinciden."})
+        if (len(password) < 8 or not any(c.isupper() for c in password)
+                or not any(c.islower() for c in password) or not any(c.isdecimal() for c in password)
+                or not any(not c.isalnum() and not c.isspace() for c in password)):
+            raise serializers.ValidationError({"password": "Use al menos 8 caracteres, mayúscula, minúscula, número y carácter especial."})
+        candidate = Usuario(rol=Usuario.Rol.PACIENTE, **{key: attrs[key] for key in
+                            ("nombre", "apellido", "dni", "telefono", "email")})
+        try:
+            check_password_policy(password, candidate)
+        except serializers.ValidationError as error:
+            raise serializers.ValidationError({"password": error.detail}) from error
+        return attrs
+
+    def create(self, validated_data):
+        data = dict(validated_data)
+        password = data.pop("password")
+        data.pop("password_confirmacion")
+        obra_social = data.pop("obra_social", "")
+        try:
+            with transaction.atomic():
+                # DNI is historically non-unique. Serialize public registrations of
+                # the same DNI without changing existing internal-account contracts.
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                                   ["registro-paciente:dni:" + data["dni"]])
+                if Usuario.objects.filter(dni=data["dni"]).exists():
+                    raise serializers.ValidationError({"dni": "Ya existe una cuenta con este DNI."})
+                user = Usuario.objects.create_user(password=password, rol=Usuario.Rol.PACIENTE, **data)
+                profile = Paciente(usuario=user, obra_social=obra_social)
+                profile.full_clean()
+                profile.save()
+        except DjangoValidationError as error:
+            raise serializers.ValidationError(error.message_dict if hasattr(error, "message_dict") else error.messages) from error
+        except IntegrityError as error:
+            raise serializers.ValidationError({"detail": "No se pudo crear la cuenta: existen datos duplicados o inválidos."}) from error
+        return user
 
 
 class PasswordChangeSerializer(serializers.Serializer):

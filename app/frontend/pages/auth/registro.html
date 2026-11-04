@@ -26,48 +26,47 @@
                                 Cuenta creada correctamente. Ya puede iniciar sesión.
                             </div>
 
-                            <!-- Formulario demostrativo: no guarda informacion ni se conecta con backend. -->
                             <form id="registroPacienteForm" action="#" method="post" data-form="patient-register" novalidate>
                                 <div class="row g-3">
                                     <div class="col-12 col-md-6">
                                         <label for="nombre" class="form-label">Nombre</label>
-                                        <input type="text" class="form-control" id="nombre" name="nombre" autocomplete="given-name" required>
+                                        <input type="text" class="form-control" id="nombre" name="nombre" maxlength="100" autocomplete="given-name" required>
                                         <div class="invalid-feedback">Ingrese el nombre del paciente.</div>
                                     </div>
 
                                     <div class="col-12 col-md-6">
                                         <label for="apellido" class="form-label">Apellido</label>
-                                        <input type="text" class="form-control" id="apellido" name="apellido" autocomplete="family-name" required>
+                                        <input type="text" class="form-control" id="apellido" name="apellido" maxlength="100" autocomplete="family-name" required>
                                         <div class="invalid-feedback">Ingrese el apellido del paciente.</div>
                                     </div>
 
                                     <div class="col-12 col-md-6">
                                         <label for="dni" class="form-label">DNI</label>
-                                        <input type="text" class="form-control" id="dni" name="dni" inputmode="numeric" autocomplete="off" required>
+                                        <input type="text" class="form-control" id="dni" name="dni" maxlength="20" pattern="[0-9]+" inputmode="numeric" autocomplete="off" required>
                                         <div class="invalid-feedback">Ingrese un DNI numerico.</div>
                                     </div>
 
                                     <div class="col-12 col-md-6">
                                         <label for="telefono" class="form-label">Teléfono</label>
-                                        <input type="tel" class="form-control" id="telefono" name="telefono" inputmode="numeric" autocomplete="tel" required>
+                                        <input type="tel" class="form-control" id="telefono" name="telefono" maxlength="30" pattern="[0-9]+" inputmode="numeric" autocomplete="tel" required>
                                         <div class="invalid-feedback">Ingrese un teléfono numerico.</div>
                                     </div>
 
                                     <div class="col-12 col-md-6">
                                         <label for="email" class="form-label">Correo electrónico</label>
-                                        <input type="email" class="form-control" id="email" name="email" autocomplete="email" required>
+                                        <input type="email" class="form-control" id="email" name="email" maxlength="254" autocomplete="email" required>
                                         <div class="invalid-feedback">Ingrese un correo electrónico valido.</div>
                                     </div>
 
                                     <div class="col-12 col-md-6">
                                         <label for="obraSocial" class="form-label">Obra Social <span class="text-secondary">(opcional)</span></label>
-                                        <input type="text" class="form-control" id="obraSocial" name="obraSocial" autocomplete="organization">
+                                        <input type="text" class="form-control" id="obraSocial" name="obraSocial" maxlength="150" autocomplete="organization">
                                     </div>
 
                                     <div class="col-12 col-md-6">
                                         <label for="password" class="form-label">Contraseña</label>
                                         <div class="input-group">
-                                            <input type="password" class="form-control" id="password" name="password" autocomplete="new-password" required>
+                                            <input type="password" class="form-control" id="password" name="password" minlength="8" autocomplete="new-password" required>
                                             <button type="button" class="btn btn-outline-secondary" data-action="toggle-password" data-target="password" aria-label="Mostrar contraseÃ±a" title="Mostrar contraseÃ±a">
                                                 <i class="bi bi-eye"></i>
                                             </button>

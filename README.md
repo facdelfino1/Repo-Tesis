@@ -87,8 +87,8 @@ La reprogramación usa una nueva fecha explícita y bloques reales de la misma
 agenda, sin predicción ni creación automática de capacidad.
 
 B7.5 conecta Administración y métricas agregadas reales y retira los mocks y
-la persistencia local de dominio. El registro público y la edición propia de
-datos personales no tienen endpoint aprobado y permanecen deshabilitados.
+la persistencia local de dominio. B7.6A conecta el registro público exclusivo de
+pacientes con Django. La edición propia de datos personales permanece deshabilitada.
 El cambio/recuperación de contraseña sí utiliza Django.
 
 Las medias observadas requieren timestamps válidos. No hay un algoritmo aprobado

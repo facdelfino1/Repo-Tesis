@@ -25,7 +25,7 @@ from rest_framework.views import APIView
 from .agenda import create_blocks, delete_block, set_blocked, update_block
 from .models import Disponibilidad, Especialidad, Medico, Usuario
 from .permissions import IsActiveUser, IsAdministrador, IsGestorAgenda, IsLectorAgenda, has_valid_role_profile
-from .serializers import (EspecialidadSerializer, LoginSerializer, PasswordChangeSerializer,
+from .serializers import (EspecialidadSerializer, LoginSerializer, RegistroPacienteSerializer, PasswordChangeSerializer,
                           PasswordResetConfirmSerializer, PasswordResetRequestSerializer,
                           UsuarioInternoSerializer, UsuarioSerializer)
 from .serializers import (DisponibilidadConsultaSerializer, DisponibilidadEscrituraSerializer,
@@ -59,6 +59,21 @@ class LoginView(APIView):
                                 status=status.HTTP_401_UNAUTHORIZED)
             login(request._request, user)
             return Response({"usuario": UsuarioSerializer(user).data, "csrfToken": get_token(request)})
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class RegistroPacienteView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "registro_paciente"
+
+    def post(self, request):
+        serializer = RegistroPacienteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"detail": "Cuenta creada correctamente. Ya puede iniciar sesión."},
+                        status=status.HTTP_201_CREATED)
 
 
 class LogoutView(APIView):
