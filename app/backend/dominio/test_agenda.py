@@ -1,6 +1,7 @@
 import importlib
 import secrets
-from datetime import time, timedelta
+from datetime import datetime, time, timedelta
+from unittest.mock import patch
 
 from django.apps import apps
 from django.core.cache import cache
@@ -271,6 +272,38 @@ class AgendaAPITests(APITestCase):
             self.assertEqual(self.client.get(self.url("detail", block=block)).status_code, 404)
         self.assertEqual(self.client.get(self.url(), {"estado": "OCUPADO"}).data["count"], 0)
         self.assertEqual(self.client.get(self.url(), {"fecha": hidden[-1].fecha.isoformat()}).data["count"], 0)
+
+    def test_futuros_filter_uses_server_time_for_assignable_blocks(self):
+        today = timezone.localdate()
+        now = timezone.make_aware(datetime.combine(today, time(10)))
+        past = self.slot(day=today, start=time(9), end=time(9, 20))
+        future = self.slot(day=today, start=time(11), end=time(11, 20))
+        tomorrow = self.slot(day=today + timedelta(days=1), start=time(9), end=time(9, 20))
+        blocked = self.slot(day=today, start=time(12), end=time(12, 20), state='BLOQUEADO')
+        with patch('dominio.views.timezone.localtime', return_value=now):
+            for role in ('SECRETARIA', 'MEDICO', 'PACIENTE'):
+                self.as_role(role)
+                response = self.client.get(self.url(), {'estado': 'DISPONIBLE', 'futuros': 'true'})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual([row['id'] for row in response.data['results']], [future.pk, tomorrow.pk])
+                self.assertNotIn(past.pk, [row['id'] for row in response.data['results']])
+                self.assertNotIn(blocked.pk, [row['id'] for row in response.data['results']])
+            self.assertEqual(self.client.get(self.url(), {'futuros': 'invalid'}).status_code, 400)
+
+    def test_turn_listing_marks_future_by_server_time_without_changing_state(self):
+        today = timezone.localdate()
+        now = timezone.make_aware(datetime.combine(today, time(10)))
+        overdue = Turno.objects.create(paciente=self.users['PACIENTE'].paciente, medico=self.doctor,
+            fecha=today-timedelta(days=1), hora=time(9), duracion_turno=20, estado='RESERVADO')
+        upcoming = Turno.objects.create(paciente=self.users['PACIENTE'].paciente, medico=self.doctor,
+            fecha=today, hora=time(11), duracion_turno=20, estado='RESERVADO')
+        self.as_role('PACIENTE')
+        with patch('dominio.serializers.timezone.localtime', return_value=now):
+            response = self.client.get(reverse('turno-list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([(row['id_turno'], row['horario_futuro']) for row in response.data['results']],
+                         [(overdue.pk, False), (upcoming.pk, True)])
+        self.assertEqual([row['estado'] for row in response.data['results']], ['RESERVADO', 'RESERVADO'])
 
     def test_patient_cannot_query_inactive_doctor_but_secretary_can_read_history(self):
         self.slot(doctor=self.other_doctor)

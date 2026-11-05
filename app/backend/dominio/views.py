@@ -216,12 +216,14 @@ class DisponibilidadViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, vi
         if not has_valid_role_profile(medico.usuario) or (user.rol == Usuario.Rol.PACIENTE and not medico.usuario.is_active):
             raise NotFound()
         rows = Disponibilidad.objects.filter(medico=medico)
-        if user.rol == Usuario.Rol.PACIENTE:
-            now = timezone.localtime()
-            rows = rows.filter(estado=Disponibilidad.Estado.DISPONIBLE).filter(
-                Q(fecha__gt=now.date()) | Q(fecha=now.date(), hora_inicio__gt=now.time()))
         filters = DisponibilidadFiltroSerializer(data=self.request.query_params)
         filters.is_valid(raise_exception=True)
+        if user.rol == Usuario.Rol.PACIENTE:
+            rows = rows.filter(estado=Disponibilidad.Estado.DISPONIBLE)
+        if user.rol == Usuario.Rol.PACIENTE or filters.validated_data['futuros']:
+            now = timezone.localtime()
+            rows = rows.filter(
+                Q(fecha__gt=now.date()) | Q(fecha=now.date(), hora_inicio__gt=now.time()))
         for name, lookup in (("fecha", "fecha"), ("desde", "fecha__gte"), ("hasta", "fecha__lte"), ("estado", "estado")):
             if name in filters.validated_data:
                 rows = rows.filter(**{lookup: filters.validated_data[name]})

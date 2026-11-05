@@ -4,6 +4,7 @@ from datetime import datetime
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, connection, transaction
+from django.utils import timezone
 from rest_framework import serializers
 
 from .models import Disponibilidad, Especialidad, Medico, Paciente, Secretaria, Usuario
@@ -327,6 +328,7 @@ class DisponibilidadFiltroSerializer(serializers.Serializer):
     desde = serializers.DateField(required=False)
     hasta = serializers.DateField(required=False)
     estado = serializers.ChoiceField(choices=Disponibilidad.Estado.choices, required=False)
+    futuros = serializers.BooleanField(required=False, default=False)
 
     def validate(self, attrs):
         if "fecha" in attrs and ("desde" in attrs or "hasta" in attrs):
@@ -358,6 +360,7 @@ class TurnoConsultaSerializer(serializers.ModelSerializer):
     paciente = serializers.IntegerField(source='paciente_id', read_only=True)
     paciente_detalle = serializers.SerializerMethodField()
     asignacion_vigente = serializers.SerializerMethodField()
+    horario_futuro = serializers.SerializerMethodField()
     prioridad = serializers.SerializerMethodField()
     triaje = serializers.SerializerMethodField()
 
@@ -366,11 +369,15 @@ class TurnoConsultaSerializer(serializers.ModelSerializer):
         model = Turno
         fields = ('id_turno', 'paciente', 'medico', 'disponibilidad', 'fecha', 'hora', 'estado',
                   'duracion_turno', 'fecha_hora_creacion', 'fecha_hora_arribo', 'fecha_hora_inicio',
-                  'fecha_hora_cierre', 'prioridad', 'triaje', 'asignacion_vigente', 'paciente_detalle')
+                  'fecha_hora_cierre', 'prioridad', 'triaje', 'asignacion_vigente', 'horario_futuro', 'paciente_detalle')
         read_only_fields = fields
 
     def get_asignacion_vigente(self, turno):
         return turno.estado in ('RESERVADO', 'PRESENTE', 'EN_ATENCION')
+
+    def get_horario_futuro(self, turno):
+        now = timezone.localtime()
+        return turno.fecha > now.date() or (turno.fecha == now.date() and turno.hora > now.time())
 
     def get_paciente_detalle(self, turno):
         usuario = turno.paciente.usuario

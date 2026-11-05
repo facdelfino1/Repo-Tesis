@@ -1,5 +1,4 @@
 import { request, listAll } from '../../core/api.js';
-import { todayInputValue } from '../../core/formatters.js';
 
 export const getSpecialties = () => listAll('especialidades/');
 export const getDoctors = specialty => listAll(`medicos/${specialty ? '?especialidad=' + encodeURIComponent(specialty) : ''}`);
@@ -9,9 +8,7 @@ export const getAvailability = (doctorId, filters = {}) => {
     return listAll(`medicos/${encodeURIComponent(doctorId)}/disponibilidades/${params.size ? '?' + params : ''}`);
 };
 export async function getAssignableAvailability(doctorId) {
-    const rows = await getAvailability(doctorId, { estado: 'DISPONIBLE', desde: todayInputValue() });
-    // Presentation only; the backend revalidates time, state and consumers on every write.
-    return rows.filter(row => new Date(`${row.fecha}T${row.hora_inicio}`).getTime() > Date.now());
+    return getAvailability(doctorId, { estado: 'DISPONIBLE', futuros: true });
 }
 export async function bindDoctorSelectors(specialtySelect, doctorSelect, onChange = () => {}) {
     const specialties = await getSpecialties();

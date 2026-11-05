@@ -152,7 +152,8 @@ async function renderPatientDashboard() {
     if (version !== dashboardRefresh) return;
     const active = turns.filter(turn => ['RESERVADO', 'PRESENTE', 'EN_ATENCION'].includes(turn.estado) && turn.asignacion_vigente);
     const pending = turns.filter(turn => turn.estado === 'PENDIENTE');
-    const next = active.find(turn => ['PRESENTE', 'EN_ATENCION'].includes(turn.estado)) || active[0];
+    const next = active.find(turn => ['PRESENTE', 'EN_ATENCION'].includes(turn.estado))
+        || active.find(turn => turn.estado === 'RESERVADO' && turn.horario_futuro);
     text('pacienteNombre', getCurrentUser().nombre);
     text('heroProximoTurno', next ? `${formatDate(next.fecha)} - ${next.hora.slice(0, 5)}` : pending.length ? 'Solicitud pendiente de nueva asignación' : 'Sin turnos reservados');
     text('turnoEspecialidad', next?.medico.especialidad.nombre || '—');
@@ -165,7 +166,8 @@ async function renderPatientDashboard() {
     text('duracionEstimada', next ? `${next.duracion_turno} min` : '—');
     document.getElementById('solicitudesPendientesAviso').classList.toggle('d-none', !pending.length);
     text('solicitudesPendientesResumen', `${pending.length} solicitud(es) pendiente(s) de nueva asignación. No tienen horario vigente.`);
-    document.getElementById('historialTurnos').innerHTML = turns.filter(turn => !activeStates.has(turn.estado)).map(turn =>
+    document.getElementById('historialTurnos').innerHTML = turns.filter(turn => !activeStates.has(turn.estado)
+        || (turn.estado === 'RESERVADO' && !turn.horario_futuro)).map(turn =>
         `<tr><td>${formatDate(turn.fecha)}</td><td>${escapeHtml(turn.medico.especialidad.nombre)}</td><td>${escapeHtml(fullName(turn.medico))}</td><td>${escapeHtml(state(turn))}</td></tr>`).join('') || '<tr><td colspan="4">Sin turnos históricos.</td></tr>';
     if (!next) return;
     try {
