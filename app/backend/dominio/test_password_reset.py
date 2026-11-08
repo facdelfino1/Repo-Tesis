@@ -61,7 +61,7 @@ class PasswordRecoveryTests(APITestCase):
                 "token": re.search(r"Token: (\S+)", body).group(1)}
 
     def confirm_reset(self, data, password=None):
-        password = password or secrets.token_urlsafe(24)
+        password = password or "Aa1!" + secrets.token_urlsafe(24)
         return self.post("auth-password-reset-confirm", {
             **data, "password_nueva": password, "password_confirmacion": password,
         })
@@ -150,7 +150,7 @@ class PasswordRecoveryTests(APITestCase):
     def test_reset_hashes_unlocks_and_allows_login_without_automatic_session(self):
         self.set_failures(5)
         self.request_reset()
-        new_password = secrets.token_urlsafe(24)
+        new_password = "Aa1!" + secrets.token_urlsafe(24)
         response = self.confirm_reset(self.email_token(), new_password)
         self.assertEqual(response.status_code, 200, response.data)
         self.assertNotIn("sessionid", self.client.cookies)
@@ -231,7 +231,7 @@ class PasswordRecoveryTests(APITestCase):
     def test_existing_session_cannot_bypass_recovery_using_password_change(self):
         self.login(Usuario.Rol.PACIENTE)
         self.set_failures(5)
-        new_password = secrets.token_urlsafe(24)
+        new_password = "Aa1!" + secrets.token_urlsafe(24)
         response = self.post("auth-password", {"password_actual": self.password, "password_nueva": new_password,
                                                "password_confirmacion": new_password})
         self.assertEqual(response.status_code, 400)
@@ -323,7 +323,7 @@ class PasswordConcurrencyTests(TransactionTestCase):
         return PasswordResetConfirmView.as_view()(request).status_code
 
     def reset_data(self):
-        password = secrets.token_urlsafe(24)
+        password = "Aa1!" + secrets.token_urlsafe(24)
         return {"uid": urlsafe_base64_encode(force_bytes(self.user.pk)),
                 "token": default_token_generator.make_token(self.user),
                 "password_nueva": password, "password_confirmacion": password}

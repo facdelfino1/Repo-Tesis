@@ -57,7 +57,7 @@ class IdentityAPITests(APITestCase):
                                  HTTP_X_CSRFTOKEN=self.client.cookies["csrftoken"].value)
 
     def payload(self, role=Usuario.Rol.MEDICO):
-        data = {"email": "nueva@example.com", "password": secrets.token_urlsafe(24), "nombre": "Nueva",
+        data = {"email": "nueva@example.com", "password": "Aa1!" + secrets.token_urlsafe(24), "nombre": "Nueva",
                 "apellido": "Cuenta", "dni": "99999999", "telefono": "3515559999", "rol": role}
         if role == Usuario.Rol.MEDICO:
             data.update(matricula="MP-NEW", especialidad=self.especialidad.pk)
@@ -301,7 +301,7 @@ class IdentityAPITests(APITestCase):
         self.login(Usuario.Rol.PACIENTE)
         other = APIClient(enforce_csrf_checks=True)
         self.login(Usuario.Rol.PACIENTE, other)
-        new_password = secrets.token_urlsafe(24)
+        new_password = "Aa1!" + secrets.token_urlsafe(24)
         response = self.post("auth-password", {"password_actual": self.password, "password_nueva": new_password,
                                                "password_confirmacion": new_password})
         self.assertEqual(response.status_code, 200, response.data)
@@ -315,7 +315,7 @@ class IdentityAPITests(APITestCase):
 
     def test_password_change_rejects_wrong_current_mismatch_weak_and_no_csrf(self):
         self.login()
-        valid = secrets.token_urlsafe(24)
+        valid = "Aa1!" + secrets.token_urlsafe(24)
         data = {"password_actual": self.password, "password_nueva": valid, "password_confirmacion": valid}
         for extra in ({"password_actual": "incorrecta"}, {"password_confirmacion": "distinta"},
                       {"password_nueva": "123", "password_confirmacion": "123"}):

@@ -89,10 +89,6 @@ class RegistroPacienteSerializer(serializers.ModelSerializer):
         password = attrs["password"]
         if password != attrs["password_confirmacion"]:
             raise serializers.ValidationError({"password_confirmacion": "Las contraseñas no coinciden."})
-        if (len(password) < 8 or not any(c.isupper() for c in password)
-                or not any(c.islower() for c in password) or not any(c.isdecimal() for c in password)
-                or not any(not c.isalnum() and not c.isspace() for c in password)):
-            raise serializers.ValidationError({"password": "Use al menos 8 caracteres, mayúscula, minúscula, número y carácter especial."})
         candidate = Usuario(rol=Usuario.Rol.PACIENTE, **{key: attrs[key] for key in
                             ("nombre", "apellido", "dni", "telefono", "email")})
         try:

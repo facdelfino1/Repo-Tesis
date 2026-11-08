@@ -56,6 +56,7 @@ DATABASES = {
 AUTH_USER_MODEL = "dominio.Usuario"
 AUTHENTICATION_BACKENDS = ["dominio.authentication.CuentaBackend"]
 AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "dominio.password_validation.PasswordComplexityValidator"},
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
