@@ -116,6 +116,8 @@ class OperacionesTests(APITestCase):
         for role in ('PACIENTE', 'SECRETARIA', 'ADMINISTRADOR'):
             self.login(role)
             for action in ('iniciar', 'finalizar'):
+                if role == 'SECRETARIA' and action == 'finalizar':
+                    continue  # Authorized administrative closure is tested separately.
                 self.assertEqual(self.call(action, turno).status_code, 403)
         self.login('MEDICO')
         for action in ('cancelar', 'modificar'):

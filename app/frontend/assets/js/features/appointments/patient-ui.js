@@ -6,7 +6,7 @@ import { priorityClass } from '../../components/badges.js';
 import { getBootstrapModal, showModal, hideModal } from '../../components/modals.js';
 import { bindDoctorSelectors, getAvailability } from '../catalog/catalog-service.js';
 import { readAnswers, updateTriageQuestionnaire } from '../triage/triage-ui.js';
-import { getPatientTurns, getPatientTurn, getPatientDelay, reservePatientTurn, modifyPatientTurn, cancelPatientTurn } from './patient-api.js';
+import { getPatientTurns, getPatientTurn, getPatientDelay, evaluatePatientTriage, reservePatientTurn, modifyPatientTurn, cancelPatientTurn } from './patient-api.js';
 import { initPatientProposals, openPendingRecovery } from '../rescheduling/rescheduling-ui.js';
 
 const labels = { RESERVADO: 'Reservado', PENDIENTE: 'Pendiente', PRESENTE: 'Presente',
@@ -23,7 +23,7 @@ function feedback(node, message, type = 'danger') {
     node.className = `alert alert-${type}${message ? '' : ' d-none'}`;
 }
 function priorityBadge(turn) {
-    return turn.prioridad === null ? '' : `<span class="badge ${priorityClass(turn.prioridad)}">${escapeHtml(turn.prioridad)}</span>`;
+    return turn.prioridad === null ? '' : `<span class="badge fs-6 px-3 py-2 align-self-start ${priorityClass(turn.prioridad)}">${escapeHtml(turn.prioridad)}</span>`;
 }
 function schedule(turn) {
     return turn.asignacion_vigente
@@ -33,9 +33,13 @@ function schedule(turn) {
         : '<dt class="col-5 text-secondary">Horario</dt><dd class="col-7">Pendiente de nueva asignación</dd>';
 }
 function renderSlots(node, rows, name) {
-    node.innerHTML = rows.map(row => `<div class="col-12 col-md-6"><label class="card border h-100"><span class="card-body">
-        <input type="radio" name="${name}" value="${row.id}" class="form-check-input me-2">
-        <span class="fw-semibold">${formatDate(row.fecha)} ${escapeHtml(row.hora_inicio.slice(0, 5))}–${escapeHtml(row.hora_fin.slice(0, 5))}</span>
+    node.innerHTML = rows.map(row => `<div class="col-12 col-md-6"><label class="card appointment-slot border h-100 mb-0"><span class="card-body d-flex align-items-start gap-3 p-3">
+        <input type="radio" name="${name}" value="${row.id}" class="form-check-input flex-shrink-0 mt-2">
+        <span class="d-flex flex-column align-items-start gap-2">
+            <span class="text-secondary">Fecha: <strong class="text-body">${formatDate(row.fecha)}</strong></span>
+            <span class="fs-5 fw-semibold">${escapeHtml(row.hora_inicio.slice(0, 5))}–${escapeHtml(row.hora_fin.slice(0, 5))}</span>
+            <span class="badge text-bg-success">Disponible</span>
+        </span>
         </span></label></div>`).join('');
 }
 // Collect typed answers; clinical validation and classification remain exclusively server-side.
@@ -56,29 +60,104 @@ export async function initPatientRequest() {
     const consult = form.querySelector('[type="submit"]');
     const triageError = document.getElementById('triajeError');
     const slotError = document.getElementById('disponibilidadError');
-    let selected = null, rows = [], generation = 0, busy = false;
+    const resultBox = document.getElementById('triajeResultado');
+    const resultPriority = document.getElementById('resultadoPrioridad');
+    const resultDate = document.getElementById('resultadoFechaAtencion');
+    let selected = null, rows = [], generation = 0, busy = false, consultationVersion = 0;
+    let preview = null, previewRequest = null, previewTimer = null, evaluationVersion = 0;
+    const signature = (doctor, answers, block) => JSON.stringify([doctor.id, block.id, answers]);
+    function clearPreview() {
+        ++evaluationVersion; clearTimeout(previewTimer); preview = null; previewRequest = null;
+        resultBox.classList.add('d-none'); resultBox.setAttribute('aria-busy', 'false');
+        resultPriority.textContent = '—';
+        resultDate.textContent = '';
+    }
     function reset() {
+        ++consultationVersion; clearPreview();
         ++generation; rows = []; list.replaceChildren(); section.classList.add('d-none'); confirm.disabled = true;
+        consult.disabled = !selected || busy;
         feedback(triageError, ''); feedback(slotError, '');
+    }
+    async function evaluate(doctor, answers, block) {
+        if (!specialtyKey(doctor)) return true;
+        const key = signature(doctor, answers, block);
+        if (previewRequest?.key === key) return previewRequest.promise;
+        const version = ++evaluationVersion;
+        resultBox.className = 'triage-result rounded-3 p-3 mt-4';
+        resultBox.setAttribute('aria-busy', 'true');
+        resultPriority.textContent = 'Evaluando…'; resultPriority.className = 'badge fs-6 px-3 py-2 text-bg-secondary';
+        preview = null;
+        resultDate.textContent = '';
+        const promise = (async () => {
+            try {
+                const result = await evaluatePatientTriage(doctor.id, answers, block.id);
+                if (version !== evaluationVersion) return false;
+                preview = { key, prioridad: result.prioridad };
+                const color = { ALTA: 'danger', MEDIA: 'warning', BAJA: 'success' }[result.prioridad];
+                resultBox.className = `triage-result rounded-3 p-3 mt-4${color ? ' triage-result-' + color : ''}`;
+                resultPriority.textContent = result.prioridad ?? 'Sin triaje específico';
+                resultPriority.className = `badge fs-6 px-3 py-2 ${priorityClass(result.prioridad)}`;
+                const chosen = Number(list.querySelector('input:checked')?.value) === block.id;
+                resultDate.textContent = `${chosen ? 'Fecha de atención' : 'Fecha de referencia'}: ${formatDate(result.fecha_atencion)}`;
+                feedback(triageError, '');
+                return true;
+            } catch (error) {
+                if (version !== evaluationVersion) return false;
+                resultBox.classList.add('d-none'); feedback(triageError, errorMessage(error));
+                return false;
+            } finally {
+                if (version === evaluationVersion) {
+                    resultBox.setAttribute('aria-busy', 'false'); previewRequest = null;
+                }
+            }
+        })();
+        previewRequest = { key, promise };
+        return promise;
+    }
+    function scheduleEvaluation() {
+        if (!selected || !specialtyKey(selected) || busy) return;
+        let answers;
+        try { answers = questionnaire(form, specialtyKey(selected)); }
+        catch { return; }
+        const doctor = selected;
+        previewTimer = setTimeout(async () => {
+            const version = evaluationVersion;
+            try {
+                const available = await getAvailability(doctor.id);
+                if (version !== evaluationVersion || doctor !== selected) return;
+                if (available.length) await evaluate(doctor, answers, available[0]);
+            } catch (error) {
+                if (version === evaluationVersion) feedback(triageError, errorMessage(error));
+            }
+        }, 300);
+    }
+    function answersChanged(event) {
+        if (busy || !event.target.closest('[data-triage-specialty]')) return;
+        reset(); updateTriageQuestionnaire(form, questionnaireView(selected)); scheduleEvaluation();
     }
     consult.disabled = true; confirm.disabled = true;
     await bindDoctorSelectors(document.getElementById('especialidad'), document.getElementById('medico'), (doctor, error) => {
         selected = doctor; reset(); consult.disabled = !doctor || busy;
         updateTriageQuestionnaire(form, questionnaireView(doctor));
         if (error) pageMessage(errorMessage(error), 'danger');
+        else scheduleEvaluation();
     });
     updateTriageQuestionnaire(form, '');
-    form.addEventListener('input', event => {
-        if (event.target.closest('[data-triage-specialty]')) {
-            reset(); updateTriageQuestionnaire(form, questionnaireView(selected));
-        }
-    });
+    form.addEventListener('input', answersChanged);
+    form.addEventListener('change', answersChanged);
     async function refresh() {
         const version = ++generation, doctor = selected;
-        confirm.disabled = true; rows = []; list.replaceChildren();
-        const result = await getAvailability(doctor.id);
+        confirm.disabled = true; rows = []; list.replaceChildren(); section.classList.add('d-none');
+        let result;
+        try { result = await getAvailability(doctor.id); }
+        catch (error) { if (version !== generation) return; throw error; }
         if (version !== generation) return;
-        rows = result; section.classList.remove('d-none');
+        rows = result;
+        if (rows.length && specialtyKey(doctor)) {
+            if (!await evaluate(doctor, questionnaire(form, specialtyKey(doctor)), rows[0])) return;
+            if (version !== generation) return;
+        }
+        section.classList.remove('d-none');
         document.getElementById('sinDisponibilidad').classList.toggle('d-none', rows.length > 0);
         renderSlots(list, rows, 'reservaDisponibilidad');
     }
@@ -87,18 +166,39 @@ export async function initPatientRequest() {
         if (!selected || busy) return;
         try { questionnaire(form, specialtyKey(selected)); }
         catch (error) { feedback(triageError, error.message); return; }
+        const version = ++consultationVersion;
+        clearPreview();
+        ++generation; rows = []; list.replaceChildren(); section.classList.add('d-none'); confirm.disabled = true;
         feedback(triageError, ''); feedback(slotError, ''); consult.disabled = true;
-        try { await refresh(); }
-        catch (error) { feedback(slotError, errorMessage(error)); section.classList.remove('d-none'); }
-        finally { consult.disabled = !selected || busy; }
+        try {
+            await refresh();
+        } catch (error) {
+            if (version === consultationVersion) { feedback(slotError, errorMessage(error)); section.classList.remove('d-none'); }
+        } finally { if (version === consultationVersion) consult.disabled = !selected || busy; }
     });
-    list.addEventListener('change', () => { confirm.disabled = busy || !list.querySelector('input:checked'); });
+    list.addEventListener('change', async () => {
+        confirm.disabled = true;
+        const block = rows.find(row => row.id === Number(list.querySelector('input:checked')?.value));
+        if (busy || !block || !selected) return;
+        const doctor = selected;
+        let answers;
+        try { answers = questionnaire(form, specialtyKey(doctor)); }
+        catch (error) { feedback(triageError, error.message); return; }
+        if (!await evaluate(doctor, answers, block)) return;
+        if (!busy && doctor === selected && Number(list.querySelector('input:checked')?.value) === block.id) confirm.disabled = false;
+    });
     confirm.addEventListener('click', async () => {
         const id = Number(list.querySelector('input:checked')?.value);
         if (busy || !selected || !rows.some(row => row.id === id)) return;
         let answers;
         try { answers = questionnaire(form, specialtyKey(selected)); }
         catch (error) { feedback(triageError, error.message); return; }
+        const block = rows.find(row => row.id === id);
+        if (specialtyKey(selected) && preview?.key !== signature(selected, answers, block)) {
+            reset(); feedback(triageError, 'Las respuestas cambiaron. Consulte nuevamente los horarios para actualizar la clasificación.');
+            consult.disabled = false;
+            return;
+        }
         feedback(slotError, ''); busy = true; confirm.disabled = true; consult.disabled = true;
         form.querySelectorAll('input, select').forEach(node => { node.disabled = true; });
         list.querySelectorAll('input').forEach(node => { node.disabled = true; });
@@ -142,7 +242,7 @@ export async function initPatientConfirmation() {
     text('turnoReservadoTipo', turn.asignacion_vigente ? 'Turno de agenda' : 'Referencia histórica');
     text('turnoReservadoDuracion', pending ? '—' : turn.duracion_turno);
     const badge = document.getElementById('turnoReservadoPrioridad');
-    badge.textContent = priority(turn); badge.className = `badge align-self-start ${priorityClass(turn.prioridad)}`;
+    badge.textContent = priority(turn); badge.className = `badge fs-6 px-3 py-2 align-self-start ${priorityClass(turn.prioridad)}`;
 }
 
 let dashboardRefresh = 0;
@@ -160,7 +260,7 @@ async function renderPatientDashboard() {
     text('turnoMedico', next ? fullName(next.medico) : '—');
     text('turnoFecha', next ? formatDate(next.fecha) : '—'); text('turnoHora', next ? next.hora.slice(0, 5) : '—');
     text('turnoEstado', next ? state(next) : '—'); text('triajePrioridad', next ? priority(next) : 'Sin turno asignado');
-    document.getElementById('triajePrioridad').className = `badge ${priorityClass(next?.prioridad)}`;
+    document.getElementById('triajePrioridad').className = `badge fs-6 px-3 py-2 ${priorityClass(next?.prioridad)}`;
     text('esperaEstimada', next ? 'Consultando...' : 'Sin estimación disponible');
     text('demoraEstimacionDetalle', 'Estimación informativa sujeta a cambios.');
     text('duracionEstimada', next ? `${next.duracion_turno} min` : '—');
@@ -169,7 +269,7 @@ async function renderPatientDashboard() {
     document.getElementById('historialTurnos').innerHTML = turns.filter(turn => !activeStates.has(turn.estado)
         || (turn.estado === 'RESERVADO' && !turn.horario_futuro)).map(turn =>
         `<tr><td>${formatDate(turn.fecha)}</td><td>${escapeHtml(turn.medico.especialidad.nombre)}</td><td>${escapeHtml(fullName(turn.medico))}</td><td>${escapeHtml(state(turn))}</td></tr>`).join('') || '<tr><td colspan="4">Sin turnos históricos.</td></tr>';
-    if (!next) return;
+    if (!next) return turns;
     try {
         const estimate = await getPatientDelay(next.id_turno);
         if (version !== dashboardRefresh) return;
@@ -184,11 +284,12 @@ async function renderPatientDashboard() {
         text('esperaEstimada', 'Sin estimación disponible');
         text('demoraEstimacionDetalle', `No fue posible consultar la estimación. ${errorMessage(error)}`);
     }
+    return turns;
 }
 
 export async function initPatientDashboard() {
-    await renderPatientDashboard();
-    await initPatientProposals({ onUpdated: renderPatientDashboard });
+    const initialTurns = await renderPatientDashboard();
+    await initPatientProposals({ onUpdated: renderPatientDashboard, initialTurns });
 }
 
 export async function initPatientTurns() {
@@ -226,6 +327,7 @@ export async function initPatientTurns() {
             <td>${escapeHtml(fullName(turn.medico))}</td><td>${formatDate(turn.fecha)}</td><td>${escapeHtml(turn.hora.slice(0, 5))}</td>
             <td>${escapeHtml(state(turn))}</td><td>${priorityBadge(turn)}</td></tr>`).join('');
         setBusy(busy);
+        return turns;
     }
     async function refreshAfterWrite(success) {
         feedback(message, success, 'success');
@@ -294,6 +396,6 @@ export async function initPatientTurns() {
             if (error.status === 409) { try { await refresh(); } catch {} }
         } finally { setBusy(false); cancel.disabled = false; }
     });
-    await refresh();
-    proposals = await initPatientProposals({ onUpdated: refresh });
+    const initialTurns = await refresh();
+    proposals = await initPatientProposals({ onUpdated: refresh, initialTurns });
 }

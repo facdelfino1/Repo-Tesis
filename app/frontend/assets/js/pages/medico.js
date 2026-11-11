@@ -11,11 +11,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             initAccountProfile(); return;
         }
         if (document.querySelector('[data-form$="-mass-reschedule"]')) {
-            const { initManagerRescheduling } = await import(new URL('../features/rescheduling/rescheduling-ui.js', pageScriptUrl));
+            const { initManagerRescheduling } = await import(new URL('../features/rescheduling/rescheduling-ui.js?v=b84-stage7-2', pageScriptUrl));
             await initManagerRescheduling(); return;
         }
         if (document.querySelector('[data-form$="-availability"]')) {
-            const availability = await import(new URL('../features/availability/availability-ui.js', pageScriptUrl));
+            const availability = await import(new URL('../features/availability/availability-ui.js?v=b84-obs09-2', pageScriptUrl));
             await availability.initDoctorAvailability(); return;
         }
         if (location.pathname.endsWith('/finalizar-consulta.html')) {

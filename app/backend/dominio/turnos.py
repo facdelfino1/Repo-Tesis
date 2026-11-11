@@ -67,7 +67,8 @@ def reservar_turno(actor, medico_id, disponibilidad_id, respuestas=None, *, paci
     priority = None
     if tiene_triaje(specialty):
         try:
-            priority = clasificar_triaje(specialty, respuestas, timezone.localdate(evaluated_at))
+            priority = clasificar_triaje(specialty, respuestas, timezone.localdate(evaluated_at),
+                                         fecha_atencion=block.fecha)
         except TriajeInvalido as error:
             raise ValidationError({'respuestas': error.errores}) from error
     elif respuestas is not None:
@@ -144,7 +145,8 @@ def registrar_presencia(actor, turno_id, *, medico_id):
 
 @transaction.atomic
 def _consulta(actor, turno_id, medico_id, *, finalizar):
-    turno, _, _ = _lock_turn(actor, turno_id, medico_id, (Usuario.Rol.MEDICO,))
+    roles = (Usuario.Rol.MEDICO, Usuario.Rol.SECRETARIA) if finalizar else (Usuario.Rol.MEDICO,)
+    turno, _, _ = _lock_turn(actor, turno_id, medico_id, roles)
     source = Turno.Estado.EN_ATENCION if finalizar else Turno.Estado.PRESENTE
     if turno.estado != source:
         raise AgendaConflict('La acción no corresponde al estado actual del turno.')
@@ -155,7 +157,11 @@ def _consulta(actor, turno_id, medico_id, *, finalizar):
     field = 'fecha_hora_cierre' if finalizar else 'fecha_hora_inicio'
     turno.estado = Turno.Estado.COMPLETADO if finalizar else Turno.Estado.EN_ATENCION
     setattr(turno, field, now)
-    turno.save(update_fields=['estado', field])
+    fields = ['estado', field]
+    if finalizar:
+        turno.cerrado_por = actor
+        fields.append('cerrado_por')
+    turno.save(update_fields=fields)
     return turno
 
 
@@ -215,6 +221,7 @@ def modificar_turno(actor, turno_id, disponibilidad_id, *, medico_id=None):
     if old.pk == new.pk:
         return turno
     _available(new)
+    actualizar_triaje_fecha(turno, new.fecha)
     old.estado, new.estado = Disponibilidad.Estado.DISPONIBLE, Disponibilidad.Estado.OCUPADO
     old.save(update_fields=['estado'])
     new.save(update_fields=['estado'])
@@ -222,3 +229,22 @@ def modificar_turno(actor, turno_id, disponibilidad_id, *, medico_id=None):
     turno.duracion_turno = _duration(new)
     turno.save(update_fields=['disponibilidad', 'fecha', 'hora', 'duracion_turno'])
     return turno
+
+
+def actualizar_triaje_fecha(turno, fecha_atencion):
+    """Re-evaluate age-sensitive priority only when an assigned date changes."""
+    if turno.fecha == fecha_atencion or turno.medico.especialidad.nombre != 'Pediatría':
+        return
+    triaje = Triaje.objects.select_for_update().filter(turno=turno).first()
+    if triaje is None:
+        return
+    try:
+        priority = clasificar_triaje('Pediatría', triaje.respuesta_sintomas, timezone.localdate(),
+                                     fecha_atencion=fecha_atencion)
+    except TriajeInvalido as error:
+        raise ValidationError({'respuestas': error.errores}) from error
+    if priority != triaje.nivel_prioridad:
+        triaje.nivel_prioridad = priority
+        triaje.fecha_hora_evaluacion = timezone.now()
+        triaje.save(update_fields=['nivel_prioridad', 'fecha_hora_evaluacion'])
+        turno.triaje = triaje

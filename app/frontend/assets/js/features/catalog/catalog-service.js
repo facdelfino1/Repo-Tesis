@@ -10,16 +10,21 @@ export const getAvailability = (doctorId, filters = {}) => {
 export async function getAssignableAvailability(doctorId) {
     return getAvailability(doctorId, { estado: 'DISPONIBLE', futuros: true });
 }
-export async function bindDoctorSelectors(specialtySelect, doctorSelect, onChange = () => {}) {
-    const specialties = await getSpecialties();
+// A snapshot belongs only to one page initialization; subsequent changes fetch fresh data.
+export const loadDoctorCatalog = async () => {
+    const [specialties, doctors] = await Promise.all([getSpecialties(), getDoctors('')]);
+    return { specialties, doctors };
+};
+export async function bindDoctorSelectors(specialtySelect, doctorSelect, onChange = () => {}, initialCatalog = null) {
+    const specialties = initialCatalog ? initialCatalog.specialties : await getSpecialties();
     let doctors = [];
     let sequence = 0;
     const option = (value,label) => { const node = document.createElement('option'); node.value=value; node.textContent=label; return node; };
     specialtySelect.replaceChildren(option('', 'Seleccione una especialidad'), ...specialties.map(s => option(s.id,s.nombre)));
-    async function render(specialty, selected='') {
+    async function render(specialty, selected='', initialRows = null) {
         const current = ++sequence;
         doctorSelect.disabled = true;
-        const rows = await getDoctors(specialty);
+        const rows = initialRows ?? await getDoctors(specialty);
         if (current !== sequence) return;
         doctors = rows;
         doctorSelect.replaceChildren(option('', 'Seleccione un médico'), ...rows.map(d => option(d.id,`${d.nombre} ${d.apellido} - ${d.especialidad.nombre}`)));
@@ -46,6 +51,6 @@ export async function bindDoctorSelectors(specialtySelect, doctorSelect, onChang
             await onChange(doctor);
         } catch(error) { doctorSelect.disabled=false; await onChange(null,error); }
     });
-    await render('');
+    await render('', '', initialCatalog?.doctors);
     return { getDoctor: () => doctors.find(d => String(d.id) === doctorSelect.value) || null };
 }

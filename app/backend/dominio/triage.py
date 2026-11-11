@@ -25,12 +25,15 @@ def menor_tres_meses(nacimiento, evaluacion):
     return evaluacion < aniversario
 
 
-def clasificar_triaje(especialidad, respuestas, fecha_evaluacion):
+def clasificar_triaje(especialidad, respuestas, fecha_evaluacion, *, fecha_atencion=None):
     errors = {}
     if not tiene_triaje(especialidad):
         raise TriajeInvalido({'especialidad': 'Esta especialidad no tiene cuestionario de triaje.'})
     if type(fecha_evaluacion) is not date:
         raise TriajeInvalido({'fecha_evaluacion': 'Fecha de evaluación inválida.'})
+    if fecha_atencion is not None and type(fecha_atencion) is not date:
+        raise TriajeInvalido({'fecha_atencion': 'Fecha de atención inválida.'})
+    referencia_edad = fecha_evaluacion if fecha_atencion is None else fecha_atencion
     if type(respuestas) is not dict:
         raise TriajeInvalido({'respuestas': 'Complete todas las preguntas del cuestionario.'})
     pediatric = ALGORITMOS[especialidad] == 'pediatria'
@@ -76,7 +79,7 @@ def clasificar_triaje(especialidad, respuestas, fecha_evaluacion):
         if respuestas['fiebre'] or respuestas['dolor'] >= 4:
             return 'MEDIA'  # CM-03, CM-04
         return 'BAJA'  # CM-05
-    if ((respuestas['fiebre'] and menor_tres_meses(birth, fecha_evaluacion))
+    if ((respuestas['fiebre'] and menor_tres_meses(birth, referencia_edad))
             or respuestas['dificultadRespirar'] or respuestas['muyAgitado']
             or respuestas['estadoGeneral'] in ('pobre_respuesta_estimulos', 'dificultad_despertar', 'letargico_muy_somnoliento')):
         return 'ALTA'  # PED-01..04

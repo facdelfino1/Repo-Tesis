@@ -132,6 +132,8 @@ class Turno(models.Model):
     fecha_hora_arribo = models.DateTimeField(null=True, blank=True)
     fecha_hora_inicio = models.DateTimeField(null=True, blank=True)
     fecha_hora_cierre = models.DateTimeField(null=True, blank=True)
+    cerrado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+                                   related_name="consultas_cerradas", null=True, blank=True, editable=False)
     paciente = models.ForeignKey(Paciente, on_delete=models.PROTECT, related_name="turnos")
     medico = models.ForeignKey(Medico, on_delete=models.PROTECT, related_name="turnos")
     disponibilidad = models.ForeignKey(Disponibilidad, on_delete=models.PROTECT, related_name="turnos", null=True, blank=True)

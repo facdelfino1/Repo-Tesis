@@ -4,17 +4,18 @@ import { escapeHtml as esc } from '../../core/helpers.js';
 import { formatDate, todayInputValue } from '../../core/formatters.js';
 import { priorityClass } from '../../components/badges.js';
 import { getBootstrapModal, showModal, hideModal } from '../../components/modals.js';
-import { getDoctor, getAssignableAvailability as assignableSlots, bindDoctorSelectors } from '../catalog/catalog-service.js';
+import { getDoctor, getAssignableAvailability as assignableSlots, bindDoctorSelectors, loadDoctorCatalog } from '../catalog/catalog-service.js';
 import { reassignAgendaTurn } from '../rescheduling/rescheduling-api.js';
 import { readAnswers, updateTriageQuestionnaire, renderTriageResponses } from '../triage/triage-ui.js';
-import { getAgendaTurns, getAgendaTurn, findPatients, reserveSecretaryTurn, modifyAgendaTurn, operateAgendaTurn } from './agenda-api.js';
+import { getAgendaTurns, getAgendaTurn, reserveSecretaryTurn, modifyAgendaTurn, operateAgendaTurn } from './agenda-api.js';
+import { initPatientSearch } from './patient-search-ui.js';
 
 const node = id => document.getElementById(id);
 const setText = (id, value) => { if (node(id)) node(id).textContent = value; };
 const name = person => `${person.nombre} ${person.apellido}`;
 const states = { RESERVADO: 'Reservado', PRESENTE: 'Presente', EN_ATENCION: 'En atención', COMPLETADO: 'Completado', CANCELADO: 'Cancelado', PENDIENTE: 'Pendiente', AUSENTE: 'Ausente' };
 const key = doctor => ({ 'Clínica Médica': 'clinica_medica', 'Pediatría': 'pediatria' }[doctor?.especialidad.nombre] || '');
-const badge = turn => turn.prioridad === null ? 'Sin triaje específico' : `<span class="badge ${priorityClass(turn.prioridad)}">${esc(turn.prioridad)}</span>`;
+const badge = turn => turn.prioridad === null ? 'Sin triaje específico' : `<span class="badge fs-6 px-3 py-2 ${priorityClass(turn.prioridad)}">${esc(turn.prioridad)}</span>`;
 const time = value => value ? esc(new Date(value).toLocaleString('es-AR')) : '—';
 const hour = turn => turn.estado === 'PENDIENTE' || !turn.asignacion_vigente && !['COMPLETADO', 'CANCELADO', 'AUSENTE'].includes(turn.estado)
     ? 'Pendiente de nueva asignación' : esc(turn.hora.slice(0, 5));
@@ -48,6 +49,7 @@ function detail(turn) {
 export async function initOperationalAgenda(mode) {
     const user = getCurrentUser(), doctorMode = user.rol === 'MEDICO';
     const dashboard = mode === 'dashboard', presence = mode === 'presence';
+    const initialCatalog = !doctorMode && !dashboard && !presence ? await loadDoctorCatalog() : null;
     const table = node(doctorMode ? (dashboard ? 'medicoAgendaDia' : 'agendaMedicaTabla') : dashboard ? 'secretariaAgendaDia' : presence ? 'presenciaTabla' : 'GestiónTurnosTabla');
     const message = node(doctorMode ? 'agendaMedicaMensaje' : presence ? 'presenciaMensaje' : 'GestiónTurnosMensaje');
     const date = node(doctorMode ? 'agendaMedicaFiltroFecha' : presence ? 'presenciaFiltroFecha' : 'filtroFechaTurno');
@@ -112,7 +114,7 @@ export async function initOperationalAgenda(mode) {
             table.closest('section').querySelector('.table-responsive').before(controls); specialty = node('agendaEspecialidad'); select = node('agendaMedico');
             setText('secretariaAlertasOperativas', 'Los conteos corresponden al médico seleccionado y a la fecha consultada. Las propuestas se consultan en Reprogramación.');
         }
-        await bindDoctorSelectors(specialty, select, async (value, error) => { doctor = value; loaded = false; ++generation; rows = []; render(); if (error) feedback(message, errorMessage(error)); else await reload(); });
+        await bindDoctorSelectors(specialty, select, async (value, error) => { doctor = value; loaded = false; ++generation; rows = []; render(); if (error) feedback(message, errorMessage(error)); else await reload(); }, initialCatalog);
     }
     [date, filterDni, filterName, filterState, filterPriority].filter(Boolean).forEach(control => control.addEventListener('input', () => control === date ? reload() : render()));
     document.querySelectorAll('main form:not([data-form])').forEach(form => {
@@ -175,28 +177,14 @@ export async function initOperationalAgenda(mode) {
         try { editRows = await assignableSlots(turn.medico.id); slots(editSelect, editRows); }
         catch (error) { feedback(editError, errorMessage(error)); }
     }
-    if (!doctorMode && !dashboard && !presence) await initSecretaryBooking(reload);
+    if (!doctorMode && !dashboard && !presence) await initSecretaryBooking(reload, initialCatalog);
     await refresh();
 }
 
-async function initSecretaryBooking(reload) {
-    const form = node('asignarTurnoForm'), message = node('asignarTurnoMensaje'), dni = node('asignarPacienteDni');
-    const patients = node('asignarPacienteSeleccion'), lookup = node('buscarPacienteBtn'), slotSelect = node('asignarDisponibilidad');
-    let matches = [], doctor = null, rows = [], version = 0, searchVersion = 0, busy = false;
-    function clearPatient() { ++searchVersion; matches = []; patients.replaceChildren(new Option('Busque un paciente por DNI', '')); setText('asignarPacienteEstado', ''); node('asignarPacienteNombre').value = ''; node('asignarPacienteApellido').value = ''; }
-    dni.addEventListener('input', clearPatient);
-    patients.addEventListener('change', () => { const patient = matches.find(row => row.id === Number(patients.value)); node('asignarPacienteNombre').value = patient?.nombre || ''; node('asignarPacienteApellido').value = patient?.apellido || ''; });
-    lookup.addEventListener('click', async () => {
-        clearPatient(); if (!dni.value.trim()) { feedback(message, 'Ingrese el DNI del paciente.'); return; }
-        const current = searchVersion; lookup.disabled = true;
-        try {
-            const result = await findPatients(dni.value.trim()); if (current !== searchVersion) return;
-            matches = result; patients.replaceChildren(new Option(result.length ? 'Seleccione el paciente encontrado' : 'No se encontraron pacientes activos', ''));
-            result.forEach(patient => patients.add(new Option(`${name(patient)} · DNI ${patient.dni} · ID ${patient.id}`, patient.id)));
-            feedback(message, result.length ? 'Seleccione el paciente existente.' : 'No se encontraron pacientes activos con ese DNI.', result.length ? 'info' : 'warning');
-        } catch (error) { feedback(message, errorMessage(error)); }
-        finally { lookup.disabled = false; }
-    });
+async function initSecretaryBooking(reload, initialCatalog) {
+    const form = node('asignarTurnoForm'), message = node('asignarTurnoMensaje'), slotSelect = node('asignarDisponibilidad');
+    const patientSearch = initPatientSearch(form);
+    let doctor = null, rows = [], version = 0, busy = false;
     async function refreshSlots() {
         const current = ++version, selected = doctor; rows = []; slots(slotSelect, []);
         if (!selected) { setText('asignarDisponibilidadAyuda', 'Seleccione un médico para consultar horarios.'); return; }
@@ -208,12 +196,12 @@ async function initSecretaryBooking(reload) {
         doctor = value; updateTriageQuestionnaire(form, key(value) || (value ? 'sin_algoritmo' : ''));
         if (error) feedback(message, errorMessage(error));
         try { await refreshSlots(); } catch (err) { feedback(message, errorMessage(err)); }
-    });
+    }, initialCatalog);
     updateTriageQuestionnaire(form, '');
     form.addEventListener('input', () => updateTriageQuestionnaire(form, key(doctor) || (doctor ? 'sin_algoritmo' : '')));
     form.addEventListener('submit', async event => {
         event.preventDefault(); if (busy) return;
-        const patient = matches.find(row => row.id === Number(patients.value)), slot = rows.find(row => row.id === Number(slotSelect.value));
+        const patient = patientSearch.getSelectedPatient(), slot = rows.find(row => row.id === Number(slotSelect.value));
         if (!patient || !doctor || node('asignarMedico').disabled || !slot) { feedback(message, 'Seleccione un paciente existente, médico y horario disponible.'); return; }
         let answers;
         try { answers = collectedAnswers(form, doctor); } catch (error) { feedback(message, error.message); return; }

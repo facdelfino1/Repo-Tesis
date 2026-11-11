@@ -4,6 +4,8 @@ import { request, listAll } from '../../core/api.js';
 export const getPatientTurns = () => listAll('turnos/');
 export const getPatientTurn = id => request(`turnos/${encodeURIComponent(id)}/`);
 export const getPatientDelay = id => request(`turnos/${encodeURIComponent(id)}/demora/`);
+export const evaluatePatientTriage = (doctorId, respuestas, disponibilidad) => request(
+    `medicos/${encodeURIComponent(doctorId)}/triaje-preliminar/`, { method: 'POST', body: { respuestas, disponibilidad } });
 export const reservePatientTurn = (doctorId, disponibilidad, respuestas) => request(
     `medicos/${encodeURIComponent(doctorId)}/turnos/`, {
         method: 'POST', body: { disponibilidad, ...(respuestas === undefined ? {} : { respuestas }) }

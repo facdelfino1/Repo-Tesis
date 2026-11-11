@@ -4,6 +4,7 @@ const root = doctor => `medicos/${encodeURIComponent(doctor)}/turnos/`;
 export const getAgendaTurns = (doctor, fecha = '') => listAll(root(doctor) + (fecha ? `?fecha=${encodeURIComponent(fecha)}` : ''));
 export const getAgendaTurn = (doctor, id) => request(`${root(doctor)}${encodeURIComponent(id)}/`);
 export const findPatients = dni => listAll(`pacientes/?dni=${encodeURIComponent(dni)}`);
+export const searchPatients = (query, signal) => request(`pacientes/?q=${encodeURIComponent(query)}`, { signal });
 export const reserveSecretaryTurn = (doctor, paciente, disponibilidad, respuestas) => request(root(doctor), {
     method: 'POST', body: { paciente, disponibilidad, ...(respuestas === undefined ? {} : { respuestas }) }
 });

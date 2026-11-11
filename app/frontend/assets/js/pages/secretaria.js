@@ -11,17 +11,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             initAccountProfile(); return;
         }
         if (document.querySelector('[data-form$="-mass-reschedule"]')) {
-            const { initManagerRescheduling } = await import(new URL('../features/rescheduling/rescheduling-ui.js', pageScriptUrl));
+            const { initManagerRescheduling } = await import(new URL('../features/rescheduling/rescheduling-ui.js?v=b84-stage7-2', pageScriptUrl));
             await initManagerRescheduling(); return;
         }
         if (document.querySelector('[data-form$="-availability"]')) {
-            const availability = await import(new URL('../features/availability/availability-ui.js', pageScriptUrl));
+            const availability = await import(new URL('../features/availability/availability-ui.js?v=b84-obs09-2', pageScriptUrl));
             await availability.initSecretaryAvailability(); return;
         }
         if (location.pathname.endsWith('/finalizar-consulta.html')) {
-            document.querySelector('main').replaceChildren();
-            session.pageMessage('El cierre corresponde al M\u00e9dico. Consulte el estado real en Gesti\u00f3n de turnos.', 'info');
-            const link = document.createElement('a'); link.href = 'gestion-turnos.html'; link.className = 'btn btn-primary'; link.textContent = 'Ir a Gestión de turnos'; document.querySelector('main').append(link); return;
+            const { initConsultationClosure } = await import(new URL('../features/appointments/consultation-closure-ui.js', pageScriptUrl));
+            await initConsultationClosure(); return;
         }
         const { initOperationalAgenda } = await import(new URL('../features/appointments/agenda-ui.js', pageScriptUrl));
         await initOperationalAgenda(document.getElementById('secretariaAgendaDia') ? 'dashboard' : document.getElementById('presenciaTabla') ? 'presence' : 'management');

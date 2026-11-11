@@ -151,11 +151,11 @@
                     <div class="modal-body">
                         <div class="row g-3">
                             <div class="col-12 col-md-3">
-                                <label for="asignarPacienteDni" class="form-label">DNI del paciente</label>
-                                <input type="text" class="form-control" id="asignarPacienteDni" required>
-                                <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="buscarPacienteBtn">Buscar paciente</button>
+                                <label for="asignarPacienteDni" class="form-label">Buscar paciente por DNI, nombre o apellido</label>
+                                <input type="search" class="form-control" id="asignarPacienteDni" required maxlength="200" autocomplete="off" aria-describedby="asignarPacienteEstado" aria-controls="asignarPacienteSeleccion" enterkeyhint="search">
                                 <label for="asignarPacienteSeleccion" class="form-label mt-2">Paciente existente</label>
-                                <select id="asignarPacienteSeleccion" class="form-select"><option value="">Busque un paciente por DNI</option></select>
+                                <select id="asignarPacienteSeleccion" class="form-select" required aria-describedby="asignarPacienteEstado"><option value="">Escriba para buscar un paciente</option></select>
+                                <p id="asignarPacienteEstado" class="form-text mb-0" role="status" aria-live="polite">Ingrese entre 2 y 200 caracteres.</p>
                             </div>
                             <div class="col-12 col-md-3">
                                 <label for="asignarPacienteNombre" class="form-label">Nombre</label>

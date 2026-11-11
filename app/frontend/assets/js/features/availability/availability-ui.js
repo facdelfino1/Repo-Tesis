@@ -2,10 +2,17 @@ import { getBootstrapModal, showModal } from '../../components/modals.js';
 import { request, errorMessage } from '../../core/api.js';
 import { getCurrentUser, pageMessage } from '../../core/session.js';
 import { bindDoctorSelectors, getAvailability } from '../catalog/catalog-service.js';
-import { buildAvailabilityBlocks } from './availability-service.js';
+import { buildAvailabilityBlocks, isAvailabilityExpired } from './availability-service.js?v=b84-obs09-2';
 import { escapeHtml } from '../../core/helpers.js';
 import { formatDate, timeToMinutes } from '../../core/formatters.js';
 import { updateTriageQuestionnaire } from '../triage/triage-ui.js';
+
+export function availabilityActions(row, now = new Date()) {
+    if (isAvailabilityExpired(row, now)) return 'Horario vencido';
+    if (row.estado === 'OCUPADO') return 'Sin acciones';
+    return `<button type="button" class="btn btn-sm btn-outline-secondary" data-slot="${row.id}" data-operation="${row.estado==='BLOQUEADO'?'desbloquear':'bloquear'}">${row.estado==='BLOQUEADO'?'Desbloquear':'Bloquear'}</button>
+            <button type="button" class="btn btn-sm btn-outline-danger" data-slot="${row.id}" data-operation="eliminar">Eliminar</button>`;
+}
 
 async function initAvailability(doctorMode) {
     const form=document.querySelector(`[data-form="${doctorMode?'doctor':'secretary'}-availability"]`);
@@ -20,25 +27,38 @@ async function initAvailability(doctorMode) {
     const message=document.getElementById(doctorMode?'disponibilidadMedicoMensaje':'disponibilidadMensaje');
     const generate=document.getElementById(doctorMode?'generarBloquesMedicoBtn':'generarBloquesBtn');
     let selected=doctorMode?{id:user.perfil.id,nombre:user.nombre,apellido:user.apellido,especialidad:user.perfil.especialidad}:null;
-    let blocks=[], generatedFor=null, sequence=0;
+    let blocks=[], generatedFor=null, sequence=0, expiringRows=[], visibleRows=new Map();
     function feedback(text,type='danger'){message.className=`alert alert-${type}`;message.textContent=text;}
     function clearPreview(){blocks=[];generatedFor=null;preview.replaceChildren();empty.classList.remove('d-none');}
     async function refresh(){
         const current=++sequence;
-        if(!selected){table.innerHTML=`<tr><td colspan="${doctorMode?5:7}">Seleccione un médico para consultar su disponibilidad.</td></tr>`;return;}
+        if(!selected){expiringRows=[];visibleRows.clear();table.innerHTML=`<tr><td colspan="${doctorMode?5:7}">Seleccione un médico para consultar su disponibilidad.</td></tr>`;return;}
         const doctor=selected;
         table.innerHTML=`<tr><td colspan="${doctorMode?5:7}">Consultando disponibilidad...</td></tr>`;
         const rows=await getAvailability(doctor.id);
         if(current!==sequence)return;
+        const now=new Date();
+        visibleRows=new Map(rows.map(row=>[String(row.id),row]));
+        expiringRows=rows.filter(row=>!isAvailabilityExpired(row,now));
         table.innerHTML=rows.length?rows.map(row=>{
             const state={DISPONIBLE:'Disponible',BLOQUEADO:'Bloqueado',OCUPADO:'Ocupado'}[row.estado]||row.estado;
-            const actions=row.estado==='OCUPADO'?'Sin acciones':
-                `<button type="button" class="btn btn-sm btn-outline-secondary" data-slot="${row.id}" data-operation="${row.estado==='BLOQUEADO'?'desbloquear':'bloquear'}">${row.estado==='BLOQUEADO'?'Desbloquear':'Bloquear'}</button>
-                 <button type="button" class="btn btn-sm btn-outline-danger" data-slot="${row.id}" data-operation="eliminar">Eliminar</button>`;
-            return `<tr>${doctorMode?'':`<td>${escapeHtml(doctor.nombre+' '+doctor.apellido)}</td><td>${escapeHtml(doctor.especialidad.nombre)}</td>`}
+            const actions=availabilityActions(row,now);
+            return `<tr data-block-id="${row.id}">${doctorMode?'':`<td>${escapeHtml(doctor.nombre+' '+doctor.apellido)}</td><td>${escapeHtml(doctor.especialidad.nombre)}</td>`}
                 <td>${formatDate(row.fecha)}</td><td>${escapeHtml(row.hora_inicio.slice(0,5))}</td><td>${escapeHtml(row.hora_fin.slice(0,5))}</td><td>${escapeHtml(state)}</td><td>${actions}</td></tr>`;
         }).join(''):`<tr><td colspan="${doctorMode?5:7}">No hay disponibilidad registrada para este médico.</td></tr>`;
     }
+    // El reloj de la interfaz puede avanzar mientras permanece abierta la tabla.
+    setInterval(()=>{
+        if(!expiringRows.length)return;
+        const now=new Date();
+        const cells=new Map([...table.querySelectorAll('tr[data-block-id]')].map(tr=>[tr.dataset.blockId,tr.lastElementChild]));
+        expiringRows=expiringRows.filter(row=>{
+            if(!isAvailabilityExpired(row,now))return true;
+            const cell=cells.get(String(row.id));
+            if(cell)cell.textContent='Horario vencido';
+            return false;
+        });
+    },1000);
     if(!doctorMode){
         await bindDoctorSelectors(document.getElementById('disponibilidadEspecialidad'),document.getElementById('disponibilidadMedico'),async(doctor,error)=>{
             selected=doctor;clearPreview();
@@ -71,6 +91,9 @@ async function initAvailability(doctorMode) {
     });
     table.addEventListener('click',async event=>{
         const button=event.target.closest('[data-operation]');if(!button||!selected)return;
+        if(isAvailabilityExpired(visibleRows.get(button.dataset.slot))){
+            button.closest('td').textContent='Horario vencido';return;
+        }
         const operation=button.dataset.operation;
         if(operation==='eliminar'&&!window.confirm('¿Eliminar este bloque de disponibilidad?'))return;
         button.disabled=true;

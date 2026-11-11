@@ -352,6 +352,7 @@ class ReservaTurnoSerializer(serializers.Serializer):
 
 
 class TurnoConsultaSerializer(serializers.ModelSerializer):
+    cerrado_por = serializers.SerializerMethodField()
     medico = MedicoConsultaSerializer(read_only=True)
     paciente = serializers.IntegerField(source='paciente_id', read_only=True)
     paciente_detalle = serializers.SerializerMethodField()
@@ -365,11 +366,16 @@ class TurnoConsultaSerializer(serializers.ModelSerializer):
         model = Turno
         fields = ('id_turno', 'paciente', 'medico', 'disponibilidad', 'fecha', 'hora', 'estado',
                   'duracion_turno', 'fecha_hora_creacion', 'fecha_hora_arribo', 'fecha_hora_inicio',
-                  'fecha_hora_cierre', 'prioridad', 'triaje', 'asignacion_vigente', 'horario_futuro', 'paciente_detalle')
+                  'fecha_hora_cierre', 'cerrado_por', 'prioridad', 'triaje', 'asignacion_vigente', 'horario_futuro', 'paciente_detalle')
         read_only_fields = fields
 
     def get_asignacion_vigente(self, turno):
         return turno.estado in ('RESERVADO', 'PRESENTE', 'EN_ATENCION')
+
+    def get_cerrado_por(self, turno):
+        usuario = turno.cerrado_por
+        return ({'id': usuario.pk, 'nombre': usuario.nombre, 'apellido': usuario.apellido,
+                 'rol': usuario.rol} if usuario else None)
 
     def get_horario_futuro(self, turno):
         now = timezone.localtime()
@@ -413,11 +419,19 @@ class AccionTurnoSerializer(serializers.Serializer):
 
 
 class PacienteBusquedaSerializer(serializers.Serializer):
-    dni = serializers.CharField(max_length=20, allow_blank=False)
+    dni = serializers.CharField(max_length=20, allow_blank=False, required=False)
+    q = serializers.CharField(min_length=2, max_length=200, allow_blank=False, required=False)
 
     def to_internal_value(self, data):
-        if 'dni' not in data or set(data) - {'dni', 'page'}:
+        if 'dni' in data and 'q' in data:
+            raise serializers.ValidationError({'detail': 'Utilice DNI exacto o búsqueda por texto, no ambos.'})
+        if not ({'dni', 'q'} & set(data)) or set(data) - {'dni', 'q', 'page'}:
             raise serializers.ValidationError({'dni': 'Indique únicamente el DNI exacto a buscar.'})
+        # QueryDict's HTML handling skips blank optional fields; keep explicit
+        # blanks so CharField rejects them instead of losing the search mode.
+        data = {key: data.get(key) for key in data}
+        if isinstance(data.get('q'), str):
+            data['q'] = ' '.join(data['q'].split())
         return super().to_internal_value(data)
 
 

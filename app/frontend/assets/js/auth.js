@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         form.querySelector('.btn-primary').type='submit';
         form.addEventListener('submit', event => {
             event.preventDefault();
+            if (form.querySelector('[type="submit"]')?.disabled) return;
             if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
             submit(form,async () => {
                 const user=await login(document.getElementById('email').value.trim(),document.getElementById('password').value);

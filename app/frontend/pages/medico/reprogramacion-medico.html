@@ -48,6 +48,7 @@
             </div>
         </section>
 
+        <div class="alert alert-info mb-4" role="note"><strong>Importante:</strong> Para reprogramar turnos, el médico debe contar con disponibilidad previamente cargada en la nueva fecha de atención.</div>
         <div id="reprogramacionMedicoMensaje" class="alert d-none" role="alert"></div>
 
         <form id="reprogramacionMedicoForm" data-form="doctor-mass-reschedule" action="#" method="post" novalidate>
@@ -81,7 +82,11 @@
                         </div>
                         <div class="col-12 col-md-4">
                             <label for="reprogramacionMedicoNuevaFecha" class="form-label">Nueva fecha de atención</label>
-                            <input type="date" class="form-control" id="reprogramacionMedicoNuevaFecha" required>
+                            <select class="form-select" id="reprogramacionMedicoNuevaFecha" required disabled aria-describedby="reprogramacionMedicoFechasEstado">
+                                <option value="">Seleccione primero la fecha afectada</option>
+                            </select>
+                            <button type="button" class="btn btn-link btn-sm px-0" id="reprogramacionMedicoActualizarFechasBtn" disabled>Actualizar fechas</button>
+                            <div id="reprogramacionMedicoFechasEstado" class="form-text" role="status" aria-live="polite"></div>
                         </div>
                         <div class="col-12">
                             <label for="reprogramacionMedicoMotivo" class="form-label">Motivo de reprogramacion</label>
@@ -218,6 +223,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="../../assets/js/pages/medico.js"></script>
+    <script src="../../assets/js/pages/medico.js?v=b84-stage7-2"></script>
 </body>
 </html>

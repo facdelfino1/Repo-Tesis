@@ -208,7 +208,8 @@ class DisponibilidadViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, vi
         return [IsLectorAgenda() if self.request.method in SAFE_METHODS else IsGestorAgenda()]
 
     def get_queryset(self):
-        medico = get_object_or_404(Medico.objects.select_related("usuario"),
+        medico = get_object_or_404(Medico.objects.select_related(
+            "usuario__paciente", "usuario__medico", "usuario__secretaria"),
                                    pk=self.kwargs["medico_pk"], usuario__rol=Usuario.Rol.MEDICO)
         user = self.request.user
         if user.rol == Usuario.Rol.MEDICO and medico.usuario_id != user.pk:
@@ -279,7 +280,7 @@ class TurnoPropioViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         from .models import Turno
         return Turno.objects.filter(paciente__usuario=self.request.user).select_related(
-            'medico__usuario', 'medico__especialidad', 'triaje', 'paciente__usuario').order_by('fecha', 'hora', 'pk')
+            'medico__usuario', 'medico__especialidad', 'triaje', 'paciente__usuario', 'cerrado_por').order_by('fecha', 'hora', 'pk')
 
     @action(detail=True, methods=['get'])
     def demora(self, request, **kwargs):
@@ -327,7 +328,7 @@ class TurnoAgendaViewSet(TurnoPropioViewSet):
             return [IsLectorAgenda()]
         if self.action in ('presencia', 'cancelar', 'modificar', 'reasignar'):
             return [IsSecretaria()]
-        if self.action in ('iniciar', 'finalizar'):
+        if self.action == 'iniciar':
             from .permissions import IsMedico
             return [IsMedico()]
         return [IsGestorAgenda()]
@@ -340,7 +341,7 @@ class TurnoAgendaViewSet(TurnoPropioViewSet):
         medico = get_object_or_404(Medico, pk=self.kwargs['medico_pk'])
         if self.request.user.rol == Usuario.Rol.MEDICO and medico.usuario_id != self.request.user.pk:
             raise NotFound()
-        rows = Turno.objects.filter(medico=medico).select_related('medico__usuario', 'medico__especialidad', 'triaje', 'paciente__usuario')
+        rows = Turno.objects.filter(medico=medico).select_related('medico__usuario', 'medico__especialidad', 'triaje', 'paciente__usuario', 'cerrado_por')
         # Only date filters apply here; availability states are a different domain.
         from rest_framework import serializers
         class Filtros(serializers.Serializer):
@@ -397,9 +398,15 @@ class PacienteBusquedaViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         from .serializers import PacienteBusquedaSerializer
         serializer = PacienteBusquedaSerializer(data=self.request.query_params)
         serializer.is_valid(raise_exception=True)
-        return Paciente.objects.filter(usuario__dni=serializer.validated_data['dni'],
-            usuario__is_active=True, usuario__rol=Usuario.Rol.PACIENTE,
-            usuario__medico__isnull=True, usuario__secretaria__isnull=True).select_related('usuario').order_by('pk')
+        rows = Paciente.objects.filter(usuario__is_active=True, usuario__rol=Usuario.Rol.PACIENTE,
+            usuario__medico__isnull=True, usuario__secretaria__isnull=True).select_related('usuario')
+        data = serializer.validated_data
+        if 'dni' in data:
+            return rows.filter(usuario__dni=data['dni']).order_by('pk')
+        for word in data['q'].split():
+            rows = rows.filter(Q(usuario__dni__icontains=word) | Q(usuario__nombre__icontains=word)
+                               | Q(usuario__apellido__icontains=word))
+        return rows.order_by('usuario__apellido', 'usuario__nombre', 'pk')
 
 
 
@@ -427,7 +434,9 @@ class ReprogramacionView(APIView):
         rows = Turno.objects.filter(medico=medico, fecha=data['fecha_original'], estado='RESERVADO',
             fecha_hora_arribo__isnull=True, fecha_hora_inicio__isnull=True, fecha_hora_cierre__isnull=True,
             disponibilidad__hora_inicio__lt=data['hora_fin'], disponibilidad__hora_fin__gt=data['hora_inicio'])
-        return Response(TurnoConsultaSerializer(rows.order_by('hora','pk'), many=True).data)
+        return Response(TurnoConsultaSerializer(rows.select_related(
+            'medico__usuario', 'medico__especialidad', 'triaje', 'paciente__usuario', 'cerrado_por'
+        ).order_by('hora','pk'), many=True).data)
 
     def post(self, request, medico_pk):
         from .serializers import ReprogramacionSerializer

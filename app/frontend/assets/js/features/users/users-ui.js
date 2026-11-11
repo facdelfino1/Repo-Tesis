@@ -22,7 +22,7 @@ export async function initUserManagement() {
     const fields = prefix => Object.fromEntries(['nombre', 'apellido', 'dni', 'email', 'telefono', 'rol', 'matricula', 'especialidad', 'legajo', ...(prefix === 'crear' ? ['password'] : [])]
         .map(key => [key, node(`${prefix}Usuario${key[0].toUpperCase() + key.slice(1)}`)]));
     const create = fields('crear'), edit = fields('editar');
-    const specialties = await getAdminSpecialties();
+    const [specialties, initialUsers] = await Promise.all([getAdminSpecialties(), listInternalUsers()]);
     for (const field of [create.especialidad, edit.especialidad]) {
         field.replaceChildren(new Option('Seleccione una especialidad', ''), ...specialties.map(s => new Option(s.nombre, s.id)));
     }
@@ -105,5 +105,5 @@ export async function initUserManagement() {
         catch (error) { hideModal(stateModal); feedback(message, errorMessage(error)); }
         finally { busy = false; button.disabled = false; render(); }
     });
-    await refresh();
+    users = initialUsers; render();
 }

@@ -6,7 +6,16 @@ from .permissions import has_valid_role_profile
 
 
 class CuentaBackend(ModelBackend):
-    """Password lockout is persistent; existing sessions still use ModelBackend.get_user."""
+    """Persistent lockout; preload profiles without changing session eligibility."""
+
+    def get_user(self, user_id):
+        try:
+            user = Usuario.objects.select_related(
+                "paciente", "medico__especialidad", "secretaria"
+            ).get(pk=user_id)
+        except Usuario.DoesNotExist:
+            return None
+        return user if self.user_can_authenticate(user) else None
 
     def authenticate(self, request, username=None, password=None, **kwargs):
         email = username if username is not None else kwargs.get(Usuario.USERNAME_FIELD)

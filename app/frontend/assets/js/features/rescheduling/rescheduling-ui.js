@@ -7,6 +7,8 @@ import { bindDoctorSelectors, getDoctor, getAssignableAvailability } from '../ca
 import { getAgendaTurns } from '../appointments/agenda-api.js';
 import { getPatientTurns } from '../appointments/patient-api.js';
 import * as api from './rescheduling-api.js';
+import { proposalStateLabel, appointmentStateLabel } from './state-labels.js';
+import { initDestinationDateSelector } from './date-selector.js?v=b84-stage7-1';
 
 const node = id => document.getElementById(id);
 const fullName = person => `${person.nombre} ${person.apellido}`;
@@ -24,10 +26,10 @@ function summary(p, turn) {
     return `<p class="fw-semibold mb-1">Turno ${p.turno}${turn ? ` · ${esc(fullName(turn.medico))} · ${esc(turn.medico.especialidad.nombre)}` : ''}</p>
         <p class="mb-1">Origen histórico: ${formatDate(p.fecha_origen)} ${esc(p.hora_origen.slice(0, 5))} (no vigente)</p>
         <p class="mb-1">Propuesta: ${formatDate(p.fecha_destino)} ${esc(p.hora_inicio_destino.slice(0, 5))}–${esc(p.hora_fin_destino.slice(0, 5))}</p>
-        <p class="mb-1">Estado: <strong>${esc(p.estado)}</strong> · ${p.vigente ? 'Vigente al consultar' : 'No aplicable actualmente'}</p>
+        <p class="mb-1">Estado: <strong>${esc(proposalStateLabel(p.estado))}</strong> · ${p.vigente ? 'Vigente al consultar' : 'No aplicable actualmente'}</p>
         <p class="mb-1">Motivo: ${esc(p.motivo)}</p><p class="small mb-1">Generada: ${stamp(p.fecha_hora_creacion)} · Resolución: ${stamp(p.fecha_hora_resolucion)}</p>
         ${p.motivo_cierre ? `<p class="mb-1">${esc(p.motivo_cierre)}</p>` : ''}
-        <p class="small text-secondary">Una propuesta EN_ESPERA no garantiza disponibilidad. Solo una aceptación confirmada por el servidor reserva el horario.</p>`;
+        <p class="small text-secondary">Una propuesta pendiente de respuesta no garantiza disponibilidad. Solo una aceptación confirmada por el servidor reserva el horario.</p>`;
 }
 
 export async function openPendingRecovery(turn, { secretary = false, onUpdated = async () => {} } = {}) {
@@ -70,15 +72,15 @@ export async function openPendingRecovery(turn, { secretary = false, onUpdated =
     try { await refresh(); } catch (error) { feedback(message, errorMessage(error)); }
 }
 
-export async function initPatientProposals({ onUpdated = async () => {} } = {}) {
+export async function initPatientProposals({ onUpdated = async () => {}, initialTurns } = {}) {
     const section = document.createElement('section'); section.id = 'propuestasPacienteSection'; section.className = 'card dashboard-card border-0 shadow-sm my-4';
     section.innerHTML = '<div class="card-body"><div class="d-flex justify-content-between"><h2 class="h5">Propuestas de reprogramación</h2><button type="button" class="btn btn-outline-primary btn-sm" data-refresh>Actualizar</button></div><div data-feedback class="alert d-none" role="alert"></div><div data-proposals class="row g-3"></div></div>';
     document.querySelector('main').append(section);
     const message = section.querySelector('[data-feedback]'), list = section.querySelector('[data-proposals]');
     let busy = false, readVersion = 0;
-    async function refresh() {
+    async function refresh(turnsSnapshot) {
         const version = ++readVersion;
-        const [proposals, turns] = await Promise.all([api.getPatientProposals(), getPatientTurns()]);
+        const [proposals, turns] = await Promise.all([api.getPatientProposals(), turnsSnapshot ?? getPatientTurns()]);
         if (version !== readVersion) return;
         const byId = new Map(turns.map(turn => [turn.id_turno, turn]));
         list.innerHTML = proposals.map(p => `<div class="col-12 col-lg-6"><article class="border rounded-3 p-3 h-100">${summary(p, byId.get(p.turno))}
@@ -92,19 +94,19 @@ export async function initPatientProposals({ onUpdated = async () => {} } = {}) 
         busy = true; list.querySelectorAll('button').forEach(control => { control.disabled = true; });
         try {
             const p = await api.getProposal(button.dataset.proposal);
-            if (button.dataset.decision === 'detalle') feedback(message, `Propuesta ${p.id}: ${p.estado}. ${p.motivo}. ${p.motivo_cierre || ''}`, 'info');
+            if (button.dataset.decision === 'detalle') feedback(message, `Propuesta ${p.id}: ${proposalStateLabel(p.estado)}. ${p.motivo}. ${p.motivo_cierre || ''}`, 'info');
             else if (window.confirm(`¿${button.dataset.decision === 'aceptar' ? 'Aceptar' : 'Rechazar'} la propuesta ${p.id}?`)) {
                 const result = await api.respondProposal(p.id, button.dataset.decision);
-                feedback(message, `Propuesta ${result.id}: ${result.estado}.`, 'success');
+                feedback(message, `Propuesta ${result.id}: ${proposalStateLabel(result.estado)}.`, 'success');
                 try { await refresh(); await onUpdated(); }
-                catch (error) { feedback(message, `Propuesta ${result.id}: ${result.estado}. No pudo actualizarse la consulta. ${errorMessage(error)}`, 'warning'); }
+                catch (error) { feedback(message, `Propuesta ${result.id}: ${proposalStateLabel(result.estado)}. No pudo actualizarse la consulta. ${errorMessage(error)}`, 'warning'); }
             }
         } catch (error) {
             feedback(message, conflictMessage(error));
             if (error.status === 409) { try { await refresh(); await onUpdated(); } catch (refreshError) { feedback(message, `${errorMessage(error)} ${errorMessage(refreshError)}`); } }
         } finally { busy = false; list.querySelectorAll('button').forEach(control => { control.disabled = false; }); }
     });
-    try { await refresh(); } catch (error) { feedback(message, errorMessage(error)); }
+    try { await refresh(initialTurns); } catch (error) { feedback(message, errorMessage(error)); }
     return { refresh };
 }
 
@@ -116,18 +118,29 @@ export async function initManagerRescheduling() {
     const modalElement = node(medical ? 'confirmarReprogramacionMedicoModal' : 'confirmarReprogramacionModal'), modal = getBootstrapModal(modalElement);
     const fields = { fecha_original: node(`${prefix}Fecha`), hora_inicio: node(`${prefix}HoraInicio`), hora_fin: node(`${prefix}HoraFin`) };
     const destination = node(`${prefix}NuevaFecha`), reason = node(`${prefix}Motivo`);
-    let doctor = medical ? await getDoctor(getCurrentUser().perfil.id) : null, candidates = [], lastScope = null, busy = false, generation = 0, collectionsVersion = 0, context = new Map(), pending = [];
+    const dateStatus = node(`${prefix}FechasEstado`), refreshDates = node(`${prefix}ActualizarFechasBtn`);
+    if (destination?.tagName !== 'SELECT' || !dateStatus || !refreshDates) {
+        const url = new URL(window.location.href);
+        if (url.searchParams.get('ui') === 'b84-stage7-2') {
+            pageMessage('La pantalla de reprogramación no se actualizó. Recargue la página para obtener la versión vigente.', 'danger');
+        } else {
+            url.searchParams.set('ui', 'b84-stage7-2');
+            window.location.replace(url.href);
+        }
+        return;
+    }
+    let doctor = medical ? await getDoctor(getCurrentUser().perfil.id) : null, candidates = [], lastScope = null, busy = false, generation = 0, collectionsVersion = 0, context = new Map(), pending = [], dateSelector = null;
     function scope() { return Object.fromEntries(Object.entries(fields).map(([key, field]) => [key, field.value])); }
     const signature = () => JSON.stringify([doctor?.id, scope()]);
     const selectedIds = () => [...affected.querySelectorAll('input:checked')].map(input => Number(input.value));
-    function updateExecute() { execute.disabled = busy || !doctor || signature() !== lastScope || !selectedIds().length; }
+    function updateExecute() { execute.disabled = busy || !doctor || signature() !== lastScope || !selectedIds().length || !dateSelector?.isValid(); }
     function clearFeedback() { feedback(message, ''); node(`${prefix}DisponibilidadAviso`).classList.add('d-none'); }
     function clearCandidates() { ++generation; candidates = []; lastScope = null; affected.innerHTML = emptyRow(medical ? 7 : 10, 'Consulte los turnos afectados de esta agenda.'); updateExecute(); }
     function renderCandidates() {
-        affected.innerHTML = candidates.map(t => `<tr><td><input type="checkbox" class="form-check-input" value="${t.id_turno}" aria-label="Seleccionar turno ${t.id_turno}"></td><td>${esc(fullName(t.paciente_detalle))}</td><td>${esc(t.paciente_detalle.dni)}</td>${medical ? '' : `<td>${esc(fullName(t.medico))}</td><td>${esc(t.medico.especialidad.nombre)}</td>`}<td>${formatDate(t.fecha)}</td><td>${esc(t.hora.slice(0, 5))}</td><td>${priority(t)}</td><td>${esc(t.estado)}</td>${medical ? '' : '<td>Sistema</td>'}</tr>`).join('') || emptyRow(medical ? 7 : 10, 'No hay reservas candidatas en ese intervalo.'); updateExecute();
+        affected.innerHTML = candidates.map(t => `<tr><td><input type="checkbox" class="form-check-input" value="${t.id_turno}" aria-label="Seleccionar turno ${t.id_turno}"></td><td>${esc(fullName(t.paciente_detalle))}</td><td>${esc(t.paciente_detalle.dni)}</td>${medical ? '' : `<td>${esc(fullName(t.medico))}</td><td>${esc(t.medico.especialidad.nombre)}</td>`}<td>${formatDate(t.fecha)}</td><td>${esc(t.hora.slice(0, 5))}</td><td>${priority(t)}</td><td>${esc(appointmentStateLabel(t.estado))}</td>${medical ? '' : '<td>Sistema</td>'}</tr>`).join('') || emptyRow(medical ? 7 : 10, 'No hay reservas candidatas en ese intervalo.'); updateExecute();
     }
     function renderProposals(proposals) {
-        proposalsTable.innerHTML = proposals.map(p => { const t = context.get(p.turno); return `<tr><td>${t ? esc(fullName(t.paciente_detalle)) : `Turno ${p.turno}`}</td><td>${priority(t)}</td><td>${formatDate(p.fecha_origen)} ${esc(p.hora_origen.slice(0, 5))} (histórico)</td><td>${summary(p, t)}</td><td>${esc(p.estado)}</td></tr>`; }).join('') || emptyRow(5, 'No hay propuestas para esta agenda.');
+        proposalsTable.innerHTML = proposals.map(p => { const t = context.get(p.turno); return `<tr><td>${t ? esc(fullName(t.paciente_detalle)) : `Turno ${p.turno}`}</td><td>${priority(t)}</td><td>${formatDate(p.fecha_origen)} ${esc(p.hora_origen.slice(0, 5))} (histórico)</td><td>${summary(p, t)}</td><td>${esc(proposalStateLabel(p.estado))}</td></tr>`; }).join('') || emptyRow(5, 'No hay propuestas para esta agenda.');
     }
     async function refreshCollections() {
         const version = ++collectionsVersion;
@@ -135,24 +148,37 @@ export async function initManagerRescheduling() {
         const [turns, proposals, pendingTurns] = await Promise.all([getAgendaTurns(current.id), api.getAgendaProposals(current.id), api.getPendingTurns(current.id)]);
         if (doctor?.id !== current.id || version !== collectionsVersion) return;
         context = new Map(turns.map(t => [t.id_turno, t])); pending = pendingTurns; renderProposals(proposals);
-        pendingTable.innerHTML = pending.map(t => `<tr><td>${esc(fullName(t.paciente_detalle))} · Turno ${t.id_turno}</td><td>${esc(t.paciente_detalle.dni)}</td><td>${priority(t)}</td><td>Necesita nueva asignación. El origen es histórico.</td><td>PENDIENTE <button type="button" class="btn btn-outline-primary btn-sm" data-pending="${t.id_turno}" data-action="proponer">Generar propuesta</button>${medical ? '' : `<button type="button" class="btn btn-outline-secondary btn-sm" data-pending="${t.id_turno}" data-action="reasignar">Reasignar</button>`}</td></tr>`).join('') || emptyRow(5, 'No hay turnos pendientes.');
+        pendingTable.innerHTML = pending.map(t => `<tr><td>${esc(fullName(t.paciente_detalle))} · Turno ${t.id_turno}</td><td>${esc(t.paciente_detalle.dni)}</td><td>${priority(t)}</td><td>Necesita nueva asignación. El origen es histórico.</td><td>${esc(appointmentStateLabel(t.estado))} <button type="button" class="btn btn-outline-primary btn-sm" data-pending="${t.id_turno}" data-action="proponer">Generar propuesta</button>${medical ? '' : `<button type="button" class="btn btn-outline-secondary btn-sm" data-pending="${t.id_turno}" data-action="reasignar">Reasignar</button>`}</td></tr>`).join('') || emptyRow(5, 'No hay turnos pendientes.');
     }
     async function showResult(result) {
-        feedback(message, `Nueva fecha: ${formatDate(result.nueva_fecha)}. Propuestas generadas: ${result.propuestas.map(p => `${p.id} (Turno ${p.turno})`).join(', ') || 'ninguna'}. Requiere revisión: ${result.requiere_revision.join(', ') || 'ninguno'}. Turnos rechazados: ${result.turnos_rechazados.join(', ') || 'ninguno'}. Los afectados siguen PENDIENTE hasta una asignación confirmada.`, result.requiere_revision.length ? 'warning' : 'success');
+        feedback(message, `Nueva fecha: ${formatDate(result.nueva_fecha)}. Propuestas generadas: ${result.propuestas.map(p => `${p.id} (Turno ${p.turno})`).join(', ') || 'ninguna'}. Requiere revisión: ${result.requiere_revision.join(', ') || 'ninguno'}. Turnos rechazados: ${result.turnos_rechazados.join(', ') || 'ninguno'}. Los afectados siguen pendientes de reasignación hasta una asignación confirmada.`, result.requiere_revision.length ? 'warning' : 'success');
         node(`${prefix}DisponibilidadAviso`).classList.toggle('d-none', !result.requiere_revision.length);
         node(`${prefix}DisponibilidadTexto`).textContent = `La fecha ${formatDate(result.nueva_fecha)} no tuvo bloques suficientes. Requieren revisión los turnos: ${result.requiere_revision.join(', ')}. No se buscó otra fecha.`;
         node(`${prefix}CargarDisponibilidadBtn`).classList.toggle('d-none', !result.requiere_revision.length);
         try { await refreshCollections(); renderProposals(result.propuestas); }
         catch (error) { feedback(message, `${message.textContent} El proceso fue registrado, pero no pudo actualizarse la consulta. ${errorMessage(error)}`, 'warning'); }
     }
+    dateSelector = initDestinationDateSelector({
+        select: destination, status: dateStatus,
+        refreshButton: refreshDates,
+        context: () => ({ doctorId: doctor?.id, affectedDate: fields.fecha_original.value }),
+        load: async doctorId => {
+            const [blocks, proposals, turns] = await Promise.all([
+                getAssignableAvailability(doctorId), api.getAgendaProposals(doctorId), getAgendaTurns(doctorId)
+            ]);
+            return { blocks, proposals, turns };
+        },
+        onUpdate: updateExecute
+    });
     if (!medical) await bindDoctorSelectors(node('reprogramacionEspecialidad'), node('reprogramacionMedico'), async (value, error) => {
-        doctor = value; clearCandidates(); clearFeedback(); context = new Map(); pending = []; renderProposals([]); pendingTable.innerHTML = emptyRow(5, 'Consultando pendientes...');
+        doctor = value; dateSelector.reset(); clearCandidates(); clearFeedback(); context = new Map(); pending = []; renderProposals([]); pendingTable.innerHTML = emptyRow(5, 'Consultando pendientes...');
         if (error) feedback(message, errorMessage(error));
-        try { await refreshCollections(); } catch (err) { feedback(message, errorMessage(err)); }
+        try { await Promise.all([refreshCollections(), dateSelector.refresh()]); } catch (err) { feedback(message, errorMessage(err)); }
     });
     node(`${prefix}Notificaciones`).textContent = 'Las propuestas son notificaciones internas consultables por el Paciente. Solo el propietario puede aceptarlas o rechazarlas. No se envían correos desde esta pantalla.';
     form.addEventListener('submit', event => event.preventDefault());
     Object.values(fields).forEach(field => field.addEventListener('input', () => { if (!busy) { clearCandidates(); clearFeedback(); } }));
+    fields.fecha_original.addEventListener('change', () => { dateSelector.reset(); dateSelector.refresh(); });
     [destination, reason].forEach(field => field.addEventListener('input', () => { if (!busy) clearFeedback(); }));
     affected.addEventListener('change', updateExecute);
     async function searchCandidates() {
@@ -163,22 +189,26 @@ export async function initManagerRescheduling() {
         finally { search.disabled = busy; }
     }
     search.addEventListener('click', () => { if (!busy) searchCandidates(); });
-    execute.addEventListener('click', () => {
+    execute.addEventListener('click', async () => {
         if (busy || execute.disabled) return;
         if (!destination.value || !reason.value.trim()) { feedback(message, 'Indique nueva fecha y motivo.'); return; }
+        const expected = signature();
+        if (!await dateSelector.refresh() || expected !== signature() || !dateSelector.isValid()) {
+            feedback(message, 'La fecha seleccionada ya no tiene disponibilidad válida. Seleccione otra fecha.'); return;
+        }
         if (!modal) { feedback(message, 'No fue posible abrir la confirmación. Recargue la página.'); return; }
-        modalElement.querySelector('.modal-body').textContent = `Generar propuestas para ${selectedIds().length} turno(s) de ${fullName(doctor)} en ${formatDate(destination.value)}. Los turnos pasarán a PENDIENTE y los bloques originales se bloquearán. Una propuesta no es una reserva.`; showModal(modal);
+        modalElement.querySelector('.modal-body').textContent = `Generar propuestas para ${selectedIds().length} turno(s) de ${fullName(doctor)} en ${formatDate(destination.value)}. Los turnos seleccionados quedarán pendientes de reprogramación. Se bloquearán sus bloques originales y los bloques libres que se superpongan con el intervalo original seleccionado. Las reservas no seleccionadas no se modificarán. Las propuestas alternativas no garantizan la reserva del nuevo horario hasta que se confirme su aceptación.`; showModal(modal);
     });
     async function withWrite(operation) {
         if (busy) return; busy = true;
         const previous = [...form.querySelectorAll('input,select,button'), ...affected.querySelectorAll('input'), ...pendingTable.querySelectorAll('button'), confirmButton].map(control => [control, control.disabled]);
         previous.forEach(([control]) => { control.disabled = true; });
-        try { await showResult(await operation()); clearCandidates(); }
+        try { await showResult(await operation()); await dateSelector.refresh(); clearCandidates(); }
         catch (error) { feedback(message, conflictMessage(error)); if (error.status === 409) { clearCandidates(); try { await refreshCollections(); await searchCandidates(); } catch (refreshError) { feedback(message, `${errorMessage(error)} ${errorMessage(refreshError)}`); } } }
         finally { busy = false; previous.forEach(([control, disabled]) => { control.disabled = disabled; }); search.disabled = false; updateExecute(); }
     }
     confirmButton.addEventListener('click', async () => {
-        if (busy || signature() !== lastScope || !selectedIds().length) return;
+        if (busy || signature() !== lastScope || !selectedIds().length || !dateSelector.isValid()) return;
         const doctorId = doctor.id, body = { ...scope(), nueva_fecha: destination.value, turnos: selectedIds(), motivo: reason.value.trim() };
         hideModal(modal); await withWrite(() => api.generateRescheduling(doctorId, body));
     });

@@ -44,6 +44,7 @@
             </div>
         </section>
 
+        <div class="alert alert-info mb-4" role="note"><strong>Importante:</strong> Para reprogramar turnos, el médico debe contar con disponibilidad previamente cargada en la nueva fecha de atención.</div>
         <div id="reprogramacionMensaje" class="alert d-none" role="alert"></div>
         <form id="reprogramacionForm" data-form="secretary-mass-reschedule" action="#" method="post" novalidate>
             <section class="card dashboard-card border-0 shadow-sm mb-4">
@@ -89,7 +90,11 @@
                         </div>
                         <div class="col-12 col-md-4">
                             <label for="reprogramacionNuevaFecha" class="form-label">Nueva fecha de atención</label>
-                            <input type="date" class="form-control" id="reprogramacionNuevaFecha" required>
+                            <select class="form-select" id="reprogramacionNuevaFecha" required disabled aria-describedby="reprogramacionFechasEstado">
+                                <option value="">Seleccione primero el médico y la fecha afectada</option>
+                            </select>
+                            <button type="button" class="btn btn-link btn-sm px-0" id="reprogramacionActualizarFechasBtn" disabled>Actualizar fechas</button>
+                            <div id="reprogramacionFechasEstado" class="form-text" role="status" aria-live="polite"></div>
                         </div>
                         <div class="col-12">
                             <label for="reprogramacionMotivo" class="form-label">Motivo de reprogramación</label>
@@ -267,6 +272,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="../../assets/js/pages/secretaria.js"></script>
+    <script src="../../assets/js/pages/secretaria.js?v=b84-stage7-2"></script>
 </body>
 </html>

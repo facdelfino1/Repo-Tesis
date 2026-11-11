@@ -9,7 +9,7 @@ from .agenda import AgendaConflict, lock_medico, _lock_block
 from .models import Disponibilidad, PropuestaReprogramacion as Propuesta, Turno, Usuario
 from .permissions import has_valid_role_profile
 from .triage import tiene_triaje
-from .turnos import _available, _duration, _lock_turn, _lock_users, _occupied, _timeline, _valid_user
+from .turnos import _available, _duration, _lock_turn, _lock_users, _occupied, _timeline, _valid_user, actualizar_triaje_fecha
 
 
 def _seleccion_invalida(ids, message):
@@ -257,6 +257,7 @@ def responder(actor, propuesta_id, *, aceptar):
             _cerrar(proposal, 'INVALIDADA', 'El destino o la cuenta médica dejaron de estar disponibles.')
             return proposal, True
         block = blocks[proposal.disponibilidad_destino_id]
+        actualizar_triaje_fecha(turno, block.fecha)
         turno.disponibilidad, turno.fecha, turno.hora = block, block.fecha, block.hora_inicio
         turno.duracion_turno, turno.estado = _duration(block), 'RESERVADO'
         turno.save(update_fields=['disponibilidad', 'fecha', 'hora', 'duracion_turno', 'estado'])
@@ -277,6 +278,7 @@ def reasignar_pendiente(actor, turno_id, disponibilidad_id, *, medico_id=None):
     block = _lock_block(medico, disponibilidad_id)
     _available(block)
     anular_propuestas(turno)
+    actualizar_triaje_fecha(turno, block.fecha)
     turno.disponibilidad, turno.fecha, turno.hora = block, block.fecha, block.hora_inicio
     turno.duracion_turno, turno.estado = _duration(block), 'RESERVADO'
     turno.save(update_fields=['disponibilidad', 'fecha', 'hora', 'duracion_turno', 'estado'])

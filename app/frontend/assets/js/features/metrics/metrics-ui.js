@@ -59,7 +59,12 @@ export async function initAdminMetrics() {
             node('metricasEsperaPromedio').title = `${s.muestras_espera} observaciones válidas (inicio − arribo).`;
             node('metricasAtencionPromedio').title = `${s.muestras_atencion} consultas completas con inicio/cierre válidos.`;
             node('metricasEstadoTabla').innerHTML = Object.entries(data.estados).map(([state, count]) => `<tr><td>${states[state]}</td><td>${count}</td></tr>`).join('');
-            node('metricasMedicosTabla').innerHTML = data.medicos.map(row => `<tr><td>${esc(row.medico__usuario__nombre + ' ' + row.medico__usuario__apellido)}</td><td>${esc(row.medico__especialidad__nombre)}</td><td>${row.total}</td><td>${row.completados}</td><td>${row.cancelados}</td><td>${row.ausentes}</td><td>${observedMinutes(row.atencion_promedio_minutos)}</td><td>Alta: ${row.alta}, Media: ${row.media}, Baja: ${row.baja}, Sin triaje: ${row.sin_triaje}</td></tr>`).join('') || '<tr><td colspan="8">Sin datos disponibles para los filtros seleccionados.</td></tr>';
+            node('metricasMedicosTabla').innerHTML = data.medicos.map(row => `<tr><td>${esc(row.medico__usuario__nombre + ' ' + row.medico__usuario__apellido)}</td><td>${esc(row.medico__especialidad__nombre)}</td><td>${row.total}</td><td>${row.completados}</td><td>${row.cancelados}</td><td>${row.ausentes}</td><td>${observedMinutes(row.atencion_promedio_minutos)}</td><td><div class="d-flex flex-wrap gap-2">
+                <span class="badge text-bg-danger">Alta: ${row.alta}</span>
+                <span class="badge text-bg-warning">Media: ${row.media}</span>
+                <span class="badge text-bg-success">Baja: ${row.baja}</span>
+                <span class="badge text-bg-secondary">Sin triaje: ${row.sin_triaje}</span>
+            </div></td></tr>`).join('') || '<tr><td colspan="8">Sin datos disponibles para los filtros seleccionados.</td></tr>';
             distribution(data);
             const box = node('apiPageMessage'); if (box) box.remove();
         } catch (error) { if (current === version) { clearNumbers(); pageMessage(errorMessage(error), 'danger'); node('metricasPrioridadDistribucion').textContent = 'Sin datos disponibles.'; for (const id of ['metricasEstadoTabla', 'metricasMedicosTabla']) node(id).innerHTML = '<tr><td colspan="8">No fue posible consultar los indicadores.</td></tr>'; } }
