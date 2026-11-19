@@ -2,6 +2,7 @@ import { request, listAll } from '../../core/api.js';
 
 const agenda = id => `medicos/${encodeURIComponent(id)}/`;
 export const getAffectedTurns = (doctor, scope) => request(`${agenda(doctor)}reprogramacion/afectados/?${new URLSearchParams(scope)}`);
+export const getReschedulingDates = (doctor, scope) => request(`${agenda(doctor)}reprogramacion/fechas/?${new URLSearchParams(scope)}`);
 export const generateRescheduling = (doctor, body) => request(`${agenda(doctor)}reprogramacion/`, { method: 'POST', body });
 export const proposePending = (doctor, turn, body) => request(`${agenda(doctor)}turnos/${encodeURIComponent(turn)}/propuestas/`, { method: 'POST', body });
 export const getAgendaProposals = doctor => listAll(`${agenda(doctor)}propuestas/`);

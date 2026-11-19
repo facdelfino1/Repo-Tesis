@@ -180,6 +180,7 @@ class EdadFechaAtencionTests(APITestCase):
             turno.refresh_from_db()
             self.assertEqual((turno.fecha, turno.triaje.nivel_prioridad, turno.estado),
                              (after.fecha, 'MEDIA', 'RESERVADO'))
+            self.assertEqual(turno.triaje.respuesta_sintomas['fechaNacimiento'], self.fever()['fechaNacimiento'])
             responder(self.users['PACIENTE'], proposal.pk, aceptar=True)
             self.assertEqual(Triaje.objects.count(), 1)
 
@@ -191,6 +192,7 @@ class EdadFechaAtencionTests(APITestCase):
             result = reasignar_pendiente(self.users['PACIENTE'], turno.pk, after.pk)
             self.assertEqual(result.triaje.nivel_prioridad, 'MEDIA')
             self.assertEqual(result.fecha, after.fecha)
+            self.assertEqual(result.triaje.respuesta_sintomas['fechaNacimiento'], self.fever()['fechaNacimiento'])
 
     def test_clinical_medicine_is_unchanged_on_date_change(self):
         self.doctor.especialidad = Especialidad.objects.get(nombre='Clínica Médica')

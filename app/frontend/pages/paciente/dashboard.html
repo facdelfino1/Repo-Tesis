@@ -31,11 +31,7 @@
             <div class="row align-items-center g-4">
                 <div class="col-lg-8">
                     <span class="badge text-bg-primary mb-3">Portal del Paciente</span>
-                    <h1 class="h2 fw-bold mb-2">Bienvenida, <span id="pacienteNombre">Paciente</span></h1>
-                    <p class="text-secondary mb-0">
-                        Desde este panel puede autoGestiónar sus turnos, consultar la prioridad del último triaje
-                        y revisar sus datos principales.
-                    </p>
+                    <h1 class="h2 fw-bold mb-2">Bienvenido, <span id="pacienteNombre">Paciente</span></h1>
                 </div>
                 <div class="col-lg-4">
                     <div class="dashboard-status bg-white rounded-3 p-3 shadow-sm">
@@ -44,8 +40,7 @@
                                 <i class="bi bi-calendar-check"></i>
                             </div>
                             <div>
-                                <p class="text-secondary small mb-1">Próximo control</p>
-                                <p class="fw-semibold mb-0" id="heroProximoTurno">Consultando turnos...</p>
+                                <h6 class="fw-semibold mb-0" id="heroProximoTurno">Consultando turnos...</h6>
                             </div>
                         </div>
                     </div>
@@ -64,8 +59,7 @@
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-start mb-3">
                             <div>
-                                <p class="text-secondary small mb-1">Resumen</p>
-                                <h2 class="h5 fw-semibold mb-0">Próximo turno</h2>
+                                <h2 class="h4 fw-semibold mb-0">Próximo turno</h2>
                             </div>
                             <span class="dashboard-icon bg-primary-subtle text-primary">
                                 <i class="bi bi-calendar2-week"></i>
@@ -92,15 +86,14 @@
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-start mb-3">
                             <div>
-                                <p class="text-secondary small mb-1">Prioridad del próximo turno</p>
-                                <h2 class="h5 fw-semibold mb-0">Triaje</h2>
+                                <h1 class="h4 fw-semibold mb-0">Resultado del triaje</h1>
                             </div>
                             <span class="dashboard-icon bg-warning-subtle text-warning">
                                 <i class="bi bi-clipboard2-pulse"></i>
                             </span>
                         </div>
                         <p class="mb-2">
-                            Prioridad:
+                            <strong>Prioridad del proximo turno:</strong>
                             <span class="badge text-bg-warning" id="triajePrioridad">-</span>
                         </p>
                     </div>
@@ -112,28 +105,28 @@
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-start mb-3">
                             <div>
-                                <p class="text-secondary small mb-1">Información de agenda</p>
-                                <h2 class="h5 fw-semibold mb-0">Tiempos del turno</h2>
+                                <h2 class="h4 fw-semibold mb-0">Tiempos del turno</h2>
                             </div>
                             <span class="dashboard-icon bg-info-subtle text-info">
                                 <i class="bi bi-clock-history"></i>
                             </span>
                         </div>
-                        <div class="row g-3">
+                        <div class="row g-2">
                             <div class="col-6">
-                                <div class="metric-box rounded-3 p-3">
-                                    <p class="text-secondary small mb-1">Demora estimada</p>
-                                    <p class="h5 mb-0" id="esperaEstimada">-</p>
+                                <div class="metric-box rounded-3 border p-2 h-100">
+                                    <p class="text-secondary small mb-1">Duración promedio</p>
+                                    <p class="fs-6 fw-semibold text-break mb-1" id="duracionPromedio" aria-live="polite">Promedio no disponible</p>
+                                    <p class="text-secondary small mb-0">Basado en consultas completadas</p>
                                 </div>
                             </div>
                             <div class="col-6">
-                                <div class="metric-box rounded-3 p-3">
-                                    <p class="text-secondary small mb-1">Duración</p>
-                                    <p class="h5 mb-0" id="duracionEstimada">-</p>
+                                <div class="metric-box rounded-3 border p-2 h-100">
+                                    <p class="text-secondary small mb-1">Espera estimada</p>
+                                    <p class="fs-6 fw-semibold text-break mb-0" id="esperaEstimada" aria-live="polite" aria-busy="false">-</p>
                                 </div>
                             </div>
                         </div>
-                        <p class="text-secondary small mt-3 mb-0" id="demoraEstimacionDetalle">Estimación informativa sujeta a cambios.</p>
+                        <p class="text-secondary small mt-2 mb-0" id="demoraEstimacionDetalle">Estimación informativa sujeta a cambios.</p>
                     </div>
                 </article>
             </div>
@@ -143,8 +136,7 @@
             <div class="card-body p-4">
                 <div class="d-flex flex-column flex-md-row justify-content-between gap-3 mb-3">
                     <div>
-                        <p class="text-secondary small mb-1">Gestión operativa</p>
-                        <h2 class="h5 fw-semibold mb-0">Acciones rapidas</h2>
+                        <h1 class="h4 fw-semibold mb-0">Acciones rapidas</h1>
                     </div>
                     <span class="dashboard-icon bg-primary-subtle text-primary">
                         <i class="bi bi-lightning-charge"></i>
@@ -183,9 +175,9 @@
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <div>
-                        <p class="text-secondary small mb-1">Consultas recientes</p>
-                        <h2 class="h5 fw-semibold mb-0">Historial breve</h2>
+                        <h1 class="h4 fw-semibold mb-0">Historial breve</h1>
                     </div>
+                    <a href="mis-turnos.html#historial-turnos" class="btn btn-outline-primary btn-sm">Ver historial completo</a>
                 </div>
                 <div class="table-responsive">
                     <table class="table align-middle mb-0">
@@ -209,6 +201,6 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="../../assets/js/pages/paciente.js"></script>
+    <script src="../../assets/js/pages/paciente.js?v=patient-wait-context-1"></script>
 </body>
 </html>

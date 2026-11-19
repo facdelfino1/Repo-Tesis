@@ -1,21 +1,22 @@
 import { errorMessage } from '../../core/api.js';
 import { formatDate } from '../../core/formatters.js';
-import { isAvailabilityExpired } from '../availability/availability-service.js';
 
-export function eligibleDestinationDates({ blocks, proposals, turns }, affectedDate, now = new Date()) {
+export function eligibleDestinationDates({ fechas_disponibles }, affectedDate) {
     if (!affectedDate) return [];
-    const offered = new Set(proposals.filter(p => p.estado === 'EN_ESPERA').map(p => String(p.disponibilidad_destino)));
-    const assigned = new Set(turns.filter(t => !['CANCELADO', 'PENDIENTE'].includes(t.estado)).map(t => String(t.disponibilidad)));
-    return [...new Set(blocks.filter(block => block.fecha > affectedDate && block.estado === 'DISPONIBLE'
-        && !isAvailabilityExpired(block, now) && !offered.has(String(block.id)) && !assigned.has(String(block.id)))
-        .map(block => block.fecha))].sort();
+    return [...new Set(fechas_disponibles.filter(date => date >= affectedDate))].sort();
 }
 
 export function initDestinationDateSelector({ select, status, refreshButton, context, load, onUpdate }) {
     let generation = 0, validDates = new Set(), loadedContext = null;
     const key = () => JSON.stringify(context());
+    function affectedOption(date, enabled = false) {
+        const option = new Option(`${formatDate(date)} (fecha afectada)${enabled ? '' : ' — Sin disponibilidad utilizable'}`, date);
+        option.disabled = !enabled;
+        return option;
+    }
     function placeholder(label) {
-        select.replaceChildren(new Option(label, ''));
+        const { affectedDate } = context();
+        select.replaceChildren(new Option(label, ''), ...(affectedDate ? [affectedOption(affectedDate)] : []));
         select.disabled = true;
     }
     function reset() {
@@ -41,11 +42,11 @@ export function initDestinationDateSelector({ select, status, refreshButton, con
             const dates = eligibleDestinationDates(data, affectedDate);
             validDates = new Set(dates); loadedContext = expected;
             select.replaceChildren(new Option(dates.length ? 'Seleccione una fecha' : 'No hay fechas disponibles', ''),
-                ...dates.map(date => new Option(formatDate(date), date)));
+                affectedOption(affectedDate, validDates.has(affectedDate)), ...dates.filter(date => date !== affectedDate).map(date => new Option(formatDate(date), date)));
             select.value = validDates.has(previous) ? previous : '';
-            select.disabled = !dates.length;
+            select.disabled = false;
             status.textContent = dates.length ? 'La fecha debe seleccionarse explícitamente. La disponibilidad se verificará al confirmar.'
-                : 'No hay fechas posteriores con disponibilidad. Cargue nuevos horarios desde Cargar disponibilidad';
+                : 'No hay fechas con disponibilidad utilizable. Cargue nuevos horarios desde Cargar disponibilidad';
             refreshButton.disabled = false;
             onUpdate();
             return true;

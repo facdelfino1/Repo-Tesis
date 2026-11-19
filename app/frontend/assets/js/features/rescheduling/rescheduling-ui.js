@@ -6,9 +6,9 @@ import { getBootstrapModal, showModal, hideModal } from '../../components/modals
 import { bindDoctorSelectors, getDoctor, getAssignableAvailability } from '../catalog/catalog-service.js';
 import { getAgendaTurns } from '../appointments/agenda-api.js';
 import { getPatientTurns } from '../appointments/patient-api.js';
-import * as api from './rescheduling-api.js';
+import * as api from './rescheduling-api.js?v=rescheduling-same-day-1';
 import { proposalStateLabel, appointmentStateLabel } from './state-labels.js';
-import { initDestinationDateSelector } from './date-selector.js?v=b84-stage7-1';
+import { initDestinationDateSelector } from './date-selector.js?v=rescheduling-same-day-1';
 
 const node = id => document.getElementById(id);
 const fullName = person => `${person.nombre} ${person.apellido}`;
@@ -72,21 +72,48 @@ export async function openPendingRecovery(turn, { secretary = false, onUpdated =
     try { await refresh(); } catch (error) { feedback(message, errorMessage(error)); }
 }
 
-export async function initPatientProposals({ onUpdated = async () => {}, initialTurns } = {}) {
+export async function initPatientProposals({ onUpdated = async () => {}, initialTurns, filterByDoctor = false } = {}) {
     const section = document.createElement('section'); section.id = 'propuestasPacienteSection'; section.className = 'card dashboard-card border-0 shadow-sm my-4';
-    section.innerHTML = '<div class="card-body"><div class="d-flex justify-content-between"><h2 class="h5">Propuestas de reprogramación</h2><button type="button" class="btn btn-outline-primary btn-sm" data-refresh>Actualizar</button></div><div data-feedback class="alert d-none" role="alert"></div><div data-proposals class="row g-3"></div></div>';
+    section.innerHTML = `<div class="card-body"><div class="d-flex justify-content-between"><h2 class="h5">Propuestas de reprogramación</h2><button type="button" class="btn btn-outline-primary btn-sm" data-refresh>Actualizar</button></div>
+        ${filterByDoctor ? '<div class="row my-3"><div class="col-12 col-md-6"><label for="propuestasPacienteMedico" class="form-label">Médico</label><select id="propuestasPacienteMedico" class="form-select" data-doctor disabled><option value="">Seleccione un médico</option></select></div></div>' : ''}
+        <div data-feedback class="alert d-none" role="alert"></div><div data-proposals class="row g-3"></div></div>`;
     document.querySelector('main').append(section);
     const message = section.querySelector('[data-feedback]'), list = section.querySelector('[data-proposals]');
+    const doctorSelect = filterByDoctor ? section.querySelector('[data-doctor]') : null;
+    if (doctorSelect) doctorSelect.value = '';
     let busy = false, readVersion = 0;
+    let proposalRows = [], byId = new Map();
+    function render() {
+        const doctorId = doctorSelect?.value;
+        const visible = !filterByDoctor ? proposalRows : doctorId
+            ? proposalRows.filter(p => String(byId.get(p.turno)?.medico.id) === doctorId) : [];
+        const emptyMessage = !filterByDoctor ? 'No tiene propuestas de reprogramación.' : !doctorId
+            ? 'Seleccione un médico para consultar sus propuestas de reprogramación'
+            : 'No hay propuestas de reprogramación para el médico seleccionado.';
+        list.innerHTML = visible.map(p => `<div class="col-12 col-lg-6"><article class="border rounded-3 p-3 h-100">${summary(p, byId.get(p.turno))}
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-proposal="${p.id}" data-decision="detalle">Consultar detalle</button>
+            ${p.estado === 'EN_ESPERA' ? `<button type="button" class="btn btn-primary btn-sm" data-proposal="${p.id}" data-decision="aceptar">Aceptar propuesta</button><button type="button" class="btn btn-outline-danger btn-sm" data-proposal="${p.id}" data-decision="rechazar">Rechazar propuesta</button>` : ''}</article></div>`).join('')
+            || `<p class="text-secondary mb-0">${emptyMessage}</p>`;
+        list.querySelectorAll('button').forEach(button => { button.disabled = busy; });
+    }
+    doctorSelect?.addEventListener('change', render);
+    doctorSelect?.addEventListener('input', render);
+    render();
     async function refresh(turnsSnapshot) {
         const version = ++readVersion;
         const [proposals, turns] = await Promise.all([api.getPatientProposals(), turnsSnapshot ?? getPatientTurns()]);
         if (version !== readVersion) return;
-        const byId = new Map(turns.map(turn => [turn.id_turno, turn]));
-        list.innerHTML = proposals.map(p => `<div class="col-12 col-lg-6"><article class="border rounded-3 p-3 h-100">${summary(p, byId.get(p.turno))}
-            <button type="button" class="btn btn-outline-secondary btn-sm" data-proposal="${p.id}" data-decision="detalle">Consultar detalle</button>
-            ${p.estado === 'EN_ESPERA' ? `<button type="button" class="btn btn-primary btn-sm" data-proposal="${p.id}" data-decision="aceptar">Aceptar propuesta</button><button type="button" class="btn btn-outline-danger btn-sm" data-proposal="${p.id}" data-decision="rechazar">Rechazar propuesta</button>` : ''}</article></div>`).join('') || '<p class="text-secondary mb-0">No tiene propuestas de reprogramación.</p>';
-        list.querySelectorAll('button').forEach(button => { button.disabled = busy; });
+        byId = new Map(turns.map(turn => [turn.id_turno, turn])); proposalRows = proposals;
+        if (doctorSelect) {
+            const previous = doctorSelect.value;
+            const doctors = new Map(proposals.map(p => byId.get(p.turno)?.medico).filter(Boolean).map(doctor => [String(doctor.id), doctor]));
+            const entries = [...doctors.entries()].sort((a, b) => fullName(a[1]).localeCompare(fullName(b[1]), 'es'));
+            doctorSelect.replaceChildren(new Option('Seleccione un médico', ''),
+                ...entries.map(([id, doctor]) => new Option(`${fullName(doctor)} · ${doctor.especialidad.nombre}`, id)));
+            doctorSelect.value = doctors.has(previous) ? previous : '';
+            doctorSelect.disabled = !entries.length;
+        }
+        render();
     }
     section.querySelector('[data-refresh]').addEventListener('click', async () => { try { await refresh(); await onUpdated(); } catch (error) { feedback(message, errorMessage(error)); } });
     list.addEventListener('click', async event => {
@@ -114,10 +141,13 @@ export async function initManagerRescheduling() {
     const medical = getCurrentUser().rol === 'MEDICO', prefix = medical ? 'reprogramacionMedico' : 'reprogramacion';
     const form = node(`${prefix}Form`), message = node(`${prefix}Mensaje`), affected = node(`${prefix}AfectadosTabla`), proposalsTable = node(`${prefix}PropuestasTabla`), pendingTable = node(`${prefix}EsperaTabla`);
     const search = node(medical ? 'buscarAfectadosMedicoBtn' : 'buscarAfectadosBtn'), execute = node(medical ? 'ejecutarReprogramacionMedicoBtn' : 'ejecutarReprogramacionBtn');
+    const selectAll = node(`${prefix}SeleccionarTodos`), selectAllLabel = node(`${prefix}SeleccionarTodosTexto`);
     const confirmButton = node(medical ? 'confirmarReprogramacionMedicoBtn' : 'confirmarReprogramacionBtn');
     const modalElement = node(medical ? 'confirmarReprogramacionMedicoModal' : 'confirmarReprogramacionModal'), modal = getBootstrapModal(modalElement);
     const fields = { fecha_original: node(`${prefix}Fecha`), hora_inicio: node(`${prefix}HoraInicio`), hora_fin: node(`${prefix}HoraFin`) };
     const destination = node(`${prefix}NuevaFecha`), reason = node(`${prefix}Motivo`);
+    const proposalDate = node(`${prefix}PropuestasFiltroFecha`), clearProposalDate = node(`${prefix}LimpiarPropuestasFecha`);
+    proposalDate.value = '';
     const dateStatus = node(`${prefix}FechasEstado`), refreshDates = node(`${prefix}ActualizarFechasBtn`);
     if (destination?.tagName !== 'SELECT' || !dateStatus || !refreshDates) {
         const url = new URL(window.location.href);
@@ -132,16 +162,38 @@ export async function initManagerRescheduling() {
     let doctor = medical ? await getDoctor(getCurrentUser().perfil.id) : null, candidates = [], lastScope = null, busy = false, generation = 0, collectionsVersion = 0, context = new Map(), pending = [], dateSelector = null;
     function scope() { return Object.fromEntries(Object.entries(fields).map(([key, field]) => [key, field.value])); }
     const signature = () => JSON.stringify([doctor?.id, scope()]);
-    const selectedIds = () => [...affected.querySelectorAll('input:checked')].map(input => Number(input.value));
-    function updateExecute() { execute.disabled = busy || !doctor || signature() !== lastScope || !selectedIds().length || !dateSelector?.isValid(); }
+    const eligibleInputs = () => [...affected.querySelectorAll('input[type="checkbox"]:not(:disabled)')];
+    const selectedIds = () => eligibleInputs().filter(input => input.checked).map(input => Number(input.value));
+    function updateSelection() {
+        const inputs = eligibleInputs(), count = inputs.filter(input => input.checked).length;
+        selectAll.checked = inputs.length > 0 && count === inputs.length;
+        selectAll.indeterminate = count > 0 && count < inputs.length;
+        selectAll.disabled = busy || !inputs.length;
+        selectAllLabel.textContent = selectAll.checked ? 'Deseleccionar todos' : 'Seleccionar todos';
+    }
+    function updateExecute() {
+        updateSelection();
+        execute.disabled = busy || !doctor || signature() !== lastScope || !selectedIds().length || !dateSelector?.isValid();
+    }
     function clearFeedback() { feedback(message, ''); node(`${prefix}DisponibilidadAviso`).classList.add('d-none'); }
     function clearCandidates() { ++generation; candidates = []; lastScope = null; affected.innerHTML = emptyRow(medical ? 7 : 10, 'Consulte los turnos afectados de esta agenda.'); updateExecute(); }
     function renderCandidates() {
         affected.innerHTML = candidates.map(t => `<tr><td><input type="checkbox" class="form-check-input" value="${t.id_turno}" aria-label="Seleccionar turno ${t.id_turno}"></td><td>${esc(fullName(t.paciente_detalle))}</td><td>${esc(t.paciente_detalle.dni)}</td>${medical ? '' : `<td>${esc(fullName(t.medico))}</td><td>${esc(t.medico.especialidad.nombre)}</td>`}<td>${formatDate(t.fecha)}</td><td>${esc(t.hora.slice(0, 5))}</td><td>${priority(t)}</td><td>${esc(appointmentStateLabel(t.estado))}</td>${medical ? '' : '<td>Sistema</td>'}</tr>`).join('') || emptyRow(medical ? 7 : 10, 'No hay reservas candidatas en ese intervalo.'); updateExecute();
     }
-    function renderProposals(proposals) {
-        proposalsTable.innerHTML = proposals.map(p => { const t = context.get(p.turno); return `<tr><td>${t ? esc(fullName(t.paciente_detalle)) : `Turno ${p.turno}`}</td><td>${priority(t)}</td><td>${formatDate(p.fecha_origen)} ${esc(p.hora_origen.slice(0, 5))} (histórico)</td><td>${summary(p, t)}</td><td>${esc(proposalStateLabel(p.estado))}</td></tr>`; }).join('') || emptyRow(5, 'No hay propuestas para esta agenda.');
+    let proposalRows = [];
+    function renderProposals(proposals = proposalRows) {
+        proposalRows = proposals;
+        if (!proposalDate.value) {
+            proposalsTable.innerHTML = emptyRow(5, 'Seleccione una fecha para consultar las propuestas de reprogramación');
+            return;
+        }
+        // fecha_destino is an ISO calendar date, not a timestamp to convert to the browser timezone.
+        const visible = proposalRows.filter(p => p.fecha_destino === proposalDate.value);
+        proposalsTable.innerHTML = visible.map(p => { const t = context.get(p.turno); return `<tr><td>${t ? esc(fullName(t.paciente_detalle)) : `Turno ${p.turno}`}</td><td>${priority(t)}</td><td>${formatDate(p.fecha_origen)} ${esc(p.hora_origen.slice(0, 5))} (histórico)</td><td>${summary(p, t)}</td><td>${esc(proposalStateLabel(p.estado))}</td></tr>`; }).join('') || emptyRow(5, 'No hay propuestas de reprogramación para la fecha seleccionada');
     }
+    proposalDate.addEventListener('input', () => renderProposals());
+    proposalDate.addEventListener('change', () => renderProposals());
+    clearProposalDate.addEventListener('click', () => { proposalDate.value = ''; renderProposals(); });
     async function refreshCollections() {
         const version = ++collectionsVersion;
         const current = doctor; if (!current) { context = new Map(); pending = []; renderProposals([]); pendingTable.innerHTML = emptyRow(5, 'Seleccione un médico.'); return; }
@@ -150,24 +202,23 @@ export async function initManagerRescheduling() {
         context = new Map(turns.map(t => [t.id_turno, t])); pending = pendingTurns; renderProposals(proposals);
         pendingTable.innerHTML = pending.map(t => `<tr><td>${esc(fullName(t.paciente_detalle))} · Turno ${t.id_turno}</td><td>${esc(t.paciente_detalle.dni)}</td><td>${priority(t)}</td><td>Necesita nueva asignación. El origen es histórico.</td><td>${esc(appointmentStateLabel(t.estado))} <button type="button" class="btn btn-outline-primary btn-sm" data-pending="${t.id_turno}" data-action="proponer">Generar propuesta</button>${medical ? '' : `<button type="button" class="btn btn-outline-secondary btn-sm" data-pending="${t.id_turno}" data-action="reasignar">Reasignar</button>`}</td></tr>`).join('') || emptyRow(5, 'No hay turnos pendientes.');
     }
-    async function showResult(result) {
-        feedback(message, `Nueva fecha: ${formatDate(result.nueva_fecha)}. Propuestas generadas: ${result.propuestas.map(p => `${p.id} (Turno ${p.turno})`).join(', ') || 'ninguna'}. Requiere revisión: ${result.requiere_revision.join(', ') || 'ninguno'}. Turnos rechazados: ${result.turnos_rechazados.join(', ') || 'ninguno'}. Los afectados siguen pendientes de reasignación hasta una asignación confirmada.`, result.requiere_revision.length ? 'warning' : 'success');
+    async function showResult(result, successMessage) {
+        const needsAttention = result.requiere_revision.length || result.turnos_rechazados.length;
+        feedback(message, successMessage && !needsAttention ? successMessage
+            : `Nueva fecha: ${formatDate(result.nueva_fecha)}. Propuestas generadas: ${result.propuestas.map(p => `${p.id} (Turno ${p.turno})`).join(', ') || 'ninguna'}. Requiere revisión: ${result.requiere_revision.join(', ') || 'ninguno'}. Turnos rechazados: ${result.turnos_rechazados.join(', ') || 'ninguno'}. Los afectados siguen pendientes de reasignación hasta una asignación confirmada.`, result.requiere_revision.length ? 'warning' : 'success');
         node(`${prefix}DisponibilidadAviso`).classList.toggle('d-none', !result.requiere_revision.length);
         node(`${prefix}DisponibilidadTexto`).textContent = `La fecha ${formatDate(result.nueva_fecha)} no tuvo bloques suficientes. Requieren revisión los turnos: ${result.requiere_revision.join(', ')}. No se buscó otra fecha.`;
         node(`${prefix}CargarDisponibilidadBtn`).classList.toggle('d-none', !result.requiere_revision.length);
-        try { await refreshCollections(); renderProposals(result.propuestas); }
+        try { await refreshCollections(); }
         catch (error) { feedback(message, `${message.textContent} El proceso fue registrado, pero no pudo actualizarse la consulta. ${errorMessage(error)}`, 'warning'); }
     }
     dateSelector = initDestinationDateSelector({
         select: destination, status: dateStatus,
         refreshButton: refreshDates,
-        context: () => ({ doctorId: doctor?.id, affectedDate: fields.fecha_original.value }),
-        load: async doctorId => {
-            const [blocks, proposals, turns] = await Promise.all([
-                getAssignableAvailability(doctorId), api.getAgendaProposals(doctorId), getAgendaTurns(doctorId)
-            ]);
-            return { blocks, proposals, turns };
-        },
+        context: () => ({ doctorId: doctor?.id, affectedDate: fields.fecha_original.value,
+            hora_inicio: fields.hora_inicio.value, hora_fin: fields.hora_fin.value }),
+        load: doctorId => Object.values(scope()).some(value => !value)
+            ? Promise.resolve({ fechas_disponibles: [] }) : api.getReschedulingDates(doctorId, scope()),
         onUpdate: updateExecute
     });
     if (!medical) await bindDoctorSelectors(node('reprogramacionEspecialidad'), node('reprogramacionMedico'), async (value, error) => {
@@ -177,10 +228,17 @@ export async function initManagerRescheduling() {
     });
     node(`${prefix}Notificaciones`).textContent = 'Las propuestas son notificaciones internas consultables por el Paciente. Solo el propietario puede aceptarlas o rechazarlas. No se envían correos desde esta pantalla.';
     form.addEventListener('submit', event => event.preventDefault());
-    Object.values(fields).forEach(field => field.addEventListener('input', () => { if (!busy) { clearCandidates(); clearFeedback(); } }));
-    fields.fecha_original.addEventListener('change', () => { dateSelector.reset(); dateSelector.refresh(); });
+    Object.values(fields).forEach(field => {
+        field.addEventListener('input', () => { if (!busy) { dateSelector.reset(); clearCandidates(); clearFeedback(); } });
+        field.addEventListener('change', () => { if (!busy) { dateSelector.reset(); dateSelector.refresh(); } });
+    });
     [destination, reason].forEach(field => field.addEventListener('input', () => { if (!busy) clearFeedback(); }));
     affected.addEventListener('change', updateExecute);
+    selectAll.addEventListener('change', () => {
+        if (busy || selectAll.disabled) return;
+        eligibleInputs().forEach(input => { input.checked = selectAll.checked; });
+        updateExecute();
+    });
     async function searchCandidates() {
         if (!doctor || Object.values(scope()).some(value => !value)) { feedback(message, 'Seleccione médico, fecha original y ambas horas.'); return; }
         const current = ++generation, snapshot = signature(), doctorId = doctor.id; search.disabled = true;
@@ -199,18 +257,18 @@ export async function initManagerRescheduling() {
         if (!modal) { feedback(message, 'No fue posible abrir la confirmación. Recargue la página.'); return; }
         modalElement.querySelector('.modal-body').textContent = `Generar propuestas para ${selectedIds().length} turno(s) de ${fullName(doctor)} en ${formatDate(destination.value)}. Los turnos seleccionados quedarán pendientes de reprogramación. Se bloquearán sus bloques originales y los bloques libres que se superpongan con el intervalo original seleccionado. Las reservas no seleccionadas no se modificarán. Las propuestas alternativas no garantizan la reserva del nuevo horario hasta que se confirme su aceptación.`; showModal(modal);
     });
-    async function withWrite(operation) {
+    async function withWrite(operation, successMessage) {
         if (busy) return; busy = true;
-        const previous = [...form.querySelectorAll('input,select,button'), ...affected.querySelectorAll('input'), ...pendingTable.querySelectorAll('button'), confirmButton].map(control => [control, control.disabled]);
+        const previous = [...form.querySelectorAll('input,select,button'), ...affected.querySelectorAll('input'), ...pendingTable.querySelectorAll('button'), selectAll, confirmButton].map(control => [control, control.disabled]);
         previous.forEach(([control]) => { control.disabled = true; });
-        try { await showResult(await operation()); await dateSelector.refresh(); clearCandidates(); }
+        try { await showResult(await operation(), successMessage); await dateSelector.refresh(); clearCandidates(); }
         catch (error) { feedback(message, conflictMessage(error)); if (error.status === 409) { clearCandidates(); try { await refreshCollections(); await searchCandidates(); } catch (refreshError) { feedback(message, `${errorMessage(error)} ${errorMessage(refreshError)}`); } } }
         finally { busy = false; previous.forEach(([control, disabled]) => { control.disabled = disabled; }); search.disabled = false; updateExecute(); }
     }
     confirmButton.addEventListener('click', async () => {
         if (busy || signature() !== lastScope || !selectedIds().length || !dateSelector.isValid()) return;
         const doctorId = doctor.id, body = { ...scope(), nueva_fecha: destination.value, turnos: selectedIds(), motivo: reason.value.trim() };
-        hideModal(modal); await withWrite(() => api.generateRescheduling(doctorId, body));
+        hideModal(modal); await withWrite(() => api.generateRescheduling(doctorId, body), 'Reprogramación ejecutada correctamente');
     });
     pendingTable.addEventListener('click', async event => {
         const button = event.target.closest('[data-pending]'); if (!button || busy || !doctor) return;

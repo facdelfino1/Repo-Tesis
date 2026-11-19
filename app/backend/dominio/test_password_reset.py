@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from smtplib import SMTPException
 from threading import Barrier
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 
 from django.conf import settings
 from django.contrib.auth import authenticate
@@ -57,8 +58,8 @@ class PasswordRecoveryTests(APITestCase):
 
     def email_token(self):
         body = mail.outbox[-1].body
-        return {"uid": re.search(r"Identificador: (\S+)", body).group(1),
-                "token": re.search(r"Token: (\S+)", body).group(1)}
+        query = parse_qs(urlsplit(re.search(r"https?://\S+", body).group(0)).query)
+        return {"uid": query["uid"][0], "token": query["token"][0]}
 
     def confirm_reset(self, data, password=None):
         password = password or "Aa1!" + secrets.token_urlsafe(24)
@@ -267,7 +268,7 @@ class PasswordRecoveryTests(APITestCase):
         response = self.client.post(reverse("auth-password-reset"), {"email": self.user.email}, format="json",
                                     HTTP_X_CSRFTOKEN=token, HTTP_HOST="attacker.test")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("https://api.example.test/api/auth/password-reset/confirm/", mail.outbox[-1].body)
+        self.assertIn("https://api.example.test/frontend/pages/auth/recuperar-password.html?", mail.outbox[-1].body)
         self.assertNotIn("attacker.test", mail.outbox[-1].body)
 
     def test_admin_cannot_edit_lockout_and_stale_edit_preserves_security_fields(self):

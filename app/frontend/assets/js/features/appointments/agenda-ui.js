@@ -4,16 +4,30 @@ import { escapeHtml as esc } from '../../core/helpers.js';
 import { formatDate, todayInputValue } from '../../core/formatters.js';
 import { priorityClass } from '../../components/badges.js';
 import { getBootstrapModal, showModal, hideModal } from '../../components/modals.js';
+import { createActionConfirmation } from '../../components/action-confirmation.js?v=single-consultation-1';
 import { getDoctor, getAssignableAvailability as assignableSlots, bindDoctorSelectors, loadDoctorCatalog } from '../catalog/catalog-service.js';
 import { reassignAgendaTurn } from '../rescheduling/rescheduling-api.js';
-import { readAnswers, updateTriageQuestionnaire, renderTriageResponses } from '../triage/triage-ui.js';
+import { readAnswers, updateTriageQuestionnaire, renderTriageResponses, bindTriageNotice } from '../triage/triage-ui.js?v=triage-notice-1';
 import { getAgendaTurns, getAgendaTurn, reserveSecretaryTurn, modifyAgendaTurn, operateAgendaTurn } from './agenda-api.js';
 import { initPatientSearch } from './patient-search-ui.js';
+import { formatAttentionDuration } from './attention-duration.js?v=attention-duration-1';
+import { bindPediatricCleanup } from './pediatric-form.js';
 
 const node = id => document.getElementById(id);
 const setText = (id, value) => { if (node(id)) node(id).textContent = value; };
 const name = person => `${person.nombre} ${person.apellido}`;
 const states = { RESERVADO: 'Reservado', PRESENTE: 'Presente', EN_ATENCION: 'En atención', COMPLETADO: 'Completado', CANCELADO: 'Cancelado', PENDIENTE: 'Pendiente', AUSENTE: 'Ausente' };
+const activeConsultationMessage = 'Antes de iniciar una nueva consulta, debés finalizar la consulta que se encuentra actualmente en atención.';
+const confirmationCopy = {
+    cancelar: { title: 'Confirmar cancelación de turno', confirmText: 'Confirmar cancelación',
+        message: '¿Estás seguro/a de que deseas cancelar este turno? El turno pasará al estado “Cancelado” y dejará de estar disponible para su atención. Esta acción no implica eliminar el registro del sistema' },
+    presencia: { title: 'Confirmar registro de presencia', confirmText: 'Confirmar presencia',
+        message: '¿Estás seguro/a de que deseas registrar la presencia de este paciente? El turno pasará al estado “Presente” y se registrará su hora de llegada' },
+    iniciar: { title: 'Confirmar inicio de consulta', confirmText: 'Confirmar inicio',
+        message: '¿Estás seguro/a de que deseas iniciar la consulta de este paciente? El turno pasará al estado “En atención” y se registrará la hora de inicio' },
+    finalizar: { title: 'Confirmar finalización de consulta', confirmText: 'Confirmar finalización',
+        message: '¿Estás seguro/a de que deseas finalizar la consulta de este paciente? El turno pasará al estado “Completado” y se registrará la hora de finalización' }
+};
 const key = doctor => ({ 'Clínica Médica': 'clinica_medica', 'Pediatría': 'pediatria' }[doctor?.especialidad.nombre] || '');
 const badge = turn => turn.prioridad === null ? 'Sin triaje específico' : `<span class="badge fs-6 px-3 py-2 ${priorityClass(turn.prioridad)}">${esc(turn.prioridad)}</span>`;
 const time = value => value ? esc(new Date(value).toLocaleString('es-AR')) : '—';
@@ -37,16 +51,21 @@ function collectedAnswers(form, doctor) {
     return answers;
 }
 function detail(turn) {
+    const birth = turn.nacimiento_atendido;
+    const birthLabel = birth?.es_menor_atendido ? 'Fecha de nacimiento del menor atendido' : 'Fecha de nacimiento';
     return `<dl class="row"><dt class="col-sm-4">Paciente</dt><dd class="col-sm-8">${esc(name(turn.paciente_detalle))} · DNI ${esc(turn.paciente_detalle.dni)} · ID ${turn.paciente}</dd>
+        <dt class="col-sm-4">${birthLabel}</dt><dd class="col-sm-8">${birth?.fecha_nacimiento ? formatDate(birth.fecha_nacimiento, '-') : 'No registrada'}</dd>
+        <dt class="col-sm-4">Edad a la fecha del turno${birth?.es_menor_atendido ? ' (menor atendido)' : ''}</dt><dd class="col-sm-8">${birth?.edad != null ? `${esc(String(birth.edad))} años` : 'No registrada'}</dd>
         <dt class="col-sm-4">Médico</dt><dd class="col-sm-8">${esc(name(turn.medico))} · ${esc(turn.medico.especialidad.nombre)}</dd>
         <dt class="col-sm-4">Estado</dt><dd class="col-sm-8">${esc(states[turn.estado] || turn.estado)}</dd>
         <dt class="col-sm-4">Asignación</dt><dd class="col-sm-8">${turn.estado === 'PENDIENTE' ? 'Pendiente de nueva asignación' : `${formatDate(turn.fecha)} ${hour(turn)} · ${turn.duracion_turno} min${turn.asignacion_vigente ? '' : ' (histórico)'}`}</dd>
         <dt class="col-sm-4">Prioridad</dt><dd class="col-sm-8">${badge(turn)}</dd>
         ${[['Creación', 'fecha_hora_creacion'], ['Llegada', 'fecha_hora_arribo'], ['Inicio', 'fecha_hora_inicio'], ['Cierre', 'fecha_hora_cierre']].map(([label, field]) => `<dt class="col-sm-4">${label}</dt><dd class="col-sm-8">${time(turn[field])}</dd>`).join('')}</dl>
-        ${turn.triaje ? renderTriageResponses(turn.triaje.respuesta_sintomas, key(turn.medico)) : ''}`;
+        ${turn.triaje ? renderTriageResponses(turn.triaje.respuesta_sintomas, key(turn.medico), { includeBirth: false }) : ''}`;
 }
 
 export async function initOperationalAgenda(mode) {
+    const confirmation = createActionConfirmation();
     const user = getCurrentUser(), doctorMode = user.rol === 'MEDICO';
     const dashboard = mode === 'dashboard', presence = mode === 'presence';
     const initialCatalog = !doctorMode && !dashboard && !presence ? await loadDoctorCatalog() : null;
@@ -78,11 +97,11 @@ export async function initOperationalAgenda(mode) {
             && (!filterPriority?.value || turn.prioridad === filterPriority.value.toUpperCase()));
         table.innerHTML = visible.map(turn => {
             const patient = esc(name(turn.paciente_detalle)), dni = esc(turn.paciente_detalle.dni), state = esc(states[turn.estado] || turn.estado);
-            const values = doctorMode ? (dashboard ? [hour(turn), patient, dni, badge(turn), state, `${turn.duracion_turno} min`, actions(turn)]
-                : [hour(turn), patient, dni, 'No informada', badge(turn), `${turn.duracion_turno} min`, state, actions(turn)])
+            const values = doctorMode ? (dashboard ? [hour(turn), patient, dni, badge(turn), state, formatAttentionDuration(turn), actions(turn)]
+                : [hour(turn), patient, dni, 'No informada', badge(turn), formatAttentionDuration(turn), state, actions(turn)])
                 : dashboard ? [hour(turn), patient, esc(name(turn.medico)), esc(turn.medico.especialidad.nombre), badge(turn), state]
                 : presence ? [patient, dni, esc(name(turn.medico)), esc(turn.medico.especialidad.nombre), hour(turn), badge(turn), state, time(turn.fecha_hora_arribo), actions(turn)]
-                : [patient, dni, esc(name(turn.medico)), esc(turn.medico.especialidad.nombre), turn.estado === 'PENDIENTE' ? 'Sin asignación vigente' : formatDate(turn.fecha), hour(turn), badge(turn), state, 'Sistema', actions(turn)];
+                : [patient, dni, esc(name(turn.medico)), esc(turn.medico.especialidad.nombre), turn.estado === 'PENDIENTE' ? 'Sin asignación vigente' : formatDate(turn.fecha), hour(turn), badge(turn), state, esc(({ PACIENTE: 'Paciente', SECRETARIA: 'Secretaría', SISTEMA: 'Sistema' })[turn.origen] || 'No determinado'), actions(turn)];
             return `<tr>${values.map(value => `<td>${value}</td>`).join('')}</tr>`;
         }).join('') || `<tr><td colspan="${columns}">${doctor ? loaded ? 'No hay turnos para los filtros seleccionados.' : 'Datos de agenda no disponibles o en consulta.' : 'Seleccione un médico para consultar su agenda.'}</td></tr>`;
         const counts = state => rows.filter(turn => turn.estado === state).length;
@@ -140,9 +159,24 @@ export async function initOperationalAgenda(mode) {
                 const body = node(detailBody) || node('dashboardAgendaDetalle')?.querySelector('.modal-body');
                 body.innerHTML = detail(turn); showModal(detailModal);
             } else if (action === 'modificar') await edit(turn);
-            else if (window.confirm(`¿${{ presencia: 'Registrar presencia', cancelar: 'Cancelar turno', iniciar: 'Iniciar consulta', finalizar: 'Finalizar consulta' }[action]} de ${name(turn.paciente_detalle)}?`)) {
-                await operateAgendaTurn(currentDoctor, turn.id_turno, action);
-                feedback(message, 'Operación realizada correctamente.', 'success'); await reload();
+            else if (confirmationCopy[action]) {
+                await confirmation.open({ ...confirmationCopy[action],
+                    context: `Paciente: ${name(turn.paciente_detalle)} · ${formatDate(turn.fecha)} ${turn.hora.slice(0, 5)}`,
+                    onConfirm: async () => {
+                        await operateAgendaTurn(currentDoctor, turn.id_turno, action);
+                        feedback(message, 'Operación realizada correctamente.', 'success'); await reload();
+                    },
+                    onError: async error => {
+                        const description = errorMessage(error);
+                        feedback(message, description);
+                        if (error.status === 409) await reload();
+                        if (action === 'iniciar' && error.status === 409 && error.data?.detail === activeConsultationMessage) {
+                            return { title: 'Consulta en atención', notice: activeConsultationMessage };
+                        }
+                        return description;
+                    },
+                    restoreFocus: () => table.querySelector(`[data-turn="${turn.id_turno}"][data-operation="detalle"]`)?.focus()
+                });
             }
         } catch (error) { feedback(message, errorMessage(error)); if (error.status === 409) await reload(); }
         finally { busy = false; render(); }
@@ -183,8 +217,10 @@ export async function initOperationalAgenda(mode) {
 
 async function initSecretaryBooking(reload, initialCatalog) {
     const form = node('asignarTurnoForm'), message = node('asignarTurnoMensaje'), slotSelect = node('asignarDisponibilidad');
+    const updateTriageNotice = bindTriageNotice(form, node('asignarEspecialidad'));
     const patientSearch = initPatientSearch(form);
-    let doctor = null, rows = [], version = 0, busy = false;
+    const clearPediatric = bindPediatricCleanup(form, node('asignarEspecialidad'));
+    let doctor = null, rows = [], version = 0, busy = false, lastSpecialty = null;
     async function refreshSlots() {
         const current = ++version, selected = doctor; rows = []; slots(slotSelect, []);
         if (!selected) { setText('asignarDisponibilidadAyuda', 'Seleccione un médico para consultar horarios.'); return; }
@@ -193,6 +229,11 @@ async function initSecretaryBooking(reload, initialCatalog) {
         rows = result; slots(slotSelect, rows); setText('asignarDisponibilidadAyuda', result.length ? 'Seleccione un bloque real. El servidor revalidará al confirmar.' : 'No hay horarios disponibles para este médico.');
     }
     await bindDoctorSelectors(node('asignarEspecialidad'), node('asignarMedico'), async (value, error) => {
+        updateTriageNotice();
+        if (value) {
+            if (lastSpecialty !== null && lastSpecialty !== value.especialidad.id) clearPediatric();
+            lastSpecialty = value.especialidad.id;
+        }
         doctor = value; updateTriageQuestionnaire(form, key(value) || (value ? 'sin_algoritmo' : ''));
         if (error) feedback(message, errorMessage(error));
         try { await refreshSlots(); } catch (err) { feedback(message, errorMessage(err)); }
@@ -208,6 +249,7 @@ async function initSecretaryBooking(reload, initialCatalog) {
         busy = true; const controls = [...form.querySelectorAll('input, select, button')].map(control => [control, control.disabled]); controls.forEach(([control]) => { control.disabled = true; });
         try {
             const turn = await reserveSecretaryTurn(doctor.id, patient.id, slot.id, answers);
+            clearPediatric();
             feedback(message, `Turno ${turn.id_turno} reservado. ${turn.prioridad === null ? 'Sin triaje específico.' : 'Prioridad: ' + turn.prioridad + '.'}`, 'success');
             await reload();
             try { await refreshSlots(); } catch (error) { feedback(message, `Turno ${turn.id_turno} reservado. ${errorMessage(error)}`, 'warning'); }

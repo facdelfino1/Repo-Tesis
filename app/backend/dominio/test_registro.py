@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date, timedelta
 from threading import Barrier
 from unittest.mock import patch
 
@@ -8,6 +9,7 @@ from django.core.exceptions import ValidationError
 from django.db import close_old_connections, connection
 from django.test import TransactionTestCase
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APIClient, APITestCase
 
 from .models import Paciente, Usuario
@@ -16,10 +18,48 @@ from .models import Paciente, Usuario
 def datos_registro(**changes):
     return {"nombre": "Lucia", "apellido": "Prueba", "dni": "45000123", "telefono": "3515551234",
             "email": "registro@example.com", "obra_social": "Particular", "password": "Riviera!7389Az",
-            "password_confirmacion": "Riviera!7389Az", **changes}
+            "password_confirmacion": "Riviera!7389Az", "fecha_nacimiento": "1992-02-29", **changes}
 
 
 class RegistroPacienteTests(APITestCase):
+    def test_fecha_nacimiento_obligatoria_valida(self):
+        response = self.registrar(datos_registro(fecha_nacimiento='1992-02-29'))
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(Usuario.objects.get().fecha_nacimiento, date(1992, 2, 29))
+
+    def test_fecha_nacimiento_omitida_o_null_rechazada(self):
+        omitted = datos_registro()
+        omitted.pop('fecha_nacimiento')
+        for data in [omitted, datos_registro(fecha_nacimiento=None)]:
+            with self.subTest(data=data):
+                response = self.registrar(data)
+                self.assertEqual(response.status_code, 400, response.data)
+                self.assertIn('fecha_nacimiento', response.data)
+                self.assertFalse(Usuario.objects.exists())
+                self.assertFalse(Paciente.objects.exists())
+
+    def test_paciente_historico_sin_fecha_puede_iniciar_sesion(self):
+        data = datos_registro()
+        user = Usuario.objects.create_user(data['email'], data['password'], rol='PACIENTE',
+            nombre=data['nombre'], apellido=data['apellido'], dni=data['dni'], telefono=data['telefono'])
+        Paciente.objects.create(usuario=user)
+        response = self.client.post(reverse('auth-login'), {'email': user.email, 'password': data['password']},
+                                    format='json', HTTP_X_CSRFTOKEN=self.token)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(self.client.get(reverse('auth-me')).status_code, 200)
+        user.refresh_from_db()
+        self.assertIsNone(user.fecha_nacimiento)
+        self.assertEqual(Usuario.objects.count(), 1)
+
+    def test_fecha_nacimiento_invalida_o_futura_no_persiste(self):
+        for value in ['2025-02-29', 'no-fecha', '', True, '2000-13-01',
+                      (timezone.localdate() + timedelta(days=1)).isoformat()]:
+            with self.subTest(value=value):
+                response = self.registrar(datos_registro(fecha_nacimiento=value))
+                self.assertEqual(response.status_code, 400, response.data)
+                self.assertIn('fecha_nacimiento', response.data)
+                self.assertFalse(Usuario.objects.exists())
+
     def setUp(self):
         cache.clear()
         self.client = APIClient(enforce_csrf_checks=True)
@@ -97,7 +137,7 @@ class RegistroPacienteTests(APITestCase):
         self.assertFalse(Usuario.objects.exists())
 
     def test_rechaza_campos_obligatorios_ausentes_o_vacios(self):
-        for field in ("nombre", "apellido", "dni", "telefono", "email", "password", "password_confirmacion"):
+        for field in ("nombre", "apellido", "dni", "telefono", "email", "password", "password_confirmacion", "fecha_nacimiento"):
             for value in (None, ""):
                 with self.subTest(field=field, value=value):
                     cache.clear()

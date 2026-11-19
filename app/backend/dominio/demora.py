@@ -1,4 +1,4 @@
-"""Informative delay for a patient's appointment in today's medical agenda."""
+"""Informative delay and remaining queue wait in today's medical agenda."""
 from datetime import datetime, timedelta
 from math import ceil
 
@@ -11,9 +11,22 @@ from .models import Turno
 def estimar_demora(turno, calculado_en=None):
     now = calculado_en or timezone.now()
 
-    def result(estado, motivo, minutos=None, inicio=None):
+    # Share the unrounded historical mean with every result, even when delay is ineligible.
+    observed = ExpressionWrapper(F('fecha_hora_cierre') - F('fecha_hora_inicio'),
+                                 output_field=DurationField())
+    mean = Turno.objects.filter(
+        medico_id=turno.medico_id, estado=Turno.Estado.COMPLETADO,
+        fecha_hora_inicio__isnull=False, fecha_hora_cierre__isnull=False,
+        fecha_hora_inicio__gte=F('fecha_hora_creacion'),
+        fecha_hora_cierre__gt=F('fecha_hora_inicio'),
+        fecha_hora_cierre__lte=now,
+    ).aggregate(duration=Avg(observed))['duration']
+
+    def result(estado, motivo, minutos=None, inicio=None, espera=None):
         return {
+            'promedio_consulta_minutos': ceil(mean.total_seconds() / 60) if mean is not None else None,
             'demora_estimada_minutos': minutos,
+            'espera_estimada_minutos': espera,
             'inicio_estimado': inicio.isoformat() if inicio is not None else None,
             'estado_estimacion': estado,
             'motivo': motivo,
@@ -32,6 +45,10 @@ def estimar_demora(turno, calculado_en=None):
             or not turno.fecha_hora_creacion <= turno.fecha_hora_arribo <= now):
         return result('SIN_DATOS', 'Falta una hora de llegada válida para este turno.')
 
+    if Turno.objects.filter(medico_id=turno.medico_id, estado=Turno.Estado.EN_ATENCION,
+                            fecha__lt=turno.fecha).exists():
+        return result('SIN_DATOS', 'El médico tiene una consulta anterior todavía en curso. No es posible estimar el tiempo de espera.')
+
     agenda = Turno.objects.filter(medico_id=turno.medico_id, fecha=turno.fecha).exclude(pk=turno.pk)
     en_atencion = list(agenda.filter(estado=Turno.Estado.EN_ATENCION).values(
         'fecha_hora_creacion', 'fecha_hora_arribo', 'fecha_hora_inicio')[:2])
@@ -44,6 +61,7 @@ def estimar_demora(turno, calculado_en=None):
                 <= current['fecha_hora_inicio'] <= now):
             return result('SIN_DATOS', 'La atención en curso tiene horas incompletas o inválidas.')
 
+    # Match the operational agenda's existing (hora, pk) order; do not reprioritize.
     before = Q(hora__lt=turno.hora) | Q(hora=turno.hora, pk__lt=turno.pk)
     presentes = list(agenda.filter(estado=Turno.Estado.PRESENTE).filter(before).values(
         'fecha_hora_creacion', 'fecha_hora_arribo'))
@@ -53,27 +71,21 @@ def estimar_demora(turno, calculado_en=None):
 
     remaining = timedelta(0)
     if en_atencion or presentes:
-        observed = ExpressionWrapper(F('fecha_hora_cierre') - F('fecha_hora_inicio'),
-                                     output_field=DurationField())
-        mean = Turno.objects.filter(
-            medico_id=turno.medico_id, estado=Turno.Estado.COMPLETADO,
-            fecha_hora_inicio__isnull=False, fecha_hora_cierre__isnull=False,
-            fecha_hora_inicio__gte=F('fecha_hora_creacion'),
-            fecha_hora_cierre__gt=F('fecha_hora_inicio'),
-            fecha_hora_cierre__lte=now,
-        ).aggregate(duration=Avg(observed))['duration']
         if mean is None:
             return result('SIN_DATOS', 'No hay duraciones de atención observadas válidas para este médico.')
         if en_atencion:
             elapsed = now - en_atencion[0]['fecha_hora_inicio']
             if elapsed >= mean:
-                return result('SIN_DATOS', 'La atención en curso superó la duración observada; no es posible estimar cuánto falta.')
+                return result('CONSULTA_DEMORADA', 'La consulta anterior alcanzó o superó el promedio histórico. El tiempo restante es indeterminado.')
             remaining = mean - elapsed
         remaining += len(presentes) * mean
 
     earliest = max(scheduled, now + remaining)
     minutes = max(0, ceil((earliest - scheduled).total_seconds() / 60))
     estimated_start = scheduled + timedelta(minutes=minutes)
+    # Queue wait is independent of the scheduled time. Keep legacy delay fields compatible.
+    wait_minutes = ceil(remaining.total_seconds() / 60) if mean is not None else None
+    reason = ('No hay duraciones de atención observadas válidas para este médico.' if mean is None
+              else 'Espera aproximada basada en los pacientes presentes y la consulta en curso. Estimación informativa sujeta a cambios.')
     return result('ESTIMADA' if minutes else 'SIN_DEMORA',
-                  'Estimación informativa basada en la actividad de esta agenda; puede cambiar.',
-                  minutes, estimated_start)
+                  reason, minutes, estimated_start, espera=wait_minutes)

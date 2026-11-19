@@ -110,7 +110,7 @@ class ReprogramacionAPITests(APITestCase):
         self.assertTrue(detail.data['vigente']); self.assertFalse(detail.data['reserva_garantizada'])
 
     def test_new_date_required_strict_and_no_arbitrary_limit(self):
-        for changes in ({'nueva_fecha':None},{'nueva_fecha':self.day.isoformat()}, {'turnos':[]},
+        for changes in ({'nueva_fecha':None}, {'turnos':[]},
                         {'turnos':[True]},{'turnos':[str(self.turn.pk)]},{'turnos':[self.turn.pk,self.turn.pk]},
                         {'prioridad':'ALTA'},{'hora_fin':'08:00'},{'estado':'PENDIENTE'}):
             self.assertEqual(self.process(self.data(**changes)).status_code,400)
@@ -118,6 +118,29 @@ class ReprogramacionAPITests(APITestCase):
         self.assertEqual(self.process(data).status_code,400)
         from .serializers import ReprogramacionSerializer
         self.assertTrue(ReprogramacionSerializer(data=self.data(turnos=list(range(1,102)))).is_valid())
+
+    def _same_day(self, role):
+        self.login(role)
+        inside = Disponibilidad.objects.create(medico=self.doctor, fecha=self.day,
+            hora_inicio=time(9,30), hora_fin=time(9,50))
+        outside = Disponibilidad.objects.create(medico=self.doctor, fecha=self.day,
+            hora_inicio=time(10), hora_fin=time(10,40))
+        result = self.process(self.data(nueva_fecha=self.day.isoformat()))
+        self.assertEqual(result.status_code, 201, result.data)
+        proposal = Propuesta.objects.get()
+        self.assertEqual((proposal.fecha_destino, proposal.disponibilidad_destino_id), (self.day, outside.pk))
+        inside.refresh_from_db(); outside.refresh_from_db()
+        self.assertEqual((inside.estado, outside.estado), ('BLOQUEADO', 'DISPONIBLE'))
+        self.assertEqual(self.answer(proposal).status_code, 200)
+        self.turn.refresh_from_db()
+        self.assertEqual((self.turn.fecha, self.turn.hora, self.turn.duracion_turno, self.turn.estado),
+                         (self.day, time(10), 40, 'RESERVADO'))
+
+    def test_same_day_secretary_uses_automatic_assignment_outside_scope(self):
+        self._same_day('SECRETARIA')
+
+    def test_same_day_doctor_uses_automatic_assignment_outside_scope(self):
+        self._same_day('MEDICO')
 
     def test_only_exact_date_no_fallback_with_zero_capacity(self):
         self.destination.fecha=self.new_day+timedelta(days=1); self.destination.save()

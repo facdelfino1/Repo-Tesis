@@ -205,4 +205,5 @@ class MigracionCierreTests(TransactionTestCase):
             self.assertIsNone(migrated.cerrado_por_id)
             self.assertEqual((migrated.estado, migrated.fecha_hora_cierre), ('COMPLETADO', closed))
         finally:
-            MigrationExecutor(connection).migrate(new)
+            executor = MigrationExecutor(connection)
+            executor.migrate(executor.loader.graph.leaf_nodes())

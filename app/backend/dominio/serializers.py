@@ -16,7 +16,7 @@ class UsuarioSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Usuario
-        fields = ("id", "email", "nombre", "apellido", "dni", "telefono", "rol", "is_active", "perfil")
+        fields = ("id", "email", "nombre", "apellido", "dni", "telefono", "fecha_nacimiento", "rol", "is_active", "perfil")
         read_only_fields = fields
 
     def get_perfil(self, user):
@@ -40,6 +40,81 @@ def check_password_policy(password, user):
         raise serializers.ValidationError(error.messages) from error
 
 
+class PerfilPersonalSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Usuario
+        fields = ("nombre", "apellido", "telefono")
+
+    def to_internal_value(self, data):
+        if not isinstance(data, Mapping):
+            raise serializers.ValidationError({"detail": "Envíe los datos del perfil como un objeto."})
+        forbidden = set(data) - set(self.fields)
+        if forbidden:
+            raise serializers.ValidationError({key: "Este campo no se modifica desde Mi perfil." for key in sorted(forbidden)})
+        return super().to_internal_value(data)
+
+    def validate_telefono(self, value):
+        if not value.isascii() or not value.isdecimal():
+            raise serializers.ValidationError("Ingrese un teléfono numérico.")
+        return value
+
+    def update(self, instance, validated_data):
+        data = dict(validated_data)
+        obra_social = data.pop("obra_social", None)
+        try:
+            with transaction.atomic():
+                for key, value in data.items():
+                    setattr(instance, key, value)
+                if data:
+                    instance.save(update_fields=list(data))
+                if obra_social is not None:
+                    profile = instance.paciente
+                    profile.obra_social = obra_social
+                    profile.save(update_fields=["obra_social"])
+        except IntegrityError as error:
+            raise serializers.ValidationError({"detail": "No se pudieron guardar los datos del perfil."}) from error
+        return instance
+
+    def to_representation(self, instance):
+        return UsuarioSerializer(instance).data
+
+
+class PerfilPacienteSerializer(PerfilPersonalSerializer):
+    obra_social = serializers.CharField(max_length=150, required=False, allow_blank=True, write_only=True)
+
+    class Meta(PerfilPersonalSerializer.Meta):
+        fields = PerfilPersonalSerializer.Meta.fields + ("obra_social",)
+
+
+class PacienteAdministracionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Usuario
+        fields = ("is_active",)
+
+    def to_internal_value(self, data):
+        if not isinstance(data, Mapping):
+            raise serializers.ValidationError({"detail": "Envíe el estado de la cuenta como un objeto."})
+        forbidden = set(data) - {"is_active"}
+        if forbidden:
+            raise serializers.ValidationError({key: "Solo se permite cambiar la activación del paciente." for key in sorted(forbidden)})
+        return super().to_internal_value(data)
+
+    def validate(self, attrs):
+        if "is_active" not in attrs:
+            raise serializers.ValidationError({"is_active": "Este campo es obligatorio."})
+        if attrs["is_active"] and not has_valid_role_profile(self.instance):
+            raise serializers.ValidationError({"is_active": "El perfil del paciente requiere revisión administrativa."})
+        return attrs
+
+    def update(self, instance, validated_data):
+        instance.is_active = validated_data["is_active"]
+        instance.save(update_fields=["is_active"])
+        return instance
+
+    def to_representation(self, instance):
+        return UsuarioSerializer(instance).data
+
+
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True, trim_whitespace=False)
@@ -49,13 +124,14 @@ class LoginSerializer(serializers.Serializer):
 
 
 class RegistroPacienteSerializer(serializers.ModelSerializer):
+    fecha_nacimiento = serializers.DateField(required=True, allow_null=False, input_formats=['%Y-%m-%d'])
     password = serializers.CharField(write_only=True, trim_whitespace=False)
     password_confirmacion = serializers.CharField(write_only=True, trim_whitespace=False)
     obra_social = serializers.CharField(max_length=150, required=False, allow_blank=True)
 
     class Meta:
         model = Usuario
-        fields = ("nombre", "apellido", "dni", "telefono", "email", "obra_social",
+        fields = ("nombre", "apellido", "dni", "telefono", "email", "obra_social", "fecha_nacimiento",
                   "password", "password_confirmacion")
         extra_kwargs = {"email": {"validators": []}}
 
@@ -66,6 +142,11 @@ class RegistroPacienteSerializer(serializers.ModelSerializer):
         if forbidden:
             raise serializers.ValidationError({key: "Campo no permitido." for key in sorted(forbidden)})
         return super().to_internal_value(data)
+
+    def validate_fecha_nacimiento(self, value):
+        if value is not None and value > timezone.localdate():
+            raise serializers.ValidationError("Ingrese una fecha de nacimiento válida, no futura.")
+        return value
 
     def validate_email(self, value):
         value = value.strip().lower()
@@ -152,6 +233,7 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
 
 class UsuarioInternoSerializer(serializers.ModelSerializer):
+    fecha_nacimiento = serializers.DateField(required=False, allow_null=False, input_formats=["%Y-%m-%d"])
     password = serializers.CharField(write_only=True, required=False, trim_whitespace=False)
     rol = serializers.ChoiceField(choices=(Usuario.Rol.MEDICO, Usuario.Rol.SECRETARIA))
     matricula = serializers.CharField(max_length=50, required=False, write_only=True)
@@ -161,7 +243,7 @@ class UsuarioInternoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Usuario
         fields = ("id", "email", "nombre", "apellido", "dni", "telefono", "rol", "is_active",
-                  "password", "matricula", "especialidad", "legajo")
+                  "password", "matricula", "especialidad", "legajo", "fecha_nacimiento")
         read_only_fields = ("id",)
         extra_kwargs = {"email": {"validators": []}}
 
@@ -170,9 +252,17 @@ class UsuarioInternoSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"detail": "Envíe los datos de una cuenta como un objeto."})
         unknown = set(data) - set(self.fields)
         forbidden = unknown | (set(data) & {"id"})
+        # Birth is creation-only until administrative editing is explicitly scoped.
+        if self.instance is not None and "fecha_nacimiento" in data:
+            forbidden.add("fecha_nacimiento")
         if forbidden:
             raise serializers.ValidationError({key: "Campo no permitido." for key in sorted(forbidden)})
         return super().to_internal_value(data)
+
+    def validate_fecha_nacimiento(self, value):
+        if value > timezone.localdate():
+            raise serializers.ValidationError("Ingrese una fecha de nacimiento válida, no futura.")
+        return value
 
     def validate_email(self, value):
         value = value.strip().lower()
@@ -199,7 +289,7 @@ class UsuarioInternoSerializer(serializers.ModelSerializer):
         incompatible = ("legajo",) if role == Usuario.Rol.MEDICO else ("matricula", "especialidad")
         errors = {key: "Este dato no corresponde al rol seleccionado." for key in incompatible if key in attrs}
         if not user:
-            errors.update({key: "Este campo es obligatorio." for key in (*required, "password") if key not in attrs})
+            errors.update({key: "Este campo es obligatorio." for key in (*required, "password", "fecha_nacimiento") if key not in attrs})
         model, field, relation = (Medico, "matricula", "medico") if role == Usuario.Rol.MEDICO else (Secretaria, "legajo", "secretaria")
         if field in attrs:
             existing = model.objects.filter(**{field: attrs[field]})
@@ -360,13 +450,28 @@ class TurnoConsultaSerializer(serializers.ModelSerializer):
     horario_futuro = serializers.SerializerMethodField()
     prioridad = serializers.SerializerMethodField()
     triaje = serializers.SerializerMethodField()
+    nacimiento_atendido = serializers.SerializerMethodField()
+
+    def get_fields(self):
+        fields = super().get_fields()
+        view = self.context.get('view')
+        request = self.context.get('request')
+        # Only the authorized professional detail needs this demographic block.
+        if not (view and view.action == 'retrieve' and view.kwargs.get('medico_pk')
+                and request and request.user.rol in (Usuario.Rol.MEDICO, Usuario.Rol.SECRETARIA)):
+            fields.pop('nacimiento_atendido')
+        return fields
+
+    def get_nacimiento_atendido(self, turno):
+        from .nacimiento import nacimiento_atendido
+        return nacimiento_atendido(turno)
 
     class Meta:
         from .models import Turno
         model = Turno
-        fields = ('id_turno', 'paciente', 'medico', 'disponibilidad', 'fecha', 'hora', 'estado',
+        fields = ('id_turno', 'paciente', 'medico', 'disponibilidad', 'fecha', 'hora', 'estado', 'origen',
                   'duracion_turno', 'fecha_hora_creacion', 'fecha_hora_arribo', 'fecha_hora_inicio',
-                  'fecha_hora_cierre', 'cerrado_por', 'prioridad', 'triaje', 'asignacion_vigente', 'horario_futuro', 'paciente_detalle')
+                  'fecha_hora_cierre', 'cerrado_por', 'prioridad', 'triaje', 'asignacion_vigente', 'horario_futuro', 'paciente_detalle', 'nacimiento_atendido')
         read_only_fields = fields
 
     def get_asignacion_vigente(self, turno):

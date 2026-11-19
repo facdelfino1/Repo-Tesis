@@ -2,8 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
+import * as patientHistory from '../assets/js/features/appointments/patient-history-service.js';
+import { formatAttentionDuration } from '../assets/js/features/appointments/attention-duration.js';
+import { bindTriageNotice } from '../assets/js/features/triage/triage-ui.js';
 
 class Element extends EventTarget {
+    get elements() { return { namedItem: name => this.querySelector(`[name="${name}"]`) }; }
     value = ''; disabled = false; innerHTML = ''; textContent = ''; children = new Map();
     classList = { toggle() {}, add() {}, remove() {}, contains() { return false; } };
     replaceChildren(...options) { this.options = options; this.value = options[0]?.value || ''; }
@@ -32,10 +36,14 @@ function dom() {
 }
 async function load(path, globals = {}) {
     const source = await readFile(new URL('../assets/js/features/' + path, import.meta.url), 'utf8');
-    const context = vm.createContext({ console, URL, Map, Set, Date, document: dom(),
+    const context = vm.createContext({ console, URL, Map, Set, Date, patientHistory, formatAttentionDuration, document: dom(),
         Option: class { constructor(text, value) { this.text = text; this.value = String(value); } },
         getBootstrapModal: () => null, getCurrentUser: () => ({ nombre: 'Test', apellido: 'User' }),
-        formatDate: value => value, escapeHtml: value => value, esc: value => value,
+        createActionConfirmation: () => ({ open: async () => false }),
+        createPatientDelay: () => ({ updateTurn: async () => {}, dispose() {} }),
+        bindTriageNotice: () => () => {},
+        bindPediatricCleanup: () => () => {}, listAdminPatients: async () => [],
+        formatDate: value => value, validateBirthDate: () => '', escapeHtml: value => value, esc: value => value,
         errorMessage: () => 'Error', priorityClass: () => '', pageMessage() {}, ...globals });
     // Execute the actual module functions with controlled API/DOM dependencies.
     const module = new vm.SourceTextModule(source.replace(/^import .*;\r?\n/gm, ''), { context });
@@ -84,6 +92,36 @@ test('secretary management wires both selectors to the shared catalog', async ()
     assert.equal(snapshots[0], snapshot); assert.equal(snapshots[1], snapshot);
 });
 
+test('secretary booking wires the shared notice to its specialty and modal reopening', async () => {
+    const document = dom(), form = document.getElementById('asignarTurnoForm');
+    const specialty = document.getElementById('asignarEspecialidad');
+    const notice = form.querySelector('[data-triage-notice]'), modal = new Element();
+    const classes = new Set(['d-none']);
+    notice.classList.toggle = (name, force) => { if (force) classes.add(name); else classes.delete(name); };
+    form.closest = () => modal;
+    const agenda = await load('appointments/agenda-ui.js', {
+        document, bindTriageNotice, getCurrentUser: () => ({ rol: 'SECRETARIA' }),
+        loadDoctorCatalog: async () => ({ specialties: [], doctors: [] }),
+        bindDoctorSelectors: async () => {}, initPatientSearch: () => ({}),
+        updateTriageQuestionnaire() {}, todayInputValue: () => '2030-01-01'
+    });
+    await agenda.initOperationalAgenda('management');
+    assert.equal(classes.has('d-none'), true);
+    for (const [value, name, hidden] of [
+        ['1', 'Clínica Médica', false], ['2', 'Cardiología', true],
+        ['3', 'Pediatría', false], ['', 'Seleccione una especialidad', true]
+    ]) {
+        specialty.value = value; specialty.selectedOptions = [{ textContent: name }];
+        specialty.dispatchEvent(new Event('change'));
+        assert.equal(classes.has('d-none'), hidden);
+    }
+    specialty.value = '1'; specialty.selectedOptions = [{ textContent: 'Clínica Médica' }];
+    specialty.dispatchEvent(new Event('change'));
+    specialty.value = '';
+    modal.dispatchEvent(new Event('show.bs.modal'));
+    assert.equal(classes.has('d-none'), true);
+});
+
 test('patient proposals reuse even an empty initial snapshot, then refresh and writes fetch again', async () => {
     let reads = 0, proposalReads = 0, writes = 0, updates = 0;
     const document = dom();
@@ -107,13 +145,14 @@ test('patient proposals reuse even an empty initial snapshot, then refresh and w
 
 for (const [name, initializer] of [['Dashboard', 'initPatientDashboard'], ['Mis turnos', 'initPatientTurns']]) {
     test(`patient ${name} passes its only initial turns request to proposals`, async () => {
-        let reads = 0, shared;
+        let reads = 0, shared, filterByDoctor;
         const patient = await load('appointments/patient-ui.js', {
             getPatientTurns: async () => { reads++; return []; },
-            initPatientProposals: async options => { shared = options.initialTurns; return { refresh: async () => {} }; }
+            initPatientProposals: async options => { shared = options.initialTurns; filterByDoctor = options.filterByDoctor; return { refresh: async () => {} }; }
         });
         await patient[initializer]();
         assert.equal(reads, 1); assert.ok(Array.isArray(shared)); assert.equal(shared.length, 0);
+        assert.equal(!!filterByDoctor, name === 'Dashboard');
     });
 }
 
@@ -121,12 +160,13 @@ test('admin catalogs and users start together without a duplicate initial read',
     const calls = [], specialties = deferred(), users = deferred();
     const module = await load('users/users-ui.js', {
         getAdminSpecialties: () => { calls.push('specialties'); return specialties.promise; },
-        listInternalUsers: () => { calls.push('users'); return users.promise; }
+        listInternalUsers: () => { calls.push('users'); return users.promise; },
+        listAdminPatients: async () => { calls.push('patients'); return []; }
     });
     const initialization = module.initUserManagement();
-    assert.deepEqual(calls, ['specialties', 'users']);
+    assert.deepEqual(calls, ['specialties', 'users', 'patients']);
     specialties.resolve([]); users.resolve([]); await initialization;
-    assert.deepEqual(calls, ['specialties', 'users']);
+    assert.deepEqual(calls, ['specialties', 'users', 'patients']);
 });
 
 test('patient cancellation still reloads turns and proposals after initialization reuse', async () => {

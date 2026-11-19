@@ -27,8 +27,11 @@ class FrontendDeliveryTests(SimpleTestCase):
         for path in ('../backend/.env','%2e%2e/backend/.env','missing.html'):
             self.assertEqual(self.client.get('/frontend/'+path).status_code,404)
 
-    def test_reset_email_links_to_form_and_keeps_api_instructions(self):
+    def test_reset_email_links_to_form_without_api_instructions(self):
         body=render_to_string('dominio/password_reset_email.txt',dict(protocol='https',domain='example.test',
             reset_path=reverse('auth-password-reset-confirm'),reset_page_path='/frontend/pages/auth/recuperar-password.html',uid='uid',token='token'))
         self.assertIn('https://example.test/frontend/pages/auth/recuperar-password.html?uid=uid&token=token',body)
-        self.assertIn('https://example.test/api/auth/password-reset/confirm/',body)
+        self.assertNotIn('/api/auth/password-reset/confirm/',body)
+        self.assertNotIn('Para completar la recuperación',body)
+        self.assertNotIn('Identificador:',body)
+        self.assertNotIn('Token:',body)

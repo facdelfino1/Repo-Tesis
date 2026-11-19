@@ -1,6 +1,21 @@
 import { escapeHtml } from "../../core/helpers.js";
+import { formatDate } from "../../core/formatters.js";
 import { priorityClass } from "../../components/badges.js";
-import { validateTriageInput } from "./triage-service.js";
+import { validateTriageInput, hasTriageSpecialty } from "./triage-service.js";
+
+export function bindTriageNotice(form, specialtySelect) {
+    const notice = form.querySelector('[data-triage-notice]');
+    if (!notice) return () => {};
+    const update = () => {
+        const specialty = specialtySelect.value ? specialtySelect.selectedOptions[0]?.textContent : '';
+        notice.classList.toggle('d-none', !hasTriageSpecialty(specialty));
+    };
+    specialtySelect.addEventListener('change', update);
+    form.addEventListener('reset', () => queueMicrotask(update));
+    form.closest('.modal')?.addEventListener('show.bs.modal', update);
+    update();
+    return update;
+}
 
 export function getRadioValue(form, name) {
     const checkedOption = form.querySelector(`input[name="${name}"]:checked`);
@@ -72,7 +87,7 @@ export function renderResult(prioridad, { resultBox, resultColor }) {
     resultColor.className = "badge " + priorityClass(prioridad);
 }
 
-export function renderTriageResponses(responses, specialty) {
+export function renderTriageResponses(responses, specialty, { includeBirth = true } = {}) {
     if (!responses || typeof responses !== "object") {
         return "<p class=\"text-secondary mb-0\">Sin respuestas registradas.</p>";
     }
@@ -83,6 +98,7 @@ export function renderTriageResponses(responses, specialty) {
         vomitosRepetidos: "Vómitos repetidos"
     } : { fiebre: "Fiebre", dificultadRespirar: "Dificultad respiratoria", dolor: "Dolor (0–10)" };
     const aliases = { dificultadRespirar: "dificultad_respiratoria", dolor: "rango_dolor" };
+    if (!includeBirth) delete fields.fechaNacimiento;
     const states = { alerta_normal: "Alerta / normal", decaido_responde_normalmente: "Decaído, responde normalmente",
         letargico_muy_somnoliento: "Letárgico / muy somnoliento", pobre_respuesta_estimulos: "Pobre respuesta a estímulos",
         dificultad_despertar: "Dificultad para despertar" };
@@ -90,7 +106,8 @@ export function renderTriageResponses(responses, specialty) {
         <ul class="mb-0">
             ${Object.entries(fields).map(([key, label]) => {
                 const value = responses[key] ?? responses[aliases[key]];
-                const display = value === true || value === "si" ? "Sí" : value === false || value === "no" ? "No"
+                const display = key === 'fechaNacimiento' ? (value ? formatDate(value, '-') : 'No registrada')
+                    : value === true || value === "si" ? "Sí" : value === false || value === "no" ? "No"
                     : states[value] ?? value ?? "—";
                 return `<li><span class="text-secondary">${escapeHtml(label)}:</span> ${escapeHtml(String(display))}</li>`;
             }).join("")}

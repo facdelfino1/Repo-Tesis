@@ -24,10 +24,10 @@ from rest_framework.views import APIView
 
 from .agenda import create_blocks, delete_block, set_blocked, update_block
 from .models import Disponibilidad, Especialidad, Medico, Usuario
-from .permissions import IsActiveUser, IsAdministrador, IsGestorAgenda, IsLectorAgenda, has_valid_role_profile
+from .permissions import IsActiveUser, IsAdministrador, IsPaciente, IsMedico, IsSecretaria, IsGestorAgenda, IsLectorAgenda, has_valid_role_profile
 from .serializers import (EspecialidadSerializer, LoginSerializer, RegistroPacienteSerializer, PasswordChangeSerializer,
                           PasswordResetConfirmSerializer, PasswordResetRequestSerializer,
-                          UsuarioInternoSerializer, UsuarioSerializer)
+                          UsuarioInternoSerializer, UsuarioSerializer, PerfilPersonalSerializer, PerfilPacienteSerializer, PacienteAdministracionSerializer)
 from .serializers import (DisponibilidadConsultaSerializer, DisponibilidadEscrituraSerializer,
                           DisponibilidadFiltroSerializer, DisponibilidadLoteSerializer,
                           MedicoConsultaSerializer, MedicoFiltroSerializer)
@@ -85,8 +85,22 @@ class LogoutView(APIView):
 
 
 class MeView(APIView):
+    def get_permissions(self):
+        return [(IsPaciente | IsMedico | IsSecretaria)()] if self.request.method == "PATCH" else super().get_permissions()
+
     def get(self, request):
         return Response(UsuarioSerializer(request.user).data)
+
+    def patch(self, request):
+        with transaction.atomic():
+            user = Usuario.objects.select_for_update().get(pk=request.user.pk)
+            if not user.is_active or user.rol not in (Usuario.Rol.PACIENTE, Usuario.Rol.MEDICO, Usuario.Rol.SECRETARIA) or not has_valid_role_profile(user):
+                raise PermissionDenied()
+            serializer_class = PerfilPacienteSerializer if user.rol == Usuario.Rol.PACIENTE else PerfilPersonalSerializer
+            serializer = serializer_class(user, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response(serializer.data)
 
 
 class PasswordChangeView(APIView):
@@ -123,6 +137,7 @@ class PasswordResetRequestView(APIView):
         form.save(domain_override=origin.netloc, use_https=origin.scheme == "https",
                   subject_template_name="dominio/password_reset_subject.txt",
                   email_template_name="dominio/password_reset_email.txt",
+                  html_email_template_name="dominio/password_reset_email.html",
                   extra_email_context={"reset_path": reverse("auth-password-reset-confirm"),
                                        "reset_page_path": "/frontend/pages/auth/recuperar-password.html"})
         return Response({"detail": "Si la cuenta permite recuperación, recibirá un correo con las instrucciones."})
@@ -168,6 +183,23 @@ class UsuarioInternoViewSet(mixins.CreateModelMixin, mixins.ListModelMixin,
     queryset = Usuario.objects.filter(rol__in=[Usuario.Rol.MEDICO, Usuario.Rol.SECRETARIA]).select_related(
         "paciente", "medico__especialidad", "secretaria"
     ).order_by("id")
+
+
+class PacienteAdministracionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
+                                    mixins.UpdateModelMixin, viewsets.GenericViewSet):
+    permission_classes = [IsAdministrador]
+    serializer_class = PacienteAdministracionSerializer
+    http_method_names = ["get", "patch", "head", "options"]
+    queryset = Usuario.objects.filter(rol=Usuario.Rol.PACIENTE).select_related("paciente").order_by("id")
+
+    def update(self, request, *args, **kwargs):
+        target = self.get_object()
+        with transaction.atomic():
+            user = Usuario.objects.select_for_update().get(pk=target.pk, rol=Usuario.Rol.PACIENTE)
+            serializer = self.get_serializer(user, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response(serializer.data)
 
 
 class EspecialidadViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
@@ -446,6 +478,18 @@ class ReprogramacionView(APIView):
         serializer.is_valid(raise_exception=True)
         result = reprogramar(request.user, medico_pk, **serializer.validated_data)
         return Response(_resultado_reprogramacion(result), status=201 if result['propuestas'] else 200)
+
+
+class ReprogramacionFechasView(ReprogramacionView):
+    http_method_names = ['get', 'head', 'options']
+
+    def get(self, request, medico_pk):
+        from .serializers import ReprogramacionAlcanceSerializer
+        from .reprogramacion import fechas_destino
+        medico = self._medico(request, medico_pk)
+        serializer = ReprogramacionAlcanceSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        return Response({'fechas_disponibles': [day.isoformat() for day in fechas_destino(medico, **serializer.validated_data)]})
 
 
 class PropuestaViewSet(viewsets.ReadOnlyModelViewSet):

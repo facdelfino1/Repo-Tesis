@@ -104,6 +104,33 @@ def _slots(medico, nueva_fecha):
     return Disponibilidad.objects.filter(medico=medico, fecha=nueva_fecha, estado='DISPONIBLE').order_by('fecha', 'hora_inicio', 'pk')
 
 
+def _destinos_utilizables(medico, candidates, offered, *, fecha_original, hora_inicio, hora_fin):
+    """Shared by the read-only date preview and the locked execution."""
+    for block in candidates:
+        if block.medico_id != medico.pk or block.pk in offered:
+            continue
+        # These blocks will be blocked by this operation, including free ones.
+        if block.fecha == fecha_original and block.hora_inicio < hora_fin and block.hora_fin > hora_inicio:
+            continue
+        try:
+            _available(block)
+        except AgendaConflict:
+            continue
+        yield block
+
+
+def fechas_destino(medico, *, fecha_original, hora_inicio, hora_fin):
+    """Read-only advisory dates; execution must revalidate under the doctor lock."""
+    if not _valid_user(medico.usuario, Usuario.Rol.MEDICO):
+        return []
+    candidates = Disponibilidad.objects.filter(medico=medico,
+        fecha__gte=max(fecha_original, timezone.localdate()), estado='DISPONIBLE').order_by('fecha', 'hora_inicio', 'pk')
+    offered = set(Propuesta.objects.filter(estado='EN_ESPERA').values_list('disponibilidad_destino_id', flat=True))
+    valid = _destinos_utilizables(medico, candidates, offered,
+        fecha_original=fecha_original, hora_inicio=hora_inicio, hora_fin=hora_fin)
+    return sorted({block.fecha for block in valid})
+
+
 def _crear(actor, turno, block, motivo):
     return Propuesta.objects.create(turno=turno, disponibilidad_origen_id=turno.disponibilidad_id,
         fecha_origen=turno.fecha, hora_origen=turno.hora, duracion_origen=turno.duracion_turno,
@@ -114,8 +141,6 @@ def _crear(actor, turno, block, motivo):
 @transaction.atomic
 def reprogramar(actor, medico_id, *, fecha_original, hora_inicio, hora_fin, nueva_fecha, turnos, motivo):
     _fecha(nueva_fecha)
-    if nueva_fecha == fecha_original:
-        raise ValidationError({'nueva_fecha': 'La nueva fecha debe ser distinta de la original.'})
     medico = _gestor(actor, medico_id)
     rows = Turno.objects.filter(pk__in=turnos, medico=medico).select_related('paciente', 'medico__especialidad', 'triaje')
     context = list(rows.order_by('pk'))
@@ -154,16 +179,8 @@ def reprogramar(actor, medico_id, *, fecha_original, hora_inicio, hora_fin, nuev
     if existing:
         raise _seleccion_invalida([p.turno_id for p in existing], 'Hay propuestas abiertas inconsistentes.')
     offered = set(Propuesta.objects.filter(estado='EN_ESPERA').values_list('disponibilidad_destino_id', flat=True))
-    valid = []
-    for candidate in candidates:
-        block = blocks[candidate.pk]
-        if block.pk in offered:
-            continue
-        try:
-            _available(block)
-        except AgendaConflict:
-            continue
-        valid.append(block)
+    valid = list(_destinos_utilizables(medico, (blocks[candidate.pk] for candidate in candidates), offered,
+        fecha_original=fecha_original, hora_inicio=hora_inicio, hora_fin=hora_fin))
     for block in scope:
         current = blocks[block.pk]
         if current.estado == 'DISPONIBLE':

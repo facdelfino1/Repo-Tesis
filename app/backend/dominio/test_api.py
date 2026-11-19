@@ -1,10 +1,12 @@
 import secrets
+from datetime import date, timedelta
 from unittest.mock import patch
 
 from django.contrib.auth.hashers import identify_hasher
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APIClient, APITestCase, APIRequestFactory
 
 from .models import Especialidad, Medico, Paciente, Secretaria, Usuario
@@ -58,7 +60,8 @@ class IdentityAPITests(APITestCase):
 
     def payload(self, role=Usuario.Rol.MEDICO):
         data = {"email": "nueva@example.com", "password": "Aa1!" + secrets.token_urlsafe(24), "nombre": "Nueva",
-                "apellido": "Cuenta", "dni": "99999999", "telefono": "3515559999", "rol": role}
+                "apellido": "Cuenta", "dni": "99999999", "telefono": "3515559999", "rol": role,
+                "fecha_nacimiento": "1992-02-29"}
         if role == Usuario.Rol.MEDICO:
             data.update(matricula="MP-NEW", especialidad=self.especialidad.pk)
         else:
@@ -192,6 +195,8 @@ class IdentityAPITests(APITestCase):
             response = self.post("usuario-interno-list", data)
             self.assertEqual(response.status_code, 201, response.data)
             user = Usuario.objects.get(pk=response.data["id"])
+            self.assertEqual(user.fecha_nacimiento, date(1992, 2, 29))
+            self.assertEqual(response.data["fecha_nacimiento"], "1992-02-29")
             self.assertTrue(user.check_password(data["password"]))
             self.assertNotEqual(user.password, data["password"])
             self.assertEqual(identify_hasher(user.password).algorithm, "pbkdf2_sha256")
@@ -201,6 +206,48 @@ class IdentityAPITests(APITestCase):
             self.assert_safe(response.data)
             client = APIClient(enforce_csrf_checks=True)
             self.assertEqual(self.post("auth-login", {"email": data["email"], "password": data["password"]}, client).status_code, 200)
+
+    def test_internal_birth_required_real_and_not_future_for_both_roles(self):
+        self.login()
+        before = Usuario.objects.count()
+        for role in (Usuario.Rol.MEDICO, Usuario.Rol.SECRETARIA):
+            for value in (None, "", "invalid", "2025-02-29", "2000-02-30", "0000-01-01",
+                          (timezone.localdate() + timedelta(days=1)).isoformat(), "missing"):
+                with self.subTest(role=role, value=value):
+                    data = self.payload(role)
+                    if value == "missing":
+                        data.pop("fecha_nacimiento")
+                    else:
+                        data["fecha_nacimiento"] = value
+                    response = self.post("usuario-interno-list", data)
+                    self.assertEqual(response.status_code, 400, response.data)
+                    self.assertIn("fecha_nacimiento", response.data)
+                    self.assertEqual(Usuario.objects.count(), before)
+
+    def test_authenticated_birth_for_all_roles_and_historical_nulls(self):
+        for role in Usuario.Rol.values:
+            with self.subTest(role=role):
+                client = APIClient(enforce_csrf_checks=True)
+                response = self.login(role, client)
+                self.assertIsNone(response.data["usuario"]["fecha_nacimiento"])
+                self.assertIsNone(client.get(reverse("auth-me")).data["fecha_nacimiento"])
+                Usuario.objects.filter(pk=self.users[role].pk).update(fecha_nacimiento=date(1992, 2, 29))
+                self.assertEqual(client.get(reverse("auth-me")).data["fecha_nacimiento"], "1992-02-29")
+                self.assertEqual(self.login(role, client).data["usuario"]["fecha_nacimiento"], "1992-02-29")
+
+    def test_internal_edits_preserve_historical_null_and_registered_birth(self):
+        self.login()
+        for role in (Usuario.Rol.MEDICO, Usuario.Rol.SECRETARIA):
+            user = self.users[role]
+            for birth in (None, date(1992, 2, 29)):
+                with self.subTest(role=role, birth=birth):
+                    Usuario.objects.filter(pk=user.pk).update(fecha_nacimiento=birth)
+                    self.assertEqual(self.admin_patch(user, {"telefono": "123456789"}).status_code, 200)
+                    user.refresh_from_db()
+                    self.assertEqual(user.fecha_nacimiento, birth)
+                    self.assertEqual(self.admin_patch(user, {"fecha_nacimiento": "2000-01-01"}).status_code, 400)
+                    user.refresh_from_db()
+                    self.assertEqual(user.fecha_nacimiento, birth)
 
     def test_admin_lists_only_internal_accounts_and_specialties(self):
         self.login()

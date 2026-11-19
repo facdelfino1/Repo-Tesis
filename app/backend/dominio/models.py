@@ -22,6 +22,7 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     apellido = models.CharField(max_length=100)
     dni = models.CharField(max_length=20)
     telefono = models.CharField(max_length=30)
+    fecha_nacimiento = models.DateField(null=True, blank=True)
     rol = models.CharField(max_length=20, choices=Rol.choices)
     is_active = models.BooleanField(default=True)
     intentos_fallidos = models.PositiveSmallIntegerField(default=0, editable=False)
@@ -114,6 +115,11 @@ class Disponibilidad(models.Model):
 
 
 class Turno(models.Model):
+    class Origen(models.TextChoices):
+        PACIENTE = "PACIENTE", "Paciente"
+        SECRETARIA = "SECRETARIA", "Secretaría"
+        SISTEMA = "SISTEMA", "Sistema"
+
     class Estado(models.TextChoices):
         RESERVADO = "RESERVADO", "Reservado"
         PENDIENTE = "PENDIENTE", "Pendiente"
@@ -127,6 +133,7 @@ class Turno(models.Model):
     fecha = models.DateField()
     hora = models.TimeField()
     estado = models.CharField(max_length=12, choices=Estado.choices, default=Estado.RESERVADO)
+    origen = models.CharField(max_length=10, choices=Origen.choices, null=True, blank=True, editable=False)
     duracion_turno = models.PositiveSmallIntegerField(validators=[MinValueValidator(1)], help_text="Minutos del turno/agenda; independiente de la prioridad.")
     fecha_hora_creacion = models.DateTimeField(default=timezone.now, editable=False)
     fecha_hora_arribo = models.DateTimeField(null=True, blank=True)

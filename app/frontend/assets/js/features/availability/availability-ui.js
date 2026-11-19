@@ -2,13 +2,14 @@ import { getBootstrapModal, showModal } from '../../components/modals.js';
 import { request, errorMessage } from '../../core/api.js';
 import { getCurrentUser, pageMessage } from '../../core/session.js';
 import { bindDoctorSelectors, getAvailability } from '../catalog/catalog-service.js';
-import { buildAvailabilityBlocks, isAvailabilityExpired } from './availability-service.js?v=b84-obs09-2';
+import { buildAvailabilityBlocks, isAvailabilityExpired, availabilityToday, filterExistingAvailability } from './availability-service.js?v=availability-date-filter-2';
 import { escapeHtml } from '../../core/helpers.js';
 import { formatDate, timeToMinutes } from '../../core/formatters.js';
 import { updateTriageQuestionnaire } from '../triage/triage-ui.js';
 
 export function availabilityActions(row, now = new Date()) {
-    if (isAvailabilityExpired(row, now)) return 'Horario vencido';
+    if (isAvailabilityExpired(row, now)) return filterExistingAvailability([row], row.fecha, now).length
+        ? 'Horario iniciado' : 'Horario vencido';
     if (row.estado === 'OCUPADO') return 'Sin acciones';
     return `<button type="button" class="btn btn-sm btn-outline-secondary" data-slot="${row.id}" data-operation="${row.estado==='BLOQUEADO'?'desbloquear':'bloquear'}">${row.estado==='BLOQUEADO'?'Desbloquear':'Bloquear'}</button>
             <button type="button" class="btn btn-sm btn-outline-danger" data-slot="${row.id}" data-operation="eliminar">Eliminar</button>`;
@@ -22,42 +23,69 @@ async function initAvailability(doctorMode) {
         :{date:'disponibilidadFecha',start:'disponibilidadHoraInicio',end:'disponibilidadHoraFin'};
     Object.keys(fields).forEach(key=>fields[key]=document.getElementById(fields[key]));
     const table=document.getElementById(doctorMode?'disponibilidadMedicoTabla':'disponibilidadTabla');
+    const filterDate=document.getElementById(doctorMode?'disponibilidadMedicoFiltroFecha':'disponibilidadFiltroFecha');
+    filterDate.min=availabilityToday();
+    filterDate.value='';
     const preview=document.getElementById(doctorMode?'bloquesMedicoPreview':'bloquesPreview');
     const empty=document.getElementById(doctorMode?'bloquesMedicoVacio':'bloquesVacio');
     const message=document.getElementById(doctorMode?'disponibilidadMedicoMensaje':'disponibilidadMensaje');
     const generate=document.getElementById(doctorMode?'generarBloquesMedicoBtn':'generarBloquesBtn');
     let selected=doctorMode?{id:user.perfil.id,nombre:user.nombre,apellido:user.apellido,especialidad:user.perfil.especialidad}:null;
-    let blocks=[], generatedFor=null, sequence=0, expiringRows=[], visibleRows=new Map();
+    let blocks=[], generatedFor=null, sequence=0, expiringRows=[], visibleRows=new Map(), appliedDate='';
     function feedback(text,type='danger'){message.className=`alert alert-${type}`;message.textContent=text;}
     function clearPreview(){blocks=[];generatedFor=null;preview.replaceChildren();empty.classList.remove('d-none');}
-    async function refresh(){
-        const current=++sequence;
-        if(!selected){expiringRows=[];visibleRows.clear();table.innerHTML=`<tr><td colspan="${doctorMode?5:7}">Seleccione un médico para consultar su disponibilidad.</td></tr>`;return;}
-        const doctor=selected;
-        table.innerHTML=`<tr><td colspan="${doctorMode?5:7}">Consultando disponibilidad...</td></tr>`;
-        const rows=await getAvailability(doctor.id);
-        if(current!==sequence)return;
-        const now=new Date();
+    function tableMessage(value){table.innerHTML=`<tr><td colspan="${doctorMode?5:7}">${value}</td></tr>`;}
+    function renderRows(rows,doctor,now=new Date()){
+        rows=filterExistingAvailability(rows,filterDate.value,now);
         visibleRows=new Map(rows.map(row=>[String(row.id),row]));
         expiringRows=rows.filter(row=>!isAvailabilityExpired(row,now));
+        if(!filterDate.value){tableMessage('Seleccione una fecha para consultar la disponibilidad');return;}
         table.innerHTML=rows.length?rows.map(row=>{
             const state={DISPONIBLE:'Disponible',BLOQUEADO:'Bloqueado',OCUPADO:'Ocupado'}[row.estado]||row.estado;
             const actions=availabilityActions(row,now);
             return `<tr data-block-id="${row.id}">${doctorMode?'':`<td>${escapeHtml(doctor.nombre+' '+doctor.apellido)}</td><td>${escapeHtml(doctor.especialidad.nombre)}</td>`}
                 <td>${formatDate(row.fecha)}</td><td>${escapeHtml(row.hora_inicio.slice(0,5))}</td><td>${escapeHtml(row.hora_fin.slice(0,5))}</td><td>${escapeHtml(state)}</td><td>${actions}</td></tr>`;
-        }).join(''):`<tr><td colspan="${doctorMode?5:7}">No hay disponibilidad registrada para este médico.</td></tr>`;
+        }).join(''):`<tr><td colspan="${doctorMode?5:7}">No hay disponibilidad registrada para la fecha seleccionada</td></tr>`;
     }
+    async function refresh(){
+        const current=++sequence;
+        expiringRows=[];visibleRows.clear();
+        filterDate.min=availabilityToday();
+        if(filterDate.value && filterDate.value<filterDate.min)filterDate.value='';
+        appliedDate=filterDate.value;
+        if(!filterDate.value){tableMessage('Seleccione una fecha para consultar la disponibilidad');return;}
+        if(!selected){tableMessage('Seleccione un médico para consultar su disponibilidad.');return;}
+        const doctor=selected,date=filterDate.value;
+        tableMessage('Consultando disponibilidad...');
+        try{
+            const rows=await getAvailability(doctor.id,{fecha:date});
+            if(current!==sequence)return;
+            renderRows(rows,doctor);
+        }catch(error){
+            if(current!==sequence)return;
+            tableMessage('No fue posible consultar la disponibilidad.');
+            throw error;
+        }
+    }
+    async function onDateChange(){
+        if(filterDate.value===appliedDate)return;
+        try{await refresh();}catch(error){feedback(errorMessage(error));}
+    }
+    filterDate.addEventListener('input',onDateChange);
+    filterDate.addEventListener('change',onDateChange);
     // El reloj de la interfaz puede avanzar mientras permanece abierta la tabla.
     setInterval(()=>{
-        if(!expiringRows.length)return;
         const now=new Date();
-        const cells=new Map([...table.querySelectorAll('tr[data-block-id]')].map(tr=>[tr.dataset.blockId,tr.lastElementChild]));
-        expiringRows=expiringRows.filter(row=>{
-            if(!isAvailabilityExpired(row,now))return true;
-            const cell=cells.get(String(row.id));
-            if(cell)cell.textContent='Horario vencido';
-            return false;
-        });
+        filterDate.min=availabilityToday(now);
+        if(filterDate.value && filterDate.value<filterDate.min){
+            filterDate.value='';appliedDate='';++sequence;expiringRows=[];visibleRows.clear();
+            tableMessage('Seleccione una fecha para consultar la disponibilidad');return;
+        }
+        const rows=[...visibleRows.values()];
+        if(filterExistingAvailability(rows,filterDate.value,now).length!==rows.length
+                || expiringRows.some(row=>isAvailabilityExpired(row,now))){
+            renderRows(rows,selected,now);
+        }
     },1000);
     if(!doctorMode){
         await bindDoctorSelectors(document.getElementById('disponibilidadEspecialidad'),document.getElementById('disponibilidadMedico'),async(doctor,error)=>{
@@ -91,8 +119,10 @@ async function initAvailability(doctorMode) {
     });
     table.addEventListener('click',async event=>{
         const button=event.target.closest('[data-operation]');if(!button||!selected)return;
-        if(isAvailabilityExpired(visibleRows.get(button.dataset.slot))){
-            button.closest('td').textContent='Horario vencido';return;
+        const row=visibleRows.get(button.dataset.slot);
+        if(!row)return;
+        if(isAvailabilityExpired(row)){
+            renderRows([...visibleRows.values()],selected);return;
         }
         const operation=button.dataset.operation;
         if(operation==='eliminar'&&!window.confirm('¿Eliminar este bloque de disponibilidad?'))return;

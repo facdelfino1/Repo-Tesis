@@ -1,19 +1,23 @@
 import { request, errorMessage } from '../../core/api.js';
 import { getCurrentUser, pageMessage } from '../../core/session.js';
+import { formatDate } from '../../core/formatters.js?v=profile-birth-20261118-1';
 import { initPasswordToggles } from '../../components/forms.js';
 
 export function initAccountProfile() {
     const form = document.querySelector('form[data-form$="-profile"]');
     if (!form) return;
+    const personalForm = document.querySelector('form[data-form="personal-details"]') || document.getElementById?.('perfilPacienteDatosForm') || form;
     const user = getCurrentUser();
-    const values = { ...user, obraSocial:user.perfil?.obra_social || '', legajo:user.perfil?.legajo || '',
+    const values = { ...user, fecha_nacimiento: user.fecha_nacimiento ? formatDate(user.fecha_nacimiento, '-') : 'No registrada', obra_social:user.perfil?.obra_social || '', obraSocial:user.perfil?.obra_social || '', legajo:user.perfil?.legajo || '',
         matricula:user.perfil?.matricula || '', especialidad:user.perfil?.especialidad?.nombre || '' };
-    form.querySelectorAll('input:not([type="password"])').forEach(input => {
+    personalForm.querySelectorAll('input:not([type="password"])').forEach(input => {
         const key = input.name || Object.keys(values).find(k => input.id.toLowerCase().endsWith(k.toLowerCase()));
         if (key && Object.hasOwn(values,key)) { input.value = values[key]; input.defaultValue = values[key]; }
         input.readOnly = true;
     });
-    pageMessage('Sus datos se consultan desde la cuenta. En esta pantalla puede cambiar su contraseña.', 'info');
+    pageMessage(personalForm === form ? 'Sus datos se consultan desde la cuenta. En esta pantalla puede cambiar su contraseña.'
+        : user.rol === 'PACIENTE' ? 'Puede actualizar su nombre, apellido, teléfono y obra social. El correo electrónico, el DNI y la fecha de nacimiento son de solo lectura.'
+            : 'Puede actualizar su nombre, apellido y teléfono. Los datos identificatorios y profesionales son de solo lectura.', 'info');
     initPasswordToggles(document);
     const submitLabel = form.querySelector('[type="submit"]');
     if (submitLabel) submitLabel.textContent = 'Cambiar contraseña';

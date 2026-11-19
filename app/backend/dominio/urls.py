@@ -4,11 +4,12 @@ from .metricas import MetricasAdminView
 from .triaje_preliminar import TriajePreliminarView
 
 from .views import (CsrfView, EspecialidadViewSet, LoginView, LogoutView, MeView, RegistroPacienteView,
-                    PasswordChangeView, PasswordResetConfirmView, PasswordResetRequestView, UsuarioInternoViewSet,
-                    CatalogoEspecialidadViewSet, DisponibilidadViewSet, MedicoViewSet, TurnoPropioViewSet, TurnoAgendaViewSet, PacienteBusquedaViewSet, ReprogramacionView, PropuestaViewSet, PropuestaAgendaViewSet, PendienteAgendaViewSet)
+                    PasswordChangeView, PasswordResetConfirmView, PasswordResetRequestView, UsuarioInternoViewSet, PacienteAdministracionViewSet,
+                    CatalogoEspecialidadViewSet, DisponibilidadViewSet, MedicoViewSet, TurnoPropioViewSet, TurnoAgendaViewSet, PacienteBusquedaViewSet, ReprogramacionView, ReprogramacionFechasView, PropuestaViewSet, PropuestaAgendaViewSet, PendienteAgendaViewSet)
 
 router = SimpleRouter()
 router.register("admin/usuarios", UsuarioInternoViewSet, basename="usuario-interno")
+router.register("admin/pacientes", PacienteAdministracionViewSet, basename="paciente-administracion")
 router.register("admin/especialidades", EspecialidadViewSet, basename="especialidad")
 router.register("especialidades", CatalogoEspecialidadViewSet, basename="catalogo-especialidad")
 router.register("medicos", MedicoViewSet, basename="medico")
@@ -27,6 +28,7 @@ urlpatterns = [
     path('medicos/<int:medico_pk>/triaje-preliminar/', TriajePreliminarView.as_view(), name='triaje-preliminar'),
     path('admin/metricas/', MetricasAdminView.as_view(), name='admin-metricas'),
     path('medicos/<int:medico_pk>/reprogramacion/afectados/', ReprogramacionView.as_view(http_method_names=['get', 'head', 'options']), name='reprogramacion-afectados'),
+    path('medicos/<int:medico_pk>/reprogramacion/fechas/', ReprogramacionFechasView.as_view(), name='reprogramacion-fechas'),
     path('medicos/<int:medico_pk>/reprogramacion/', ReprogramacionView.as_view(http_method_names=['post', 'options']), name='reprogramacion'),
     path("auth/csrf/", CsrfView.as_view(), name="auth-csrf"),
     path("auth/login/", LoginView.as_view(), name="auth-login"),

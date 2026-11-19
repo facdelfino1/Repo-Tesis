@@ -5,13 +5,15 @@ import { formatDate } from '../../core/formatters.js';
 import { priorityClass } from '../../components/badges.js';
 import { getBootstrapModal, showModal, hideModal } from '../../components/modals.js';
 import { bindDoctorSelectors, getAvailability } from '../catalog/catalog-service.js';
-import { readAnswers, updateTriageQuestionnaire } from '../triage/triage-ui.js';
-import { getPatientTurns, getPatientTurn, getPatientDelay, evaluatePatientTriage, reservePatientTurn, modifyPatientTurn, cancelPatientTurn } from './patient-api.js';
-import { initPatientProposals, openPendingRecovery } from '../rescheduling/rescheduling-ui.js';
+import { readAnswers, updateTriageQuestionnaire, bindTriageNotice } from '../triage/triage-ui.js?v=triage-notice-1';
+import { getPatientTurns, getPatientTurn, evaluatePatientTriage, reservePatientTurn, modifyPatientTurn, cancelPatientTurn } from './patient-api.js';
+import { createPatientDelay } from './patient-delay-ui.js?v=patient-wait-context-1';
+import { initPatientProposals, openPendingRecovery } from '../rescheduling/rescheduling-ui.js?v=patient-proposal-doctor-1';
+import * as patientHistory from './patient-history-service.js?v=patient-history-1';
 
 const labels = { RESERVADO: 'Reservado', PENDIENTE: 'Pendiente', PRESENTE: 'Presente',
     EN_ATENCION: 'En atención', COMPLETADO: 'Completado', CANCELADO: 'Cancelado', AUSENTE: 'Ausente' };
-const activeStates = new Set(['RESERVADO', 'PENDIENTE', 'PRESENTE', 'EN_ATENCION']);
+const activeStates = patientHistory.activeStates;
 const text = (id, value) => { const node = document.getElementById(id); if (node) node.textContent = value; };
 const fullName = doctor => `${doctor.nombre} ${doctor.apellido}`;
 const state = turn => labels[turn.estado] || turn.estado;
@@ -64,10 +66,15 @@ export async function initPatientRequest() {
     const resultPriority = document.getElementById('resultadoPrioridad');
     const resultDate = document.getElementById('resultadoFechaAtencion');
     let selected = null, rows = [], generation = 0, busy = false, consultationVersion = 0;
-    let preview = null, previewRequest = null, previewTimer = null, evaluationVersion = 0;
-    const signature = (doctor, answers, block) => JSON.stringify([doctor.id, block.id, answers]);
+    let preview = null, previewRequest = null, previewTimer = null, evaluationVersion = 0, previewSchedule = 0;
+    let lastQuestionnaireState = null;
+    const signature = (doctor, answers, block) => JSON.stringify([
+        doctor.id, specialtyKey(doctor), answers, specialtyKey(doctor) === 'pediatria' ? block.fecha : null
+    ]);
+    const questionnaireState = () => JSON.stringify([selected?.id, specialtyKey(selected),
+        specialtyKey(selected) ? readAnswers(form, specialtyKey(selected)).respuestas : null]);
     function clearPreview() {
-        ++evaluationVersion; clearTimeout(previewTimer); preview = null; previewRequest = null;
+        ++evaluationVersion; ++previewSchedule; clearTimeout(previewTimer); preview = null; previewRequest = null;
         resultBox.classList.add('d-none'); resultBox.setAttribute('aria-busy', 'false');
         resultPriority.textContent = '—';
         resultDate.textContent = '';
@@ -78,10 +85,25 @@ export async function initPatientRequest() {
         consult.disabled = !selected || busy;
         feedback(triageError, ''); feedback(slotError, '');
     }
+    function renderPreview(doctor, answers, block) {
+        const color = { ALTA: 'danger', MEDIA: 'warning', BAJA: 'success' }[preview.prioridad];
+        resultBox.className = `triage-result rounded-3 p-3 mt-4${color ? ' triage-result-' + color : ''}`;
+        resultPriority.textContent = preview.prioridad ?? 'Sin triaje específico';
+        resultPriority.className = `badge fs-6 px-3 py-2 ${priorityClass(preview.prioridad)}`;
+        const chosen = rows.find(row => row.id === Number(list.querySelector('input:checked')?.value));
+        const sameEvaluation = chosen && signature(doctor, answers, chosen) === preview.key;
+        resultDate.textContent = `${sameEvaluation ? 'Fecha de atención' : 'Fecha de referencia'}: ${formatDate(sameEvaluation ? chosen.fecha : block.fecha)}`;
+        feedback(triageError, '');
+    }
     async function evaluate(doctor, answers, block) {
         if (!specialtyKey(doctor)) return true;
         const key = signature(doctor, answers, block);
-        if (previewRequest?.key === key) return previewRequest.promise;
+        if (preview?.key === key) { renderPreview(doctor, answers, block); return true; }
+        if (previewRequest?.key === key) {
+            const valid = await previewRequest.promise;
+            if (valid && preview?.key === key) renderPreview(doctor, answers, block);
+            return valid && preview?.key === key;
+        }
         const version = ++evaluationVersion;
         resultBox.className = 'triage-result rounded-3 p-3 mt-4';
         resultBox.setAttribute('aria-busy', 'true');
@@ -93,13 +115,7 @@ export async function initPatientRequest() {
                 const result = await evaluatePatientTriage(doctor.id, answers, block.id);
                 if (version !== evaluationVersion) return false;
                 preview = { key, prioridad: result.prioridad };
-                const color = { ALTA: 'danger', MEDIA: 'warning', BAJA: 'success' }[result.prioridad];
-                resultBox.className = `triage-result rounded-3 p-3 mt-4${color ? ' triage-result-' + color : ''}`;
-                resultPriority.textContent = result.prioridad ?? 'Sin triaje específico';
-                resultPriority.className = `badge fs-6 px-3 py-2 ${priorityClass(result.prioridad)}`;
-                const chosen = Number(list.querySelector('input:checked')?.value) === block.id;
-                resultDate.textContent = `${chosen ? 'Fecha de atención' : 'Fecha de referencia'}: ${formatDate(result.fecha_atencion)}`;
-                feedback(triageError, '');
+                renderPreview(doctor, answers, block);
                 return true;
             } catch (error) {
                 if (version !== evaluationVersion) return false;
@@ -119,26 +135,33 @@ export async function initPatientRequest() {
         let answers;
         try { answers = questionnaire(form, specialtyKey(selected)); }
         catch { return; }
-        const doctor = selected;
+        const doctor = selected, scheduled = previewSchedule;
         previewTimer = setTimeout(async () => {
             const version = evaluationVersion;
             try {
                 const available = await getAvailability(doctor.id);
-                if (version !== evaluationVersion || doctor !== selected) return;
+                if (scheduled !== previewSchedule || version !== evaluationVersion || doctor !== selected) return;
                 if (available.length) await evaluate(doctor, answers, available[0]);
             } catch (error) {
-                if (version === evaluationVersion) feedback(triageError, errorMessage(error));
+                if (scheduled === previewSchedule && version === evaluationVersion) feedback(triageError, errorMessage(error));
             }
         }, 300);
     }
     function answersChanged(event) {
         if (busy || !event.target.closest('[data-triage-specialty]')) return;
-        reset(); updateTriageQuestionnaire(form, questionnaireView(selected)); scheduleEvaluation();
+        updateTriageQuestionnaire(form, questionnaireView(selected));
+        const current = questionnaireState();
+        if (current === lastQuestionnaireState) return;
+        lastQuestionnaireState = current;
+        reset(); scheduleEvaluation();
     }
     consult.disabled = true; confirm.disabled = true;
+    const updateTriageNotice = bindTriageNotice(form, document.getElementById('especialidad'));
     await bindDoctorSelectors(document.getElementById('especialidad'), document.getElementById('medico'), (doctor, error) => {
+        updateTriageNotice();
         selected = doctor; reset(); consult.disabled = !doctor || busy;
         updateTriageQuestionnaire(form, questionnaireView(doctor));
+        lastQuestionnaireState = questionnaireState();
         if (error) pageMessage(errorMessage(error), 'danger');
         else scheduleEvaluation();
     });
@@ -167,7 +190,7 @@ export async function initPatientRequest() {
         try { questionnaire(form, specialtyKey(selected)); }
         catch (error) { feedback(triageError, error.message); return; }
         const version = ++consultationVersion;
-        clearPreview();
+        ++previewSchedule; clearTimeout(previewTimer);
         ++generation; rows = []; list.replaceChildren(); section.classList.add('d-none'); confirm.disabled = true;
         feedback(triageError, ''); feedback(slotError, ''); consult.disabled = true;
         try {
@@ -246,50 +269,47 @@ export async function initPatientConfirmation() {
 }
 
 let dashboardRefresh = 0;
-async function renderPatientDashboard() {
+let dashboardDelay = null;
+let dashboardTurnsRequest = null, dashboardContext = null;
+async function renderPatientDashboard({ automatic = false, isCurrent = () => true } = {}) {
     const version = ++dashboardRefresh;
-    const turns = await getPatientTurns();
-    if (version !== dashboardRefresh) return;
+    const controller = dashboardDelay;
+    const request = dashboardTurnsRequest || (dashboardTurnsRequest = getPatientTurns());
+    let turns;
+    try { turns = await request; }
+    finally { if (dashboardTurnsRequest === request) dashboardTurnsRequest = null; }
+    if (version !== dashboardRefresh || controller !== dashboardDelay || !isCurrent()) return;
     const active = turns.filter(turn => ['RESERVADO', 'PRESENTE', 'EN_ATENCION'].includes(turn.estado) && turn.asignacion_vigente);
     const pending = turns.filter(turn => turn.estado === 'PENDIENTE');
     const next = active.find(turn => ['PRESENTE', 'EN_ATENCION'].includes(turn.estado))
         || active.find(turn => turn.estado === 'RESERVADO' && turn.horario_futuro);
-    text('pacienteNombre', getCurrentUser().nombre);
-    text('heroProximoTurno', next ? `${formatDate(next.fecha)} - ${next.hora.slice(0, 5)}` : pending.length ? 'Solicitud pendiente de nueva asignación' : 'Sin turnos reservados');
-    text('turnoEspecialidad', next?.medico.especialidad.nombre || '—');
-    text('turnoMedico', next ? fullName(next.medico) : '—');
-    text('turnoFecha', next ? formatDate(next.fecha) : '—'); text('turnoHora', next ? next.hora.slice(0, 5) : '—');
-    text('turnoEstado', next ? state(next) : '—'); text('triajePrioridad', next ? priority(next) : 'Sin turno asignado');
-    document.getElementById('triajePrioridad').className = `badge fs-6 px-3 py-2 ${priorityClass(next?.prioridad)}`;
-    text('esperaEstimada', next ? 'Consultando...' : 'Sin estimación disponible');
-    text('demoraEstimacionDetalle', 'Estimación informativa sujeta a cambios.');
-    text('duracionEstimada', next ? `${next.duracion_turno} min` : '—');
-    document.getElementById('solicitudesPendientesAviso').classList.toggle('d-none', !pending.length);
-    text('solicitudesPendientesResumen', `${pending.length} solicitud(es) pendiente(s) de nueva asignación. No tienen horario vigente.`);
-    document.getElementById('historialTurnos').innerHTML = turns.filter(turn => !activeStates.has(turn.estado)
-        || (turn.estado === 'RESERVADO' && !turn.horario_futuro)).map(turn =>
-        `<tr><td>${formatDate(turn.fecha)}</td><td>${escapeHtml(turn.medico.especialidad.nombre)}</td><td>${escapeHtml(fullName(turn.medico))}</td><td>${escapeHtml(state(turn))}</td></tr>`).join('') || '<tr><td colspan="4">Sin turnos históricos.</td></tr>';
-    if (!next) return turns;
-    try {
-        const estimate = await getPatientDelay(next.id_turno);
-        if (version !== dashboardRefresh) return;
-        text('esperaEstimada', estimate.demora_estimada_minutos === null ? 'Sin estimación disponible'
-            : estimate.demora_estimada_minutos === 0 ? 'Sin demora estimada'
-                : `${estimate.demora_estimada_minutos} min`);
-        text('demoraEstimacionDetalle', estimate.demora_estimada_minutos === null
-            ? `${estimate.motivo} Estimación informativa sujeta a cambios.`
-            : 'Estimación informativa sujeta a cambios.');
-    } catch (error) {
-        if (version !== dashboardRefresh) return;
-        text('esperaEstimada', 'Sin estimación disponible');
-        text('demoraEstimacionDetalle', `No fue posible consultar la estimación. ${errorMessage(error)}`);
+    if (!automatic) text('pacienteNombre', getCurrentUser().nombre);
+    const context = JSON.stringify([next || null, pending.map(turn => turn.id_turno)]);
+    if (!automatic || context !== dashboardContext) {
+        text('heroProximoTurno', next ? `${formatDate(next.fecha)} - ${next.hora.slice(0, 5)}` : pending.length ? 'Solicitud pendiente de nueva asignación' : 'Sin turnos reservados');
+        text('turnoEspecialidad', next?.medico.especialidad.nombre || '—');
+        text('turnoMedico', next ? fullName(next.medico) : '—');
+        text('turnoFecha', next ? formatDate(next.fecha) : '—'); text('turnoHora', next ? next.hora.slice(0, 5) : '—');
+        text('turnoEstado', next ? state(next) : '—'); text('triajePrioridad', next ? priority(next) : 'Sin turno asignado');
+        document.getElementById('triajePrioridad').className = `badge fs-6 px-3 py-2 ${priorityClass(next?.prioridad)}`;
+        document.getElementById('solicitudesPendientesAviso').classList.toggle('d-none', !pending.length);
+        text('solicitudesPendientesResumen', `${pending.length} solicitud(es) pendiente(s) de nueva asignación. No tienen horario vigente.`);
     }
+    dashboardContext = context;
+    if (!automatic) {
+        document.getElementById('historialTurnos').innerHTML = patientHistory.getRecentPatientHistory(turns).map(turn =>
+            `<tr><td>${formatDate(turn.fecha)}</td><td>${escapeHtml(turn.medico.especialidad.nombre)}</td><td>${escapeHtml(fullName(turn.medico))}</td><td>${escapeHtml(state(turn))}</td></tr>`).join('') || '<tr><td colspan="4">Sin turnos históricos.</td></tr>';
+    }
+    await controller.updateTurn(next);
     return turns;
 }
 
 export async function initPatientDashboard() {
+    dashboardDelay?.dispose();
+    dashboardContext = null;
+    dashboardDelay = createPatientDelay({ refreshTurn: options => renderPatientDashboard({ automatic: true, ...options }) });
     const initialTurns = await renderPatientDashboard();
-    await initPatientProposals({ onUpdated: renderPatientDashboard, initialTurns });
+    await initPatientProposals({ onUpdated: renderPatientDashboard, initialTurns, filterByDoctor: true });
 }
 
 export async function initPatientTurns() {
@@ -301,6 +321,34 @@ export async function initPatientTurns() {
     const editModal = getBootstrapModal(document.getElementById('modificarTurnoModal'));
     const cancel = document.getElementById('confirmarCancelacionBtn');
     const modify = document.getElementById('confirmarModificacionBtn');
+    const historyFilters = Object.fromEntries(['fecha', 'especialidad', 'medico', 'estado'].map(key =>
+        [key, document.getElementById(`historialPacienteFiltro${key[0].toUpperCase() + key.slice(1)}`)]));
+    Object.values(historyFilters).forEach(field => { field.value = ''; });
+    let history = [];
+    function historyOptions(field, entries, placeholder) {
+        const previous = field.value;
+        const values = [...new Map(entries).entries()].sort((a, b) => a[1].localeCompare(b[1], 'es'));
+        field.replaceChildren(new Option(placeholder, ''), ...values.map(([id, label]) => new Option(label, id)));
+        field.value = values.some(([id]) => id === previous) ? previous : '';
+    }
+    function renderHistory() {
+        const filters = Object.fromEntries(Object.entries(historyFilters).map(([key, field]) => [key, field.value]));
+        const filtered = patientHistory.filterPatientHistory(history, filters);
+        const hasFilters = Object.values(filters).some(Boolean);
+        document.getElementById('historialPacienteVacio').classList.toggle('d-none', !!history.length || hasFilters);
+        document.getElementById('historialPacienteTabla').innerHTML = filtered.map(turn => `<tr><td>${escapeHtml(turn.medico.especialidad.nombre)}</td>
+            <td>${escapeHtml(fullName(turn.medico))}</td><td>${formatDate(turn.fecha)}</td><td>${escapeHtml(turn.hora.slice(0, 5))}</td>
+            <td>${escapeHtml(state(turn))}</td><td>${priorityBadge(turn)}</td></tr>`).join('')
+            || (hasFilters ? '<tr><td colspan="6">No se encontraron turnos históricos con los filtros seleccionados</td></tr>' : '');
+    }
+    Object.values(historyFilters).forEach(field => {
+        field.addEventListener('input', renderHistory);
+        field.addEventListener('change', renderHistory);
+    });
+    document.getElementById('historialPacienteRestablecer').addEventListener('click', () => {
+        Object.values(historyFilters).forEach(field => { field.value = ''; });
+        renderHistory();
+    });
     let selected = null, rows = [], busy = false, generation = 0;
     let proposals = { refresh: async () => {} };
     function setBusy(value) {
@@ -321,11 +369,11 @@ export async function initPatientTurns() {
             ${turn.estado === 'PENDIENTE' ? `<button type="button" class="btn btn-outline-secondary btn-sm" data-action="recover" data-turn="${turn.id_turno}">Elegir nuevo horario</button>` : ''}
             ${['RESERVADO', 'PENDIENTE'].includes(turn.estado) ? `<button type="button" class="btn btn-outline-danger btn-sm" data-action="cancel" data-turn="${turn.id_turno}">Cancelar</button>` : ''}
             </div></article></div>`).join('');
-        const history = turns.filter(turn => !activeStates.has(turn.estado));
-        document.getElementById('historialPacienteVacio').classList.toggle('d-none', !!history.length);
-        document.getElementById('historialPacienteTabla').innerHTML = history.map(turn => `<tr><td>${escapeHtml(turn.medico.especialidad.nombre)}</td>
-            <td>${escapeHtml(fullName(turn.medico))}</td><td>${formatDate(turn.fecha)}</td><td>${escapeHtml(turn.hora.slice(0, 5))}</td>
-            <td>${escapeHtml(state(turn))}</td><td>${priorityBadge(turn)}</td></tr>`).join('');
+        history = patientHistory.getPatientHistory(turns);
+        historyOptions(historyFilters.especialidad, history.map(turn => [String(turn.medico.especialidad.id), turn.medico.especialidad.nombre]), 'Todas las especialidades');
+        historyOptions(historyFilters.medico, history.map(turn => [String(turn.medico.id), fullName(turn.medico)]), 'Todos los médicos');
+        historyOptions(historyFilters.estado, history.map(turn => [turn.estado, state(turn)]), 'Todos los estados');
+        renderHistory();
         setBusy(busy);
         return turns;
     }

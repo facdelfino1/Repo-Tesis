@@ -10,6 +10,8 @@ from .models import Disponibilidad, Paciente, Turno, Triaje, Usuario
 from .permissions import has_valid_role_profile
 from .triage import clasificar_triaje, tiene_triaje, TriajeInvalido
 
+CONSULTA_ACTIVA_MESSAGE = 'Antes de iniciar una nueva consulta, debés finalizar la consulta que se encuentra actualmente en atención.'
+
 
 def _valid_user(user, role):
     return bool(user and user.is_active and user.rol == role and has_valid_role_profile(user))
@@ -76,6 +78,7 @@ def reservar_turno(actor, medico_id, disponibilidad_id, respuestas=None, *, paci
     turno = Turno.objects.create(paciente=patient_user.paciente, medico=medico, disponibilidad=block,
                                 fecha=block.fecha, hora=block.hora_inicio, duracion_turno=_duration(block),
                                 estado=Turno.Estado.RESERVADO,
+                                origen=Turno.Origen.SECRETARIA if current_actor.rol == Usuario.Rol.SECRETARIA else Turno.Origen.PACIENTE,
                                 secretaria=current_actor.secretaria if actor.rol == Usuario.Rol.SECRETARIA else None)
     if priority is not None:
         Triaje.objects.create(turno=turno, respuesta_sintomas=respuestas,
@@ -154,6 +157,11 @@ def _consulta(actor, turno_id, medico_id, *, finalizar):
     _timeline(turno, 3 if finalizar else 2, now)
     block = _lock_block(turno.medico, turno.disponibilidad_id)
     _occupied(turno, block)
+    # _lock_turn holds the parent Medico row until this atomic operation commits.
+    # Different appointments for the same doctor must pass this check serially.
+    if not finalizar and Turno.objects.filter(medico_id=turno.medico_id,
+            estado=Turno.Estado.EN_ATENCION).exclude(pk=turno.pk).exists():
+        raise AgendaConflict(CONSULTA_ACTIVA_MESSAGE)
     field = 'fecha_hora_cierre' if finalizar else 'fecha_hora_inicio'
     turno.estado = Turno.Estado.COMPLETADO if finalizar else Turno.Estado.EN_ATENCION
     setattr(turno, field, now)

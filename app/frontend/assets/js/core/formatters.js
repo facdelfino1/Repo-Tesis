@@ -1,8 +1,12 @@
 import { PRIORITY_LABELS } from "./constants.js";
 
-export function formatDate(dateValue) {
+export function formatDate(dateValue, separator = '/') {
     if (!dateValue) {
         return "-";
+    }
+
+    if (separator === '-' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+        return dateValue.split('-').reverse().join(separator);
     }
 
     const date = new Date(`${dateValue}T00:00:00`);
@@ -11,7 +15,7 @@ export function formatDate(dateValue) {
         day: "2-digit",
         month: "2-digit",
         year: "numeric"
-    }).format(date);
+    }).format(date).replaceAll('/', separator);
 }
 
 export function formatToday() {

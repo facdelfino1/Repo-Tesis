@@ -1,6 +1,7 @@
 import { login, dashboardUrl, refreshUser } from './core/session.js';
 import { request, errorMessage } from './core/api.js';
 import { initPasswordToggles } from './components/forms.js';
+import { validateBirthDate } from './components/birth-date.js';
 
 function alert(form,text,type='danger') {
     let element=form.querySelector('[data-api-feedback]');
@@ -70,6 +71,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     const register=document.querySelector('[data-form="patient-register"]');
     if (register) {
+        const birth = register.elements.namedItem('fecha_nacimiento');
+        validateBirthDate(birth);
         const password = register.elements.namedItem('password');
         const confirmation = register.elements.namedItem('confirmPassword');
         const button = register.querySelector('[type="submit"]');
@@ -80,6 +83,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ? 'Las contraseñas no coinciden.' : '');
         }
         register.addEventListener('input', () => {
+            validateBirthDate(birth);
             checkConfirmation();
             register.querySelector('[data-api-feedback]')?.remove();
         });
@@ -87,14 +91,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             event.preventDefault();
             if (busy || registered) return;
             checkConfirmation();
-            if (!register.checkValidity()) {
+            const birthError = validateBirthDate(birth);
+            if (birthError || !register.checkValidity()) {
                 register.classList.add('was-validated');
-                alert(register, confirmation.validity.customError ? 'Las contraseñas no coinciden.' : 'Complete los campos obligatorios con datos válidos.');
+                alert(register, birthError || (confirmation.validity.customError ? 'Las contraseñas no coinciden.' : 'Complete los campos obligatorios con datos válidos.'));
                 return;
             }
             const field = name => register.elements.namedItem(name).value.trim();
             const body = { nombre: field('nombre'), apellido: field('apellido'), dni: field('dni'),
                 telefono: field('telefono'), email: field('email'), obra_social: field('obraSocial'),
+                fecha_nacimiento: field('fecha_nacimiento'),
                 password: password.value, password_confirmacion: confirmation.value };
             busy = true; button.disabled = true;
             try {

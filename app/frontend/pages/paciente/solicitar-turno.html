@@ -29,9 +29,6 @@
                 <div class="col-lg-8">
                     <span class="badge text-bg-primary mb-3">Portal del Paciente</span>
                     <h1 class="h2 fw-bold mb-2">Solicitar turno</h1>
-                    <p class="text-secondary mb-0">
-                        Seleccione una especialidad o medico y complete el triaje cuando corresponda según la especialidad.
-                    </p>
                 </div>
                 <div class="col-lg-4">
                     <div class="dashboard-status bg-white rounded-3 p-3 shadow-sm">
@@ -40,8 +37,7 @@
                                 <i class="bi bi-clipboard2-pulse"></i>
                             </div>
                             <div>
-                                <p class="text-secondary small mb-1">Evaluacion</p>
-                                <p class="fw-semibold mb-0">Triaje según especialidad</p>
+                                <h5 class="fw-semibold mb-0">Solicitud de Turno</h5>
                             </div>
                         </div>
                     </div>
@@ -54,9 +50,8 @@
                 <div class="card-body p-4">
                     <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-4">
                         <div>
-                            <p class="text-secondary small mb-1">Solicitud inicial</p>
-                            <h2 class="h5 fw-semibold mb-1">Especialidad, medico y triaje</h2>
-                            <p class="text-secondary small mb-0">Complete estos datos para habilitar la agenda disponible.</p>
+                            <h2 class="h4 fw-semibold mb-1">Seleccione especialidad o médico</h2>
+                            <p class="text-secondary small mb-0">Complete estos datos para consultar la agenda disponible.</p>
                         </div>
                         <span class="dashboard-icon bg-primary-subtle text-primary">
                             <i class="bi bi-clipboard2-check"></i>
@@ -66,22 +61,21 @@
                     <div class="row g-4">
                         <div class="col-12 col-lg-5">
                             <div class="mb-3">
-                                <label for="especialidad" class="form-label">Especialidad</label>
+                                <label for="especialidad" class="form-label"><strong>Especialidad</strong></label>
                                 <select class="form-select" id="especialidad" name="especialidad">
                                     <option value="">Seleccione una especialidad</option>
                                 </select>
                             </div>
 
                             <div class="mb-3">
-                                <label for="medico" class="form-label">Medico</label>
+                                <label for="medico" class="form-label"><strong>Médico</strong></label>
                                 <select class="form-select" id="medico" name="medico">
-                                    <option value="">Seleccione un medico</option>
+                                    <option value="">Seleccione un médico</option>
                                 </select>
-                                <div class="form-text">Puede elegir un medico directamente o filtrar primero por especialidad.</div>
                             </div>
 
                             <div id="seleccionTurnoError" class="alert alert-danger d-none small mb-0" role="alert">
-                                Seleccione una especialidad o un medico para continuar.
+                                Seleccione una especialidad o un médico para continuar.
                             </div>
                         </div>
 
@@ -89,8 +83,7 @@
                             <div id="triajeError" class="alert alert-danger d-none small" role="alert">
                                 Complete todas las preguntas del triaje antes de confirmar.
                             </div>
-
-                            <p class="small">Importante: Este cuestionario tiene como finalidad establecer una prioridad preliminar para la gestión de solicitudes de turnos. No constituye un diagnóstico médico ni reemplaza la evaluación de un profesional de la salud. Ante una situación que considere una emergencia, diríjase a un servicio de urgencias.</p>
+                            <p class="fw-medium d-none" data-triage-notice><strong>Importante:</strong> Este cuestionario tiene como finalidad establecer una prioridad preliminar para la gestión de solicitudes de turnos. No constituye un diagnóstico médico ni reemplaza la evaluación de un profesional de la salud. Ante una situación que considere una emergencia, diríjase a un servicio de urgencias.</p>
                             <div data-triage-specialty="common" class="d-none">
                                 <fieldset class="mb-3">
                                     <legend class="form-label">¿Tiene fiebre?</legend>
@@ -227,6 +220,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="../../assets/js/pages/paciente.js"></script>
+    <script src="../../assets/js/pages/paciente.js?v=triage-notice-1"></script>
 </body>
 </html>
