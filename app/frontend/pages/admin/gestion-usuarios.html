@@ -44,7 +44,7 @@
                             </div>
                             <div>
                                 <p class="text-secondary small mb-1">Cuentas Gestiónables</p>
-                                <p class="fw-semibold mb-0">Pacientes, medicos y secretarias</p>
+                                <p class="fw-semibold mb-0">Todos los roles del sistema</p>
                             </div>
                         </div>
                     </div>
@@ -58,8 +58,7 @@
             <div class="card-body p-4">
                 <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-4">
                     <div>
-                        <p class="text-secondary small mb-1">Busqueda</p>
-                        <h2 class="h5 fw-semibold mb-0">Filtros y acciones</h2>
+                        <h2 class="h4 fw-semibold mb-0">Filtros y acciones</h2>
                     </div>
                     <button type="button" class="btn btn-primary" id="crearUsuarioInternoBtn">
                         <i class="bi bi-person-plus me-1"></i>Crear usuario interno
@@ -87,8 +86,7 @@
             <div class="card-body p-4">
                 <div class="d-flex flex-column flex-md-row justify-content-between gap-3 mb-3">
                     <div>
-                        <p class="text-secondary small mb-1">Usuarios Gestiónables</p>
-                        <h2 class="h5 fw-semibold mb-0">Listado de usuarios</h2>
+                        <h2 class="h4 fw-semibold mb-0">Listado de usuarios</h2>
                     </div>
                     <span class="dashboard-icon bg-info-subtle text-info">
                         <i class="bi bi-table"></i>
@@ -133,7 +131,7 @@
                                 <label for="crearUsuarioRol" class="form-label">Rol</label>
                                 <select class="form-select" id="crearUsuarioRol">
                                     <option value="">Seleccione rol</option>
-                                    <option value="medico">Medico</option>
+                                    <option value="medico">Médico</option>
                                     <option value="secretaria">Secretaria</option>
                                 </select>
                                 <div class="invalid-feedback" id="crearUsuarioRolError"></div>
@@ -159,7 +157,7 @@
                                 <div class="invalid-feedback" id="crearUsuarioEmailError"></div>
                             </div>
                             <div class="col-12 col-md-6">
-                                <label for="crearUsuarioTelefono" class="form-label">Telefono</label>
+                                <label for="crearUsuarioTelefono" class="form-label">Teléfono</label>
                                 <input type="text" class="form-control" id="crearUsuarioTelefono">
                                 <div class="invalid-feedback" id="crearUsuarioTelefonoError"></div>
                             </div>
@@ -172,10 +170,10 @@
                                 <label for="crearUsuarioPassword" class="form-label">Contraseña temporal</label>
                                 <input type="password" class="form-control" id="crearUsuarioPassword" autocomplete="new-password">
                                 <div class="invalid-feedback" id="crearUsuarioPasswordError"></div>
-                                <div class="form-text">Minimo 8 caracteres, mayuscula, minuscula, numero y caracter especial.</div>
+                                <div class="form-text">Mínimo 8 caracteres, mayúscula, minúscula, número y caracter especial.</div>
                             </div>
                             <div class="col-12 col-md-6 d-none" id="crearMedicoMatriculaGrupo">
-                                <label for="crearUsuarioMatricula" class="form-label">Matricula</label>
+                                <label for="crearUsuarioMatricula" class="form-label">Matrícula</label>
                                 <input type="text" class="form-control" id="crearUsuarioMatricula">
                                 <div class="invalid-feedback" id="crearUsuarioMatriculaError"></div>
                             </div>
@@ -192,7 +190,6 @@
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
                         <button type="submit" class="btn btn-primary">Crear usuario</button>
                     </div>
                 </form>
@@ -239,7 +236,7 @@
                                 <div class="invalid-feedback" id="editarUsuarioTelefonoError"></div>
                             </div>
                             <div class="col-12 col-md-6 d-none" id="editarMedicoMatriculaGrupo">
-                                <label for="editarUsuarioMatricula" class="form-label">Matricula</label>
+                                <label for="editarUsuarioMatricula" class="form-label">Matrícula</label>
                                 <input type="text" class="form-control" id="editarUsuarioMatricula">
                                 <div class="invalid-feedback" id="editarUsuarioMatriculaError"></div>
                             </div>
@@ -256,7 +253,6 @@
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
                         <button type="submit" class="btn btn-primary">Guardar cambios</button>
                     </div>
                 </form>
@@ -273,7 +269,6 @@
                 </div>
                 <div class="modal-body" id="adminUsuarioDetalleContenido"></div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
                 </div>
             </div>
         </div>

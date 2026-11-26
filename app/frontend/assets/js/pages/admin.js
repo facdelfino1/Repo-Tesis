@@ -7,14 +7,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.querySelectorAll('[id$="Navbar"]').forEach(node => { node.textContent = `${user.nombre} ${user.apellido}`; });
     try {
         if (document.querySelector('form[data-form$="-profile"]')) {
-            const { initAccountProfile } = await import(new URL('../features/auth/auth-ui.js?v=profile-birth-20261118-1', pageScriptUrl));
+            const { initAccountProfile } = await import(new URL('../features/auth/auth-ui.js?v=admin-profile-notice-1', pageScriptUrl));
             initAccountProfile(); return;
         }
         if (document.getElementById('adminGestionUsuariosTabla')) {
             const { initUserManagement } = await import(new URL('../features/users/users-ui.js?v=patient-management-20261119-1', pageScriptUrl));
             await initUserManagement(); return;
         }
-        const metrics = await import(new URL('../features/metrics/metrics-ui.js', pageScriptUrl));
+        const metrics = await import(new URL('../features/metrics/metrics-ui.js?v=admin-metrics-display-1', pageScriptUrl));
         if (document.getElementById('adminMetricasFiltros')) await metrics.initAdminMetrics();
         else await metrics.initAdminDashboardMetrics();
     } catch (error) {

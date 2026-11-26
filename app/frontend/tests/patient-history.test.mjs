@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import * as patientHistory from '../assets/js/features/appointments/patient-history-service.js';
+import { proposalStateLabel } from '../assets/js/features/rescheduling/state-labels.js';
 
 const doctors = [null, { id: 1, nombre: 'Ana', apellido: 'Uno', especialidad: { id: 1, nombre: 'Clínica Médica' } },
     { id: 2, nombre: 'Beto', apellido: 'Dos', especialidad: { id: 2, nombre: 'Pediatría' } },
@@ -34,10 +35,16 @@ class Element extends EventTarget {
         add: name => this.classes.add(name), contains: name => this.classes.has(name) };
     replaceChildren(...options) { this.options = options; this.value = options[0]?.value || ''; }
     querySelectorAll() { return []; }
+    children = new Map();
+    querySelector(selector) {
+        if (!this.children.has(selector)) this.children.set(selector, new Element());
+        return this.children.get(selector);
+    }
 }
 
-async function setup(turns, initializer = 'initPatientTurns') {
+async function setup(turns, initializer = 'initPatientTurns', { realProposals = false } = {}) {
     const nodes = new Map(), requests = [], proposals = [];
+    let proposalSection, proposalReads = 0;
     const node = id => { if (!nodes.has(id)) nodes.set(id, new Element()); return nodes.get(id); };
     const context = vm.createContext({ patientHistory, URL, Response,
         window: { location: { origin: 'http://history.test' } },
@@ -47,13 +54,29 @@ async function setup(turns, initializer = 'initPatientTurns') {
             return new Response(JSON.stringify({ results: second ? turns.slice(5) : turns.slice(0, 5),
                 next: second ? null : 'http://history.test/api/turnos/?page=2' }), { headers: { 'Content-Type': 'application/json' } });
         },
-        document: { getElementById: node },
+        document: { getElementById: node, createElement: () => new Element(),
+            querySelector: () => ({ append: section => { proposalSection = section; } }) },
         Option: class { constructor(text, value) { this.text = text; this.value = String(value); } },
         getCurrentUser: () => ({ nombre: 'Paciente', apellido: 'Prueba' }), getBootstrapModal: () => null,
         formatDate: String, escapeHtml: String, priorityClass: () => '', getPatientDelay: async () => ({ demora_estimada_minutos: 0 }),
         createPatientDelay: () => ({ updateTurn: async () => {}, dispose() {} }),
         initPatientProposals: async options => { proposals.push(options); return { refresh: async () => {} }; }
     });
+    if (realProposals) {
+        context.esc = String;
+        context.proposalStateLabel = proposalStateLabel;
+        context.api = { getPatientProposals: async () => {
+            proposalReads++;
+            return [1, 2].map(id => ({ id: id + 50, turno: id, estado: 'ACEPTADA', vigente: false,
+                fecha_origen: '2026-01-01', hora_origen: '09:00:00', fecha_destino: '2026-01-02',
+                hora_inicio_destino: '10:00:00', hora_fin_destino: '10:20:00', motivo: 'Prueba',
+                fecha_hora_creacion: '2026-01-01T12:00:00Z', fecha_hora_resolucion: null, motivo_cierre: '' }));
+        } };
+        const source = await readFile(new URL('../assets/js/features/rescheduling/rescheduling-ui.js', import.meta.url), 'utf8');
+        const component = new vm.SourceTextModule(source.replace(/^import .*;\r?\n/gm, ''), { context });
+        await component.link(() => { throw Error('Unexpected proposals import'); }); await component.evaluate();
+        context.initPatientProposals = options => { proposals.push(options); return component.namespace.initPatientProposals(options); };
+    }
     // Execute real API pagination and patient service, with a read-only synthetic transport.
     const core = new vm.SourceTextModule(await readFile(new URL('../assets/js/core/api.js', import.meta.url), 'utf8'), { context });
     await core.link(() => { throw Error('Unexpected core import'); }); await core.evaluate();
@@ -64,7 +87,7 @@ async function setup(turns, initializer = 'initPatientTurns') {
     const ui = new vm.SourceTextModule(source.replace(/^import .*;\r?\n/gm, ''), { context });
     await ui.link(() => { throw Error('Unexpected UI import'); }); await ui.evaluate();
     await ui.namespace[initializer]();
-    return { node, requests, proposals,
+    return { node, requests, proposals, proposalSection, proposalReads: () => proposalReads,
         set: (key, value, event = 'input') => {
             const input = node(`historialPacienteFiltro${key}`); input.value = value; input.dispatchEvent(new Event(event));
         }
@@ -119,6 +142,33 @@ test('empty history retains its original empty state and shows the filter no-mat
     page.node('historialPacienteRestablecer').dispatchEvent(new Event('click'));
     assert.equal(page.node('historialPacienteTabla').innerHTML, '');
     assert.equal(page.node('historialPacienteVacio').classes.has('d-none'), false);
+});
+
+test('real proposals and history doctor filters remain independent and never fetch on selection', async () => {
+    const page = await setup(fixtures(), 'initPatientTurns', { realProposals: true });
+    assert.equal(page.proposals[0].filterByDoctor, true);
+    const doctor = page.proposalSection.querySelector('[data-doctor]');
+    const proposals = page.proposalSection.querySelector('[data-proposals]');
+    const history = page.node('historialPacienteTabla');
+    const choose = value => { doctor.value = value; doctor.dispatchEvent(new Event('change')); };
+    choose('1');
+    assert.match(proposals.innerHTML, /data-proposal="51"/);
+    assert.doesNotMatch(proposals.innerHTML, /data-proposal="52"/);
+    const proposalHtml = proposals.innerHTML;
+    page.set('Medico', '2', 'change');
+    assert.equal(proposals.innerHTML, proposalHtml);
+    assert.equal(doctor.value, '1');
+    const historyHtml = history.innerHTML;
+    choose('2');
+    assert.equal(history.innerHTML, historyHtml);
+    assert.equal(page.node('historialPacienteFiltroMedico').value, '2');
+    assert.match(proposals.innerHTML, /data-proposal="52"/);
+    assert.doesNotMatch(proposals.innerHTML, /data-proposal="51"/);
+    page.node('historialPacienteRestablecer').dispatchEvent(new Event('click'));
+    assert.equal(doctor.value, '2');
+    assert.equal(count(history.innerHTML), 9);
+    assert.equal(page.requests.length, 2);
+    assert.equal(page.proposalReads(), 1);
 });
 
 test('dashboard history link targets the full history section, retaining all four columns', async () => {

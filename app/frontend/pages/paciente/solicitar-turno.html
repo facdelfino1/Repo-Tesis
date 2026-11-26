@@ -37,7 +37,7 @@
                                 <i class="bi bi-clipboard2-pulse"></i>
                             </div>
                             <div>
-                                <h5 class="fw-semibold mb-0">Solicitud de Turno</h5>
+                                <h6 class="fw-semibold mb-0">Solicitud de Turno</h6>
                             </div>
                         </div>
                     </div>
@@ -157,11 +157,10 @@
                         <h3 class="h5 mb-2">Resultado preliminar del triaje</h3>
                         <p class="mb-2">Prioridad <span id="resultadoPrioridad" class="badge fs-6 px-3 py-2">—</span></p>
                         <p id="resultadoFechaAtencion" class="small mb-2"></p>
-                        <p class="small mb-0">Esta clasificación es orientativa y no sustituye una evaluación médica. Se recalcula al confirmar la reserva y puede variar si cambian las respuestas, la fecha de atención o la especialidad.</p>
+                        <p class="small mb-0">Esta clasificación es orientativa y no sustituye una evaluación médica.</p>
                     </div>
 
                     <div class="d-grid d-sm-flex gap-2 justify-content-sm-end mt-4">
-                        <button type="button" class="btn btn-outline-secondary" data-action="cancelar-solicitud">Cancelar</button>
                         <button type="submit" class="btn btn-primary">Consultar horarios</button>
                     </div>
                 </div>
@@ -171,10 +170,9 @@
                 <div class="card-body p-4">
                     <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-3">
                         <div>
-                            <p class="text-secondary small mb-1">Seleccion de disponibilidad</p>
-                            <h2 class="h5 fw-semibold mb-1">Horarios disponibles</h2>
+                            <h2 class="h4 fw-semibold mb-1">Horarios disponibles</h2>
                             <p class="text-secondary small mb-0">
-                                Los horarios corresponden a la agenda del médico. Cuando corresponde, la clasificación preliminar se muestra antes de elegir un horario; la prioridad definitiva se calcula al confirmar la reserva.
+                                Los horarios corresponden a la agenda del médico solicitado. 
                             </p>
                         </div>
                         <span class="dashboard-icon bg-info-subtle text-info">
@@ -209,11 +207,10 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                 </div>
                 <div class="modal-body">
-                    El turno no ser&aacute; reservado y los datos ingresados se perder&aacute;n. &iquest;Desea salir del proceso?
+                    El turno no será reservado y los datos ingresados se perderán. ¿Desea salir del proceso?
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">No, continuar</button>
-                    <button type="button" class="btn btn-danger" id="confirmarSalidaSolicitudBtn">S&iacute;, salir</button>
+                    <button type="button" class="btn btn-danger" id="confirmarSalidaSolicitudBtn">Sí, salir</button>
                 </div>
             </div>
         </div>

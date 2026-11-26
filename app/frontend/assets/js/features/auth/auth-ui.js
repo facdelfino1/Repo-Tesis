@@ -15,7 +15,7 @@ export function initAccountProfile() {
         if (key && Object.hasOwn(values,key)) { input.value = values[key]; input.defaultValue = values[key]; }
         input.readOnly = true;
     });
-    pageMessage(personalForm === form ? 'Sus datos se consultan desde la cuenta. En esta pantalla puede cambiar su contraseña.'
+    if (user.rol !== 'ADMINISTRADOR') pageMessage(personalForm === form ? 'Sus datos se consultan desde la cuenta. En esta pantalla puede cambiar su contraseña.'
         : user.rol === 'PACIENTE' ? 'Puede actualizar su nombre, apellido, teléfono y obra social. El correo electrónico, el DNI y la fecha de nacimiento son de solo lectura.'
             : 'Puede actualizar su nombre, apellido y teléfono. Los datos identificatorios y profesionales son de solo lectura.', 'info');
     initPasswordToggles(document);

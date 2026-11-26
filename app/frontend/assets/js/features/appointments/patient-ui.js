@@ -286,7 +286,7 @@ async function renderPatientDashboard({ automatic = false, isCurrent = () => tru
     if (!automatic) text('pacienteNombre', getCurrentUser().nombre);
     const context = JSON.stringify([next || null, pending.map(turn => turn.id_turno)]);
     if (!automatic || context !== dashboardContext) {
-        text('heroProximoTurno', next ? `${formatDate(next.fecha)} - ${next.hora.slice(0, 5)}` : pending.length ? 'Solicitud pendiente de nueva asignación' : 'Sin turnos reservados');
+        text('heroProximoTurno', 'Gestión de turnos médicos');
         text('turnoEspecialidad', next?.medico.especialidad.nombre || '—');
         text('turnoMedico', next ? fullName(next.medico) : '—');
         text('turnoFecha', next ? formatDate(next.fecha) : '—'); text('turnoHora', next ? next.hora.slice(0, 5) : '—');
@@ -445,5 +445,5 @@ export async function initPatientTurns() {
         } finally { setBusy(false); cancel.disabled = false; }
     });
     const initialTurns = await refresh();
-    proposals = await initPatientProposals({ onUpdated: refresh, initialTurns });
+    proposals = await initPatientProposals({ onUpdated: refresh, initialTurns, filterByDoctor: true });
 }

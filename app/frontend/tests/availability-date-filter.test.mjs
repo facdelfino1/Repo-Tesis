@@ -56,7 +56,10 @@ async function setup(doctorMode, getRows = async () => rows) {
         constructor(...args) { super(...(args.length ? args : [clock])); }
     }
     const context = vm.createContext({ ...service, Date: Clock,
-        document: { querySelector: () => form, getElementById: node },
+        availabilityToday: (date = clock) => service.availabilityToday(date),
+        isAvailabilityExpired: (block, date = clock) => service.isAvailabilityExpired(block, date),
+        filterExistingAvailability: (rows, date, current = clock) => service.filterExistingAvailability(rows, date, current),
+        document: { querySelector: () => form, getElementById: node, querySelectorAll: () => [] },
         getCurrentUser: () => ({ ...doctor, perfil: doctor }),
         getBootstrapModal: () => null,
         bindDoctorSelectors: async (_specialty, _doctor, callback) => { changeDoctor = callback; },

@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             await initManagerRescheduling(); return;
         }
         if (document.querySelector('[data-form$="-availability"]')) {
-            const availability = await import(new URL('../features/availability/availability-ui.js?v=availability-date-filter-2', pageScriptUrl));
+            const availability = await import(new URL('../features/availability/availability-ui.js?v=doctor-availability-exit-1', pageScriptUrl));
             await availability.initDoctorAvailability(); return;
         }
         if (location.pathname.endsWith('/finalizar-consulta.html')) {

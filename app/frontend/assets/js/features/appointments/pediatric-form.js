@@ -9,6 +9,6 @@ export function bindPediatricCleanup(form, specialtySelect) {
     specialtySelect.addEventListener('change', clear);
     form.addEventListener('reset', () => queueMicrotask(clear));
     form.closest('.modal')?.addEventListener('hidden.bs.modal', clear);
-    form.querySelector('#asignarPacienteSeleccion')?.addEventListener('change', clear);
+    form.addEventListener('patient-selection-change', clear);
     return clear;
 }

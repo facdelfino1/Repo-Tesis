@@ -152,7 +152,7 @@ for (const [name, initializer] of [['Dashboard', 'initPatientDashboard'], ['Mis 
         });
         await patient[initializer]();
         assert.equal(reads, 1); assert.ok(Array.isArray(shared)); assert.equal(shared.length, 0);
-        assert.equal(!!filterByDoctor, name === 'Dashboard');
+        assert.equal(filterByDoctor, true);
     });
 }
 

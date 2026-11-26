@@ -133,11 +133,13 @@ async function initAvailability(doctorMode) {
         }catch(error){feedback(errorMessage(error));button.disabled=false;}
     });
     const exitModal=getBootstrapModal(document.getElementById(doctorMode?'salirSinGuardarMedicoModal':'salirSinGuardarModal'));
-    document.getElementById(doctorMode?'cancelarDisponibilidadMedicoBtn':'cancelarDisponibilidadBtn')?.addEventListener('click',event=>{
+    const exitLinks=doctorMode ? document.querySelectorAll('[data-doctor-availability-exit]')
+        : [document.getElementById('cancelarDisponibilidadBtn')].filter(Boolean);
+    exitLinks.forEach(link=>link.addEventListener('click',event=>{
         event.preventDefault();
         if(blocks.length && exitModal) showModal(exitModal);
         else window.location.assign('dashboard.html');
-    });
+    }));
     document.getElementById(doctorMode?'confirmarSalirSinGuardarMedicoBtn':'confirmarSalirSinGuardarBtn')?.addEventListener('click',()=>{
         clearPreview();window.location.assign('dashboard.html');
     });

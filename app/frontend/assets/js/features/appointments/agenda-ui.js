@@ -9,9 +9,9 @@ import { getDoctor, getAssignableAvailability as assignableSlots, bindDoctorSele
 import { reassignAgendaTurn } from '../rescheduling/rescheduling-api.js';
 import { readAnswers, updateTriageQuestionnaire, renderTriageResponses, bindTriageNotice } from '../triage/triage-ui.js?v=triage-notice-1';
 import { getAgendaTurns, getAgendaTurn, reserveSecretaryTurn, modifyAgendaTurn, operateAgendaTurn } from './agenda-api.js';
-import { initPatientSearch } from './patient-search-ui.js';
+import { initPatientSearch } from './patient-search-ui.js?v=patient-suggestions-1';
 import { formatAttentionDuration } from './attention-duration.js?v=attention-duration-1';
-import { bindPediatricCleanup } from './pediatric-form.js';
+import { bindPediatricCleanup } from './pediatric-form.js?v=patient-suggestions-1';
 
 const node = id => document.getElementById(id);
 const setText = (id, value) => { if (node(id)) node(id).textContent = value; };
@@ -107,7 +107,7 @@ export async function initOperationalAgenda(mode) {
         const counts = state => rows.filter(turn => turn.estado === state).length;
         for (const [id, value] of Object.entries({ medicoMetricTurnosDia: rows.length, medicoMetricPresentes: counts('PRESENTE'), medicoMetricAtencion: counts('EN_ATENCION'), medicoMetricCompletadas: counts('COMPLETADO'), metricTurnosDia: rows.length, metricPresentes: counts('PRESENTE'), metricPendientes: counts('PENDIENTE'), metricAtencion: counts('EN_ATENCION'), metricCompletados: counts('COMPLETADO'), metricCancelados: counts('CANCELADO'), presenciaMetricReservados: counts('RESERVADO'), presenciaMetricPresentes: counts('PRESENTE'), presenciaMetricPendientes: counts('PENDIENTE') })) setText(id, doctor && loaded ? value : '—');
         setText('medicoMetricProximo', doctor && loaded ? rows.find(turn => turn.estado === 'RESERVADO')?.hora.slice(0, 5) || 'Sin turnos' : 'Sin datos disponibles');
-        setText('secretariaResumenJornada', doctor ? `Agenda de ${name(doctor)}` : 'Seleccione un médico');
+        setText('secretariaResumenJornada', 'Gestión integral de la jornada médica');
     }
     async function refresh() {
         const version = ++generation, current = doctor;
@@ -249,6 +249,7 @@ async function initSecretaryBooking(reload, initialCatalog) {
         busy = true; const controls = [...form.querySelectorAll('input, select, button')].map(control => [control, control.disabled]); controls.forEach(([control]) => { control.disabled = true; });
         try {
             const turn = await reserveSecretaryTurn(doctor.id, patient.id, slot.id, answers);
+            patientSearch.clear();
             clearPediatric();
             feedback(message, `Turno ${turn.id_turno} reservado. ${turn.prioridad === null ? 'Sin triaje específico.' : 'Prioridad: ' + turn.prioridad + '.'}`, 'success');
             await reload();

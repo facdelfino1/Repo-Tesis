@@ -40,13 +40,25 @@ class BusquedaPacientesTests(APITestCase):
         self.assertEqual(result.data['count'], 2)
         self.assertEqual([p['id'] for p in result.data['results']], [p.pk for p in self.patients[:2]])
         self.assertEqual(set(result.data), {'count', 'next', 'previous', 'results'})
-        self.assertEqual(set(result.data['results'][0]), {'id', 'nombre', 'apellido', 'dni'})
+        self.assertEqual(set(result.data['results'][0]), {'id', 'nombre', 'apellido', 'dni', 'telefono'})
         self.assertEqual(self.ids(dni='1234'), [])
         self.assertEqual(self.ids(dni=' 00123456 '), [p.pk for p in self.patients[:2]])
 
     def test_partial_dni_keeps_leading_zeroes(self):
         self.assertEqual(self.ids(q='0012'), [p.pk for p in self.patients[:2]])
         self.assertEqual(self.ids(q='4433'), [self.patients[2].pk])
+
+    def test_phone_present_or_empty_and_no_additional_personal_fields(self):
+        user = self.patients[0].usuario
+        user.telefono = '5550100'
+        user.save(update_fields=['telefono'])
+        other = self.patients[1].usuario
+        other.telefono = ''
+        other.save(update_fields=['telefono'])
+        rows = self.get(q='00123456').data['results']
+        self.assertEqual([row['telefono'] for row in rows], ['5550100', ''])
+        for row in rows:
+            self.assertEqual(set(row), {'id', 'nombre', 'apellido', 'dni', 'telefono'})
 
     def test_partial_names_and_surnames_ignore_case(self):
         self.assertEqual(self.ids(q='aNa'), [self.patients[2].pk, *[p.pk for p in self.patients[:2]]])

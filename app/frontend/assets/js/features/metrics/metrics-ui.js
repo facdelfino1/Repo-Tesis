@@ -3,13 +3,19 @@ import { pageMessage } from '../../core/session.js';
 import { escapeHtml as esc } from '../../core/helpers.js';
 import { formatToday, todayInputValue } from '../../core/formatters.js';
 import { getAdminSpecialties } from '../users/users-service.js';
-import { getAdminMetrics, observedMinutes } from './metrics-service.js';
+import { getAdminMetrics, observedMinutes } from './metrics-service.js?v=admin-metrics-display-1';
 
 const node = id => document.getElementById(id);
 const text = (id, value) => { if (node(id)) node(id).textContent = value; };
 const states = { RESERVADO: 'Reservado', PENDIENTE: 'Pendiente', PRESENTE: 'Presente', EN_ATENCION: 'En atención', COMPLETADO: 'Completado', CANCELADO: 'Cancelado', AUSENTE: 'Ausente (histórico)' };
 const priorities = { ALTA: 'Alta', MEDIA: 'Media', BAJA: 'Baja' };
-const clearNumbers = () => document.querySelectorAll('[id^="metricas"], [id^="adminMetric"]').forEach(element => { if (['P', 'STRONG'].includes(element.tagName)) element.textContent = '—'; });
+const indicatorIds = [
+    'adminMetricUsuarios', 'adminMetricPacientes', 'adminMetricMedicos', 'adminMetricSecretarias',
+    'adminMetricTurnosDia', 'adminMetricPresentes', 'adminMetricAtencion', 'adminMetricReprogramaciones',
+    'metricasTotalTurnos', 'metricasCompletados', 'metricasCancelados', 'metricasAusentes',
+    'metricasEsperaPromedio', 'metricasAtencionPromedio', 'metricasPrioridadFrecuente', 'metricasTasaAusentismo'
+];
+const clearNumbers = () => indicatorIds.forEach(id => text(id, '—'));
 
 export async function initAdminDashboardMetrics() {
     text('adminFechaActual', formatToday()); clearNumbers();

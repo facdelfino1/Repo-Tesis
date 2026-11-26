@@ -544,11 +544,12 @@ class PacienteConsultaSerializer(serializers.ModelSerializer):
     nombre = serializers.CharField(source='usuario.nombre', read_only=True)
     apellido = serializers.CharField(source='usuario.apellido', read_only=True)
     dni = serializers.CharField(source='usuario.dni', read_only=True)
+    telefono = serializers.CharField(source='usuario.telefono', read_only=True)
 
     class Meta:
         from .models import Paciente
         model = Paciente
-        fields = ('id', 'nombre', 'apellido', 'dni')
+        fields = ('id', 'nombre', 'apellido', 'dni', 'telefono')
         read_only_fields = fields
 
 

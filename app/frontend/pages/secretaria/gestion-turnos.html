@@ -26,11 +26,8 @@
         <section class="dashboard-hero rounded-4 p-4 p-lg-5 mb-4">
             <div class="row align-items-center g-4">
                 <div class="col-lg-8">
-                    <span class="badge text-bg-primary mb-3">Recepcion</span>
+                    <span class="badge text-bg-primary mb-3">Recepcíon</span>
                     <h1 class="h2 fw-bold mb-2">Gestión de turnos</h1>
-                    <p class="text-secondary mb-0">
-                        Administre asignaciones, modificaciones y cancelaciones de citas medicas.
-                    </p>
                 </div>
                 <div class="col-lg-4">
                     <div class="dashboard-status bg-white rounded-3 p-3 shadow-sm">
@@ -39,8 +36,7 @@
                                 <i class="bi bi-calendar2-check"></i>
                             </div>
                             <div>
-                                <p class="text-secondary small mb-1">Operacion</p>
-                                <p class="fw-semibold mb-0" id="GestiónTurnosResumen">Turnos en seguimiento</p>
+                                <p class="fw-semibold mb-0" id="GestiónTurnosResumen">Turnos en gestión</p>
                             </div>
                         </div>
                     </div>
@@ -54,8 +50,7 @@
             <div class="card-body p-4">
                 <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-3">
                     <div>
-                        <p class="text-secondary small mb-1">Busqueda</p>
-                        <h2 class="h5 fw-semibold mb-0">Filtros de turnos</h2>
+                        <h2 class="h4 fw-semibold mb-0">Filtros de turnos</h2>
                     </div>
                     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#asignarTurnoModal">
                         <i class="bi bi-calendar-plus me-1"></i>Asignar nuevo turno
@@ -107,8 +102,7 @@
             <div class="card-body p-4">
                 <div class="d-flex flex-column flex-md-row justify-content-between gap-3 mb-3">
                     <div>
-                        <p class="text-secondary small mb-1">Agenda</p>
-                        <h2 class="h5 fw-semibold mb-0">Turnos registrados</h2>
+                        <h2 class="h4 fw-semibold mb-0">Turnos registrados</h2>
                     </div>
                     <span class="dashboard-icon bg-info-subtle text-info">
                         <i class="bi bi-table"></i>
@@ -151,23 +145,24 @@
                     <div class="modal-body">
                         <div class="row g-3">
                             <div class="col-12 col-md-3">
-                                <label for="asignarPacienteDni" class="form-label">Buscar paciente por DNI, nombre o apellido</label>
-                                <input type="search" class="form-control" id="asignarPacienteDni" required maxlength="200" autocomplete="off" aria-describedby="asignarPacienteEstado" aria-controls="asignarPacienteSeleccion" enterkeyhint="search">
-                                <label for="asignarPacienteSeleccion" class="form-label mt-2">Paciente existente</label>
-                                <select id="asignarPacienteSeleccion" class="form-select" required aria-describedby="asignarPacienteEstado"><option value="">Escriba para buscar un paciente</option></select>
-                                <p id="asignarPacienteEstado" class="form-text mb-0" role="status" aria-live="polite">Ingrese entre 2 y 200 caracteres.</p>
-                            </div>
-                            <div class="col-12 col-md-3">
                                 <label for="asignarPacienteNombre" class="form-label">Nombre</label>
-                                <input type="text" class="form-control" id="asignarPacienteNombre" readonly>
+                                <input type="text" class="form-control" id="asignarPacienteNombre" maxlength="200" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="asignarPacienteSugerencias" aria-describedby="asignarPacienteEstado" enterkeyhint="search">
                             </div>
                             <div class="col-12 col-md-3">
                                 <label for="asignarPacienteApellido" class="form-label">Apellido</label>
-                                <input type="text" class="form-control" id="asignarPacienteApellido" readonly>
+                                <input type="text" class="form-control" id="asignarPacienteApellido" maxlength="200" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="asignarPacienteSugerencias" aria-describedby="asignarPacienteEstado" enterkeyhint="search">
+                            </div>
+                            <div class="col-12 col-md-3">
+                                <label for="asignarPacienteDni" class="form-label">DNI</label>
+                                <input type="text" class="form-control" id="asignarPacienteDni" maxlength="200" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="asignarPacienteSugerencias" aria-describedby="asignarPacienteEstado" enterkeyhint="search">
                             </div>
                             <div class="col-12 col-md-3">
                                 <label for="asignarPacienteTelefono" class="form-label">Telefono</label>
-                                <input type="text" class="form-control" id="asignarPacienteTelefono" disabled placeholder="No disponible en esta consulta">
+                                <input type="text" class="form-control" id="asignarPacienteTelefono" readonly>
+                            </div>
+                            <div class="col-12">
+                                <div id="asignarPacienteSugerencias" class="list-group overflow-auto" role="listbox" aria-label="Pacientes encontrados" style="max-height: 12rem;" hidden></div>
+                                <p id="asignarPacienteEstado" class="form-text mb-0" role="status" aria-live="polite">Ingrese entre 2 y 200 caracteres en nombre, apellido o DNI.</p>
                             </div>
                             <div class="col-12 col-md-4">
                                 <label for="asignarPacienteObraSocial" class="form-label">Obra social</label>
@@ -352,6 +347,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="../../assets/js/pages/secretaria.js?v=appointment-origin-1"></script>
+    <script src="../../assets/js/pages/secretaria.js?v=patient-suggestions-1"></script>
 </body>
 </html>

@@ -226,7 +226,7 @@ export async function initManagerRescheduling() {
         if (error) feedback(message, errorMessage(error));
         try { await Promise.all([refreshCollections(), dateSelector.refresh()]); } catch (err) { feedback(message, errorMessage(err)); }
     });
-    node(`${prefix}Notificaciones`).textContent = 'Las propuestas son notificaciones internas consultables por el Paciente. Solo el propietario puede aceptarlas o rechazarlas. No se envían correos desde esta pantalla.';
+    node(`${prefix}Notificaciones`).textContent = 'Las propuestas son notificaciones internas consultables por el paciente, solo él puede aceptarlas o rechazarlas.';
     form.addEventListener('submit', event => event.preventDefault());
     Object.values(fields).forEach(field => {
         field.addEventListener('input', () => { if (!busy) { dateSelector.reset(); clearCandidates(); clearFeedback(); } });

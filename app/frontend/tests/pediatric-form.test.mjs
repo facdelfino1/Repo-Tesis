@@ -21,7 +21,7 @@ function setup() {
 
 test('specialty change, modal closing and patient change clear previous pediatric data', () => {
     const page = setup();
-    for (const [target, event] of [[page.specialty, 'change'], [page.modal, 'hidden.bs.modal'], [page.patient, 'change']]) {
+    for (const [target, event] of [[page.specialty, 'change'], [page.modal, 'hidden.bs.modal'], [page.form, 'patient-selection-change']]) {
         page.fill(); target.dispatchEvent(new Event(event)); page.empty();
         page.fill(); target.dispatchEvent(new Event(event)); page.empty();
     }

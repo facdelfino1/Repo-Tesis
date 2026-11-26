@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const { initConsultationClosure } = await import(new URL('../features/appointments/consultation-closure-ui.js', pageScriptUrl));
             await initConsultationClosure(); return;
         }
-        const { initOperationalAgenda } = await import(new URL('../features/appointments/agenda-ui.js?v=appointment-origin-1', pageScriptUrl));
+        const { initOperationalAgenda } = await import(new URL('../features/appointments/agenda-ui.js?v=patient-suggestions-1', pageScriptUrl));
         await initOperationalAgenda(document.getElementById('secretariaAgendaDia') ? 'dashboard' : document.getElementById('presenciaTabla') ? 'presence' : 'management');
     } catch (error) {
         const { errorMessage } = await import(new URL('../core/api.js', pageScriptUrl));

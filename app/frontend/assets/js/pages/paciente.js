@@ -12,7 +12,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const { initPatientProfileEditing } = await import(new URL('../features/auth/patient-profile-ui.js?v=personal-profile-20261119-1', pageScriptUrl));
             initPatientProfileEditing(); return;
         }
-        const patient = await import(new URL('../features/appointments/patient-ui.js?v=patient-wait-context-1', pageScriptUrl));
+        const patient = await import(new URL('../features/appointments/patient-ui.js?v=patient-turns-proposal-doctor-1', pageScriptUrl));
         if (document.querySelector('[data-form="appointment-request"]')) await patient.initPatientRequest();
         else if (document.getElementById('turnosReservadosLista')) await patient.initPatientTurns();
         else if (document.getElementById('turnoReservadoDetalle')) await patient.initPatientConfirmation();

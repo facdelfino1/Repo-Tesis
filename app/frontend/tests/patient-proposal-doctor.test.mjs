@@ -119,7 +119,7 @@ test('acceptance and rejection update state normally and keep the selected docto
     }
 });
 
-test('errors keep their message and selection; default unfiltered mode retains Mis turnos behavior', async () => {
+test('errors keep their message and selection; default unfiltered mode remains available', async () => {
     const page = await setup({ responseFailure: { status: 409, message: 'La propuesta ya no está vigente.' } });
     page.choose('2'); await page.action(6, 'aceptar');
     assert.equal(page.section.querySelector('[data-feedback]').textContent, 'La propuesta ya no está vigente.');

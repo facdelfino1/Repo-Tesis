@@ -345,7 +345,7 @@ class OperacionesTests(APITestCase):
         self.assertEqual(self.client.get(url).status_code, 400)
         data = self.client.get(url, {'dni': self.users['PACIENTE'].dni}).data
         self.assertEqual(data['count'], 2)
-        self.assertEqual(set(data['results'][0]), {'id', 'nombre', 'apellido', 'dni'})
+        self.assertEqual(set(data['results'][0]), {'id', 'nombre', 'apellido', 'dni', 'telefono'})
         self.assertEqual(self.client.get(url, {'dni': 'no-match'}).data['count'], 0)
         self.other_patient.usuario.is_active = False
         self.other_patient.usuario.save(update_fields=['is_active'])
